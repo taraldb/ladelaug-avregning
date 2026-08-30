@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, model_validator
 
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 _SECRET_KEY_ENV = "LADELAUG_SECRET_KEY"
+_ZAPTEC_PASSWORD_ENV = "ZAPTEC_PASSWORD"
 
 
 class ServerConfig(BaseModel):
@@ -50,6 +51,39 @@ class BootstrapAdminConfig(BaseModel):
     password: str = ""
 
 
+class ZaptecConfig(BaseModel):
+    """Zaptec Public API (https://api.zaptec.com). ``enabled`` gates every sync
+    endpoint. The password is normally left blank here and supplied via the
+    ``ZAPTEC_PASSWORD`` environment variable (mirrors ``LADELAUG_SECRET_KEY``)."""
+
+    enabled: bool = False
+    base_url: str = "https://api.zaptec.com"
+    token_url: str = "https://api.zaptec.com/oauth/token"
+    username: str = ""
+    password: str = ""
+    installation_id: str = ""
+    request_timeout_seconds: float = 30.0
+    page_size: int = 500
+    max_retries: int = 3
+
+
+class EmailConfig(BaseModel):
+    """Outgoing mail. ``backend`` is ``console`` (log only), ``file`` (write
+    ``.eml`` under ``state/mail/``), or ``smtp``. ``base_url`` is the public
+    origin used to build links in emails (magic-link, reports)."""
+
+    backend: str = "console"
+    from_address: str = "ladelaug@example.com"
+    base_url: str = "http://localhost:8080"
+    smtp_host: str = "localhost"
+    smtp_port: int = 25
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+    magic_link_ttl_minutes: int = 30
+    password_reset_ttl_minutes: int = 60
+
+
 class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
@@ -57,6 +91,8 @@ class AppConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     bootstrap_admin: BootstrapAdminConfig = Field(default_factory=BootstrapAdminConfig)
+    zaptec: ZaptecConfig = Field(default_factory=ZaptecConfig)
+    email: EmailConfig = Field(default_factory=EmailConfig)
 
     @model_validator(mode="after")
     def _validate(self) -> AppConfig:
@@ -71,6 +107,19 @@ class AppConfig(BaseModel):
             problems.append(
                 f"auth.secret_key is empty — set it in config.yaml or the {_SECRET_KEY_ENV} "
                 "environment variable"
+            )
+
+        env_zaptec_pw = os.environ.get(_ZAPTEC_PASSWORD_ENV, "").strip()
+        if env_zaptec_pw:
+            self.zaptec.password = env_zaptec_pw
+        if self.zaptec.enabled and not (self.zaptec.username and self.zaptec.password):
+            problems.append(
+                "zaptec.enabled is true but zaptec.username / zaptec.password are not both set "
+                f"(password via config.yaml or the {_ZAPTEC_PASSWORD_ENV} environment variable)"
+            )
+        if self.email.backend not in ("console", "file", "smtp"):
+            problems.append(
+                f"email.backend {self.email.backend!r} is not one of 'console', 'file', 'smtp'"
             )
 
         try:

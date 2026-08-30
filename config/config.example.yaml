@@ -33,3 +33,30 @@ bootstrap_admin:
   # created on startup. Otherwise use: python -m ladelaug_avregning create-admin
   email: ""
   password: ""
+
+zaptec:
+  # Zaptec Public API (https://api.zaptec.com). While disabled the sync
+  # endpoints return 503. Leave the password blank here and pass it via the
+  # ZAPTEC_PASSWORD environment variable (or .env).
+  enabled: false
+  base_url: "https://api.zaptec.com"
+  token_url: "https://api.zaptec.com/oauth/token"
+  username: ""
+  password: ""
+  installation_id: "" # optional; if blank, all visible installations are synced
+  request_timeout_seconds: 30
+  page_size: 500
+  max_retries: 3
+
+email:
+  # backend: console (log only) | file (.eml under state/mail/) | smtp
+  backend: "console"
+  from_address: "ladelaug@example.com"
+  base_url: "http://localhost:8080" # public origin, for links in emails
+  smtp_host: "localhost"
+  smtp_port: 25
+  smtp_username: ""
+  smtp_password: ""
+  smtp_starttls: true
+  magic_link_ttl_minutes: 30
+  password_reset_ttl_minutes: 60
