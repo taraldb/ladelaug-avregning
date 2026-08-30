@@ -8,7 +8,7 @@ month boundary is split there (US-405).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ladelaug_avregning import clock
@@ -61,6 +61,15 @@ def month_range(from_month: str, to_month: str) -> list[str]:
         out.append(cur)
         cur = add_month(cur)
     return out
+
+
+def first_day(month: str) -> str:
+    return f"{month}-01"
+
+
+def last_day(month: str) -> str:
+    y, m, _ = divmod_next(int(month[:4]), int(month[5:]))
+    return (date(y, m, 1) - timedelta(days=1)).isoformat()
 
 
 def month_bounds(month: str, tz: str) -> tuple[datetime, datetime]:

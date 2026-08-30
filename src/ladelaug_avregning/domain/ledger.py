@@ -41,12 +41,15 @@ class LedgerRepo:
         ).fetchone()
         return dict(row) if row else None
 
-    def balance(self, member_id: int) -> Decimal:
+    def balance_ore(self, member_id: int) -> int:
         total = self._db.connection.execute(
             "SELECT COALESCE(SUM(amount_ore), 0) FROM ledger_transactions WHERE member_id = ?",
             (member_id,),
         ).fetchone()[0]
-        return ore_to_nok(int(total))
+        return int(total)
+
+    def balance(self, member_id: int) -> Decimal:
+        return ore_to_nok(self.balance_ore(member_id))
 
     def list(
         self, member_id: int, *, limit: int = 50, offset: int = 0

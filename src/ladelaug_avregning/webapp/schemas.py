@@ -400,6 +400,53 @@ class ChargerUnassignIn(BaseModel):
         return None if v is None else _iso_date(v)
 
 
+class SettlementDraftIn(BaseModel):
+    period_month: str
+
+    @field_validator("period_month")
+    @classmethod
+    def _v_month(cls, v: str) -> str:
+        v = v.strip()
+        if not re.match(r"^\d{4}-\d{2}$", v):
+            raise ValueError("period_month must be YYYY-MM")
+        return v
+
+
+class SettlementInvoiceIn(BaseModel):
+    invoice_kwh: str | None = None
+    note: str | None = None
+
+    @field_validator("invoice_kwh")
+    @classmethod
+    def _v_kwh(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        try:
+            d = Decimal(str(v))
+        except (ValueError, InvalidOperation) as exc:
+            raise ValueError("invoice_kwh must be a number") from exc
+        if not d.is_finite() or d < 0:
+            raise ValueError("invoice_kwh must be a non-negative number")
+        return str(d)
+
+
+class InvoiceLineIn(BaseModel):
+    description: str
+    allocation_method: Literal["equal", "consumption"]
+    amount: Decimal
+    category: str | None = None
+
+    @field_validator("description")
+    @classmethod
+    def _v_desc(cls, v: str) -> str:
+        return _required(v, "description")
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _v_amount(cls, v: Any) -> Decimal:
+        return _positive_nok(v)
+
+
 class ChargerAssignmentOut(BaseModel):
     id: int
     charger_id: int
