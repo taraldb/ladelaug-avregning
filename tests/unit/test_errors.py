@@ -1,6 +1,7 @@
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
@@ -44,6 +45,13 @@ def error_client():
     def _boom():
         raise RuntimeError("kaboom")
 
+    class _Body(BaseModel):
+        n: int
+
+    @app.post("/validate")
+    def _validate(body: _Body):
+        return {"ok": body.n}
+
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -67,6 +75,14 @@ def test_error_shapes(error_client, path, status, code):
 def test_rate_limit_sets_retry_after(error_client):
     r = error_client.get("/slow")
     assert r.headers["Retry-After"] == "42"
+
+
+def test_request_validation_error_uses_uniform_shape(error_client):
+    r = error_client.post("/validate", json={"n": "not-an-int"})
+    assert r.status_code == 422
+    body = r.json()
+    assert body["detail"]["code"] == "validation_error"
+    assert "n" in body["detail"]["message"]
 
 
 def test_health_endpoint(tmp_path, monkeypatch):

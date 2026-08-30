@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.errors import register_exception_handlers
-from ladelaug_avregning.webapp.routes import audit, auth, health
+from ladelaug_avregning.webapp.routes import audit, auth, health, members, settlement
 
 
 def create_app(config: AppConfig, db: Database) -> FastAPI:
@@ -20,6 +20,8 @@ def create_app(config: AppConfig, db: Database) -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(audit.router)
+    app.include_router(members.router)
+    app.include_router(settlement.router)
 
     # Mounted last so it only serves paths no /api route claimed.
     static_dir = Path(config.server.static_dir)

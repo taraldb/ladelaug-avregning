@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 log = logging.getLogger(__name__)
@@ -87,6 +88,17 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status,
             content=_body(exc.code, exc.message),
             headers=headers or None,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        parts: list[str] = []
+        for err in exc.errors():
+            loc = ".".join(str(p) for p in err.get("loc", ()) if p != "body")
+            parts.append(f"{loc or 'body'}: {err.get('msg', 'invalid')}")
+        return JSONResponse(
+            status_code=422,
+            content=_body("validation_error", "; ".join(parts) or "Invalid request"),
         )
 
     @app.exception_handler(Exception)

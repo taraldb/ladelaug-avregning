@@ -20,6 +20,7 @@ import pytest
 from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
+from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.sessions import SessionRepo
 from ladelaug_avregning.domain.users import UserRepo
 
@@ -146,6 +147,35 @@ def make_session(config: AppConfig) -> Callable[..., str]:
                     user_id=user_id, ttl_hours=ttl_hours, ip="test", user_agent="pytest"
                 )
             )
+        finally:
+            sep.close()
+
+    return _make
+
+
+@pytest.fixture
+def make_member(config: AppConfig) -> Callable[..., int]:
+    """Create a member via MemberRepo on a throwaway Database. Returns the id."""
+
+    def _make(
+        *,
+        member_reference: str = "M-1",
+        full_name: str = "Test Member",
+        email: str | None = "m@example.com",
+        join_date: str = "2026-01-01",
+    ) -> int:
+        sep = Database(config.database.path, migrations_dir=MIGRATIONS_DIR)
+        try:
+            row = _run(
+                MemberRepo(sep).create(
+                    member_reference=member_reference,
+                    full_name=full_name,
+                    email=email,
+                    join_date=join_date,
+                    actor=AuditContext.system(),
+                )
+            )
+            return int(row["id"])
         finally:
             sep.close()
 

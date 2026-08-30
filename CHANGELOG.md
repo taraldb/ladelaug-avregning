@@ -2,6 +2,22 @@
 
 Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
+## 2026-08-30 — Member administration (Release 1A phase C)
+
+- `MemberRepo` and admin CRUD: `POST` / `GET` / `PATCH /api/members`, `GET /api/members/{id}`.
+  `member.created` / `member.updated` audit events (the update records before/after).
+- Effective-dated active status (`member_status_periods`, half-open `[from, to)`): `POST
+  /api/members/{id}/status`, `GET /api/members/{id}/status-history`. Changing status closes the
+  open period and opens a new one under the write lock; back-dating before the open period and
+  no-op changes are rejected; `member.status_changed` audit.
+- Settlement participation (`settlement_participation`): `POST /api/members/{id}/participation`,
+  `GET /api/members/{id}/participation-history`, and `GET /api/settlement/suggested-participants`
+  (active members, defaulting to included; an explicit row overrides). Excluded members are
+  still consumption-cost recipients. `member.participation_changed` audit. **The 1B settlement
+  engine must snapshot `settlement_participation` at post time — this only records the live wish.**
+- Request-body validation failures now use the uniform `{"detail": {"code": "validation_error",
+  "message": ...}}` shape.
+
 ## 2026-08-30 — Identity & authentication (Release 1A phase B)
 
 - `UserRepo` and a `create-admin` CLI command; optional `bootstrap_admin` creates the first
