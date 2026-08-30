@@ -492,6 +492,25 @@ class SettlementRepo:
     def preview(self, settlement_id: int) -> dict[str, Any]:
         return self.compute(settlement_id)
 
+    def member_entry(self, settlement_id: int, member_id: int) -> dict[str, Any] | None:
+        """``{"result": <compute>, "member": <that member's row>}`` or None if
+        the member is not in the settlement's snapshot."""
+        result = self.compute(settlement_id)
+        for m in result["members"]:
+            if m["member_id"] == member_id:
+                return {"result": result, "member": m}
+        return None
+
+    def posted_for_member(self, member_id: int) -> list[dict[str, Any]]:
+        rows = self._db.connection.execute(
+            "SELECT s.* FROM settlements s "
+            "JOIN settlement_members sm ON sm.settlement_id = s.id "
+            "WHERE sm.member_id = ? AND s.status = 'posted' "
+            "ORDER BY s.period_month DESC",
+            (member_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     # --- post (US-609) ---------------------------------------------
 
     async def post(self, settlement_id: int, *, actor: AuditContext) -> dict[str, Any]:
@@ -595,7 +614,19 @@ class SettlementRepo:
                     "warnings": result["warnings"],
                 },
             )
-        return {**result, "status": "posted", "members_charged": posted_members}
+
+        posted = {**result, "status": "posted", "members_charged": posted_members}
+        try:
+            from ladelaug_avregning.reports import write_reports
+
+            write_reports(
+                posted,
+                self.snapshot_members(settlement_id),
+                self._state / "reports" / month,
+            )
+        except OSError:  # pragma: no cover - report write must not break a post
+            pass
+        return posted
 
     # --- internals -----------------------------------------------
 

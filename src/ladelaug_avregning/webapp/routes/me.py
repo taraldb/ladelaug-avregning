@@ -11,13 +11,17 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import HTMLResponse
 
+from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.ledger import LedgerRepo
 from ladelaug_avregning.domain.members import MemberRepo
-from ladelaug_avregning.errors import NotFoundError
+from ladelaug_avregning.domain.settlement import SettlementRepo
+from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.money import nok_to_ore
-from ladelaug_avregning.webapp.deps import get_current_member, get_db
+from ladelaug_avregning.reports import render_member_report
+from ladelaug_avregning.webapp.deps import get_config, get_current_member, get_db
 from ladelaug_avregning.webapp.schemas import LedgerTxnOut, MemberOut, StatusPeriodOut
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -74,3 +78,47 @@ async def my_status(
         "participates": repo.effective_participation(member_id),
         "history": [StatusPeriodOut.from_row(r) for r in repo.status_history(member_id)],
     }
+
+
+@router.get("/settlements")
+async def my_settlements(
+    member_id: int = Depends(get_current_member),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> dict[str, Any]:
+    repo = SettlementRepo(db, tz=config.timezone)
+    out = []
+    for s in repo.posted_for_member(member_id):
+        entry = repo.member_entry(int(s["id"]), member_id)
+        if entry is None:
+            continue
+        m = entry["member"]
+        out.append(
+            {
+                "settlement_id": s["id"],
+                "period_month": s["period_month"],
+                "posted_at": s["posted_at"],
+                "consumption_kwh": m["consumption_kwh"],
+                "charge_nok": m["charge_nok"],
+                "balance_after_nok": m["balance_after_nok"],
+                "report_url": f"/api/me/settlements/{s['id']}/report",
+            }
+        )
+    return {"settlements": out}
+
+
+@router.get("/settlements/{settlement_id}/report", response_class=HTMLResponse)
+async def my_settlement_report(
+    settlement_id: int,
+    member_id: int = Depends(get_current_member),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> HTMLResponse:
+    repo = SettlementRepo(db, tz=config.timezone)
+    row = repo.get(settlement_id)
+    if row is None or row["status"] != "posted":
+        raise NotFoundError(f"settlement {settlement_id} not found")
+    entry = repo.member_entry(settlement_id, member_id)
+    if entry is None:
+        raise DomainError("not_in_settlement", "You are not part of this settlement.")
+    return HTMLResponse(render_member_report(entry["result"], entry["member"]))

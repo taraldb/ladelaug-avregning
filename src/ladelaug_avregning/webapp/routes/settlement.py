@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi.responses import HTMLResponse
 
 from ladelaug_avregning import clock
 from ladelaug_avregning.audit import AuditContext
@@ -16,7 +17,8 @@ from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
-from ladelaug_avregning.errors import NotFoundError
+from ladelaug_avregning.errors import DomainError, NotFoundError
+from ladelaug_avregning.reports import render_member_report, render_summary_report
 from ladelaug_avregning.webapp.deps import (
     get_audit_context,
     get_config,
@@ -172,3 +174,45 @@ async def post_settlement(
     actor: AuditContext = Depends(get_audit_context),
 ) -> dict[str, Any]:
     return await _repo(db, config).post(settlement_id, actor=actor)
+
+
+@router.get("/{settlement_id}/reports")
+async def list_reports(
+    settlement_id: int, db: Database = Depends(get_db), config: AppConfig = Depends(get_config)
+) -> dict[str, Any]:
+    repo = _repo(db, config)
+    result = repo.compute(settlement_id)
+    return {
+        "settlement_id": settlement_id,
+        "period_month": result["period_month"],
+        "summary_url": f"/api/settlement/{settlement_id}/reports/summary",
+        "members": [
+            {
+                "member_id": m["member_id"],
+                "full_name": m["full_name"],
+                "charge_nok": m["charge_nok"],
+                "url": f"/api/settlement/{settlement_id}/reports/{m['member_id']}",
+            }
+            for m in result["members"]
+        ],
+    }
+
+
+@router.get("/{settlement_id}/reports/summary", response_class=HTMLResponse)
+async def summary_report(
+    settlement_id: int, db: Database = Depends(get_db), config: AppConfig = Depends(get_config)
+) -> HTMLResponse:
+    return HTMLResponse(render_summary_report(_repo(db, config).compute(settlement_id)))
+
+
+@router.get("/{settlement_id}/reports/{member_id}", response_class=HTMLResponse)
+async def member_report(
+    settlement_id: int,
+    member_id: int,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> HTMLResponse:
+    entry = _repo(db, config).member_entry(settlement_id, member_id)
+    if entry is None:
+        raise DomainError("not_in_settlement", f"Member {member_id} is not in this settlement.")
+    return HTMLResponse(render_member_report(entry["result"], entry["member"]))
