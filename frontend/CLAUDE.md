@@ -39,6 +39,16 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `POST /api/ledger-transactions/{id}/reverse` (201) -> reversal Txn; 422 `already_reversed` | `not_a_payment`; 404 `not_found`.
 - `GET /api/audit-events?event_type=&entity_type=&entity_id=&limit=&offset=&sort_by=&sort_dir=` -> `{events:[AuditEvent],total,counts:{[event_type]:number}}`. `sort_by ∈ occurred_at|id|event_type`, `sort_dir ∈ asc|desc`.
 - `GET /api/me` -> Member. `GET /api/me/balance` -> Balance. `GET /api/me/ledger?limit=&offset=` -> ledger page. `GET /api/me/status` -> `{status,participates,history:[StatusPeriod]}`.
+- `GET /api/me/settlements` -> `{settlements:[MySettlement]}`; each `report_url` is `/api/me/settlements/{id}/report` — the PDF is the same URL with `.pdf` appended.
+
+### Forecasting + low-balance (Release 1C, Epic 8)
+
+- `GET /api/me/forecast` -> `MemberForecast` (member session). Always a flat, fully-populated object; when `available=false` the numeric fields are `0` and `reason ∈ "insufficient_history" | "no_grid_kwh"`.
+- `GET /api/me/consumption?month=YYYY-MM` -> `MemberConsumption` (defaults to the current Oslo month); 422 `bad_month` on a malformed `month`.
+- `GET /api/forecast/settings` (admin) -> `ForecastSettings`.
+- `PUT /api/forecast/settings` (admin, `X-Requested-With`) partial body `ForecastSettingsUpdate` -> `ForecastSettings`. An explicit `rate_override_ore_per_kwh:null` clears the override; 422 on non-positive rate / `buffer_months<=0` / negative cooldown / `lookback_settlements<1`.
+- `GET /api/forecast/members` (admin) -> `{members:[MemberForecast]}` (one row per member; carries only `member_id`, join names from `GET /api/members`).
+- `POST /api/notifications/low-balance-scan` (admin, `X-Requested-With`) -> `{scanned,below,queued,suppressed}` (`LowBalanceScanResult`). Enqueues warning emails; drain with `POST /api/notifications/process`.
 
 ### Types
 
@@ -47,6 +57,12 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `ParticipationPeriod = {id,participates:boolean,effective_from,effective_to:string|null,reason:string|null,created_at}`
 - `Txn = {id,member_id,txn_type:"payment"|"payment_reversal"|"adjustment_credit"|"adjustment_debit",amount_ore:number,amount_nok:string,currency,value_date,reason:string|null,reference:string|null,reverses_transaction_id:number|null,created_by_user_id,recorded_at}`
 - `AuditEvent = {id,occurred_at,actor_user_id:number|null,actor_label,event_type,entity_type,entity_id:string|null,summary,detail:object|null,ip:string|null}`
+- `MySettlement = {settlement_id,period_month,posted_at:string|null,consumption_kwh:string,charge_nok:string,balance_after_nok:string,report_url:string}`
+- `MemberForecast = {member_id,available:boolean,forecast_kwh:string,rate_ore_per_kwh:string,rate_source:"derived"|"override"|null,equal_share_ore:number,forecast_monthly_cost_ore:number,recommended_minimum_ore:number,balance_ore:number,recommended_topup_ore:number,low_balance:boolean,severity:"low"|"critical"|null,reason:string|null}` — money fields are canonical integer øre (format with `formatOre`), `forecast_kwh`/`rate_ore_per_kwh` are Decimal strings.
+- `MemberConsumption = {member_id,month:string,consumption_kwh:string,session_count:number}`
+- `ForecastSettings = {rate_override_ore_per_kwh:number|null,buffer_months:number,notify_cooldown_days:number,lookback_settlements:number,updated_at:string|null,updated_by_user_id:number|null}`
+- `ForecastSettingsUpdate = Partial<{rate_override_ore_per_kwh:number|null,buffer_months:number,notify_cooldown_days:number,lookback_settlements:number}>`
+- `LowBalanceScanResult = {scanned:number,below:number,queued:number,suppressed:number}`
 
 ## Status
 
@@ -54,5 +70,6 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - G2 (members + status + participation): PASS
 - G3 (ledger + audit log): PASS
 - G4 (member portal): PASS
+- Release 1C P6 (portal forecast/consumption/low-balance + admin forecast page): PASS
 
-`npm run check` (tsc + eslint + 20 vitest) and `npm run build` both green.
+`npm run check` (tsc + eslint + vitest) and `npm run build` both green.

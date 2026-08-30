@@ -3,6 +3,7 @@ import { useAuth } from "./auth/AuthContext";
 import AuditLog from "./pages/AuditLog";
 import AuthAction from "./pages/AuthAction";
 import Chargers from "./pages/Chargers";
+import ForecastSettings from "./pages/ForecastSettings";
 import Login from "./pages/Login";
 import Members from "./pages/Members";
 import MemberDetail from "./pages/MemberDetail";
@@ -75,6 +76,9 @@ function Layout() {
                   <NavLink to="/audit" className={navLinkClass}>
                     Revisjonslogg
                   </NavLink>
+                  <NavLink to="/forecast" className={navLinkClass}>
+                    Prognose
+                  </NavLink>
                   <NavLink to="/system" className={navLinkClass}>
                     System
                   </NavLink>
@@ -133,6 +137,7 @@ export default function AppRouter() {
           <Route path="/settlements" element={<Settlements />} />
           <Route path="/settlements/:id" element={<SettlementDetail />} />
           <Route path="/audit" element={<AuditLog />} />
+          <Route path="/forecast" element={<ForecastSettings />} />
           <Route path="/system" element={<SystemHealth />} />
         </Route>
         <Route path="*" element={<HomeRedirect />} />

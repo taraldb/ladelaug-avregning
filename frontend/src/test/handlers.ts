@@ -3,8 +3,11 @@ import { setupServer } from "msw/node";
 import type {
   AuditEvent,
   AuthUser,
+  ForecastSettings,
   LedgerTxn,
   Member,
+  MemberConsumption,
+  MemberForecast,
   ParticipationPeriod,
   StatusPeriod,
 } from "../api/client";
@@ -60,6 +63,7 @@ let state: MockState = freshState();
 export function resetMockState(): void {
   state = freshState();
   mock1b = freshMock1b();
+  forecast = freshForecast();
 }
 
 export function setSession(user: AuthUser | null): void {
@@ -176,6 +180,105 @@ function recordAudit(
     entity_id: entityId,
     summary,
   });
+}
+
+// --- forecasting fixtures (Epic 8) --------------------------------
+
+interface ForecastMockState {
+  settings: ForecastSettings;
+  byMember: Map<number, MemberForecast>;
+  consumption: Map<number, MemberConsumption>;
+}
+
+function freshForecast(): ForecastMockState {
+  return {
+    settings: {
+      rate_override_ore_per_kwh: null,
+      buffer_months: 2,
+      notify_cooldown_days: 14,
+      lookback_settlements: 3,
+      updated_at: null,
+      updated_by_user_id: null,
+    },
+    byMember: new Map(),
+    consumption: new Map(),
+  };
+}
+
+let forecast: ForecastMockState = freshForecast();
+
+/** An "available" forecast that is comfortably above its recommended minimum. */
+export function seedForecast(
+  memberId: number,
+  overrides: Partial<MemberForecast> = {},
+): MemberForecast {
+  const base: MemberForecast = {
+    member_id: memberId,
+    available: true,
+    forecast_kwh: "120.5",
+    rate_ore_per_kwh: "185",
+    rate_source: "derived",
+    equal_share_ore: 25000,
+    forecast_monthly_cost_ore: 47293,
+    recommended_minimum_ore: 94586,
+    balance_ore: 150000,
+    recommended_topup_ore: 0,
+    low_balance: false,
+    severity: null,
+    reason: null,
+  };
+  const merged: MemberForecast = { ...base, ...overrides };
+  forecast.byMember.set(memberId, merged);
+  return merged;
+}
+
+/** A forecast that trips the low-balance rule (`severity` "low" or "critical"). */
+export function seedLowBalanceForecast(
+  memberId: number,
+  severity: "low" | "critical" = "low",
+): MemberForecast {
+  const balance_ore = severity === "critical" ? 12000 : 60000;
+  return seedForecast(memberId, {
+    balance_ore,
+    recommended_topup_ore: 94586 - balance_ore,
+    low_balance: true,
+    severity,
+  });
+}
+
+export function seedUnavailableForecast(
+  memberId: number,
+  balanceOre = 0,
+): MemberForecast {
+  return seedForecast(memberId, {
+    available: false,
+    forecast_kwh: "0",
+    rate_ore_per_kwh: "0",
+    rate_source: null,
+    equal_share_ore: 0,
+    forecast_monthly_cost_ore: 0,
+    recommended_minimum_ore: 0,
+    balance_ore: balanceOre,
+    recommended_topup_ore: 0,
+    low_balance: false,
+    severity: null,
+    reason: "insufficient_history",
+  });
+}
+
+export function seedConsumption(
+  memberId: number,
+  overrides: Partial<MemberConsumption> = {},
+): MemberConsumption {
+  const merged: MemberConsumption = {
+    member_id: memberId,
+    month: "2026-08",
+    consumption_kwh: "42.75",
+    session_count: 6,
+    ...overrides,
+  };
+  forecast.consumption.set(memberId, merged);
+  return merged;
 }
 
 // --- helpers ------------------------------------------------------
@@ -885,6 +988,95 @@ export const handlers = [
   http.post("/api/notifications/process", () =>
     HttpResponse.json({ due: 0, sent: 0, failed: 0, retried: 0 }),
   ),
+
+  // --- Release 1C: forecast + low-balance --------------------------
+
+  http.get("/api/me/forecast", () => {
+    const member = currentMemberOr403();
+    if (member instanceof Response) return member;
+    const fc =
+      forecast.byMember.get(member.id) ??
+      seedUnavailableForecast(member.id, ledgerBalanceOre(member.id));
+    return HttpResponse.json(fc);
+  }),
+
+  http.get("/api/me/consumption", ({ request }) => {
+    const member = currentMemberOr403();
+    if (member instanceof Response) return member;
+    const month = new URL(request.url).searchParams.get("month") ?? "2026-08";
+    const seeded = forecast.consumption.get(member.id);
+    return HttpResponse.json(
+      seeded ?? {
+        member_id: member.id,
+        month,
+        consumption_kwh: "0",
+        session_count: 0,
+      },
+    );
+  }),
+
+  http.get("/api/forecast/settings", () => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    return HttpResponse.json(forecast.settings);
+  }),
+
+  http.put("/api/forecast/settings", async ({ request }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const body = (await request.json()) as Partial<ForecastSettings>;
+    const keys = [
+      "rate_override_ore_per_kwh",
+      "buffer_months",
+      "notify_cooldown_days",
+      "lookback_settlements",
+    ] as const;
+    let changed = false;
+    for (const k of keys) {
+      if (k in body && body[k] !== forecast.settings[k]) {
+        forecast.settings[k] = body[k] as never;
+        changed = true;
+      }
+    }
+    if (changed) {
+      forecast.settings.updated_at = new Date().toISOString();
+      forecast.settings.updated_by_user_id = state.session?.id ?? null;
+      recordAudit(
+        "forecast.settings_updated",
+        "forecast_settings",
+        "1",
+        "Forecast settings updated",
+      );
+    }
+    return HttpResponse.json(forecast.settings);
+  }),
+
+  http.get("/api/forecast/members", () => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    return HttpResponse.json({ members: [...forecast.byMember.values()] });
+  }),
+
+  http.post("/api/notifications/low-balance-scan", () => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const available = [...forecast.byMember.values()].filter((f) => f.available);
+    const below = available.filter((f) => f.low_balance);
+    if (below.length > 0) {
+      recordAudit(
+        "notifications.low_balance_warned",
+        "member",
+        String(below[0].member_id),
+        "Low-balance warning enqueued",
+      );
+    }
+    return HttpResponse.json({
+      scanned: available.length,
+      below: below.length,
+      queued: below.length,
+      suppressed: 0,
+    });
+  }),
 
   http.post("/api/auth/magic-link", () => HttpResponse.json({ ok: true })),
   http.post("/api/auth/magic-link/consume", () =>

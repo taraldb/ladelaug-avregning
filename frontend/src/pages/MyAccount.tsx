@@ -2,6 +2,8 @@ import useSWR from "swr";
 import {
   ApiError,
   getMyBalance,
+  getMyConsumption,
+  getMyForecast,
   getMyLedger,
   getMySettlements,
   getMyStatus,
@@ -9,7 +11,7 @@ import {
 } from "../api/client";
 import StatTile from "../components/StatTile";
 import Table, { type Column } from "../components/Table";
-import { formatDate, formatNok, txnTypeLabel } from "../lib/format";
+import { formatDate, formatNok, formatOre, txnTypeLabel } from "../lib/format";
 
 const columns: Column<LedgerTxn>[] = [
   { key: "date", header: "Valørdato", render: (t) => formatDate(t.value_date) },
@@ -38,8 +40,12 @@ export default function MyAccount() {
   const ledger = useSWR("/api/me/ledger", () => getMyLedger());
   const status = useSWR("/api/me/status", () => getMyStatus());
   const settlements = useSWR("/api/me/settlements", () => getMySettlements());
+  const forecast = useSWR("/api/me/forecast", () => getMyForecast());
+  const consumption = useSWR("/api/me/consumption", () => getMyConsumption());
 
-  if ([balance.error, ledger.error, status.error].some(isForbidden)) {
+  if (
+    [balance.error, ledger.error, status.error, forecast.error].some(isForbidden)
+  ) {
     return (
       <section className="space-y-3">
         <h1 className="text-lg font-semibold text-slate-100">Min konto</h1>
@@ -51,16 +57,79 @@ export default function MyAccount() {
   }
 
   const txns = ledger.data?.transactions ?? [];
+  const fc = forecast.data;
+  const showBanner = fc?.available && fc.low_balance;
 
   return (
     <section className="space-y-6">
       <h1 className="text-lg font-semibold text-slate-100">Min konto</h1>
+
+      {showBanner && (
+        <div
+          role="alert"
+          className={`rounded-lg border p-4 text-sm ${
+            fc.severity === "critical"
+              ? "border-rose-500/50 bg-rose-500/10 text-rose-200"
+              : "border-amber-500/50 bg-amber-500/10 text-amber-200"
+          }`}
+        >
+          <p className="font-semibold">Lav saldo</p>
+          <p className="mt-1">
+            Anbefalt innbetaling nå:{" "}
+            <strong>{formatOre(fc.recommended_topup_ore)}</strong>. Fyll på saldo
+            for å dekke neste avregning.
+          </p>
+        </div>
+      )}
 
       <StatTile
         label="Saldo"
         value={balance.data ? formatNok(balance.data.balance_nok) : "…"}
         tone={balance.data && balance.data.balance_ore < 0 ? "negative" : "positive"}
       />
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-slate-100">
+          Prognose neste måned
+        </h2>
+        {fc?.available ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatTile label="Forventet forbruk" value={`${fc.forecast_kwh} kWh`} />
+            <StatTile
+              label="Estimert månedskostnad"
+              value={formatOre(fc.forecast_monthly_cost_ore)}
+            />
+            <StatTile
+              label="Anbefalt minstesaldo"
+              value={formatOre(fc.recommended_minimum_ore)}
+            />
+            <StatTile
+              label="Anbefalt innbetaling"
+              value={formatOre(fc.recommended_topup_ore)}
+              tone={fc.recommended_topup_ore > 0 ? "negative" : "positive"}
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">
+            {forecast.isLoading
+              ? "Laster …"
+              : "Ikke nok historikk til å lage en prognose ennå."}
+          </p>
+        )}
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-slate-100">
+          Forbruk denne måneden
+        </h2>
+        {consumption.data ? (
+          <p className="text-sm text-slate-300">
+            {`${consumption.data.month}: ${consumption.data.consumption_kwh} kWh over ${consumption.data.session_count} ladeøkter.`}
+          </p>
+        ) : (
+          <p className="text-sm text-slate-400">Laster …</p>
+        )}
+      </div>
 
       <div>
         <h2 className="mb-2 text-sm font-semibold text-slate-100">Min historikk</h2>
@@ -81,14 +150,24 @@ export default function MyAccount() {
                 <span>
                   {s.period_month} · {s.consumption_kwh} kWh · belastet {formatNok(s.charge_nok)}
                 </span>
-                <a
-                  className="text-emerald-400 hover:underline"
-                  href={s.report_url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Rapport
-                </a>
+                <span className="flex gap-3">
+                  <a
+                    className="text-emerald-400 hover:underline"
+                    href={s.report_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Rapport
+                  </a>
+                  <a
+                    className="text-emerald-400 hover:underline"
+                    href={`${s.report_url}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    PDF
+                  </a>
+                </span>
               </li>
             ))}
           </ul>

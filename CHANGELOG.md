@@ -53,6 +53,31 @@ corrections, refunds, member departure, charging-access workflows.
 
 The per-phase entries below record how it was built.
 
+## 2026-08-30 — Web UI: member portal + forecast admin (Release 1C phase P6)
+
+- `frontend/` — `MyAccount.tsx` gains a severity-coloured low-balance banner
+  (rose = `critical`, amber = `low`, shown only when `forecast.available &&
+  forecast.low_balance`), a "Prognose neste måned" card (forecast kWh, estimated
+  monthly cost, recommended minimum balance, recommended top-up — or a neutral
+  "Ikke nok historikk …" when `available` is false), and a current-month
+  consumption line from `GET /api/me/consumption`. Each settlement-history row
+  gets a "PDF" link (`${report_url}.pdf`) beside "Rapport".
+- New `pages/ForecastSettings.tsx` at `/forecast` (admin-only, nav link
+  "Prognose" beside "System"): edit `rate_override_ore_per_kwh` (empty clears
+  it), `buffer_months`, `notify_cooldown_days`, `lookback_settlements` via
+  `PUT /api/forecast/settings`; a "Kjør lavsaldo-varsling nå" button hitting
+  `POST /api/notifications/low-balance-scan` and rendering the
+  scanned/below/queued/suppressed counts; a member overview table from
+  `GET /api/forecast/members` (names joined from `GET /api/members`) with a
+  severity badge.
+- `api/client.ts` — `getMyForecast`, `getMyConsumption`, `getForecastSettings`,
+  `updateForecastSettings`, `getForecastMembers`, `runLowBalanceScan` plus the
+  `MemberForecast` / `MemberConsumption` / `ForecastSettings` /
+  `ForecastSettingsUpdate` / `LowBalanceScanResult` types. `lib/format.ts` gains
+  `formatOre` (integer øre → `"1 500,00 kr"`).
+- MSW handlers + Vitest for all of the above; `frontend/CLAUDE.md` contract
+  section extended.
+
 ## 2026-08-30 — Forecast section in member report (Release 1C phase P5)
 
 - `render_member_report(result, member, forecast=None)` — the 1B placeholder

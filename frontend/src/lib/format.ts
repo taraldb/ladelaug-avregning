@@ -26,6 +26,18 @@ export function formatNok(value: string): string {
   return `${sign}${grouped},${frac}${NBSP}kr`;
 }
 
+/**
+ * Format an integer amount of øre as Norwegian kroner, e.g. `150000` -> `"1 500,00 kr"`.
+ * Some endpoints (forecast) hand back canonical integer øre rather than a Decimal
+ * string; convert losslessly and hand off to `formatNok`.
+ */
+export function formatOre(ore: number): string {
+  const negative = ore < 0;
+  const abs = Math.abs(Math.trunc(ore));
+  const decimal = `${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+  return formatNok(negative ? `-${decimal}` : decimal);
+}
+
 /** Format a `YYYY-MM-DD` (or ISO datetime) as `DD.MM.YYYY` in nb-NO order. */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "–";

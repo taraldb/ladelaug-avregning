@@ -796,6 +796,92 @@ export function getMySettlements(): Promise<{ settlements: MySettlement[] }> {
   return get<{ settlements: MySettlement[] }>("/api/me/settlements");
 }
 
+// --- forecasting + low-balance (Epic 8, US-801..805) ---------
+
+/**
+ * Per-member forecast read-model. Mirrors `MemberForecastOut` on the backend:
+ * a flat object that is always fully populated. When `available` is `false`
+ * the numeric fields are zeroed and `reason` explains why
+ * (`"insufficient_history"` | `"no_grid_kwh"`); all money fields are canonical
+ * integer øre, `forecast_kwh` / `rate_ore_per_kwh` are Decimal strings.
+ */
+export interface MemberForecast {
+  member_id: number;
+  available: boolean;
+  forecast_kwh: string;
+  rate_ore_per_kwh: string;
+  rate_source: "derived" | "override" | null;
+  equal_share_ore: number;
+  forecast_monthly_cost_ore: number;
+  recommended_minimum_ore: number;
+  balance_ore: number;
+  recommended_topup_ore: number;
+  low_balance: boolean;
+  severity: "low" | "critical" | null;
+  reason: string | null;
+}
+
+export interface MemberConsumption {
+  member_id: number;
+  month: string;
+  consumption_kwh: string;
+  session_count: number;
+}
+
+export interface ForecastSettings {
+  rate_override_ore_per_kwh: number | null;
+  buffer_months: number;
+  notify_cooldown_days: number;
+  lookback_settlements: number;
+  updated_at: string | null;
+  updated_by_user_id: number | null;
+}
+
+/**
+ * Partial update of the forecast-settings singleton. Only present keys are
+ * applied; an explicit `rate_override_ore_per_kwh: null` clears the override.
+ */
+export type ForecastSettingsUpdate = Partial<{
+  rate_override_ore_per_kwh: number | null;
+  buffer_months: number;
+  notify_cooldown_days: number;
+  lookback_settlements: number;
+}>;
+
+export interface LowBalanceScanResult {
+  scanned: number;
+  below: number;
+  queued: number;
+  suppressed: number;
+}
+
+export function getMyForecast(): Promise<MemberForecast> {
+  return get<MemberForecast>("/api/me/forecast");
+}
+
+export function getMyConsumption(month?: string): Promise<MemberConsumption> {
+  const qs = month ? `?month=${encodeURIComponent(month)}` : "";
+  return get<MemberConsumption>(`/api/me/consumption${qs}`);
+}
+
+export function getForecastSettings(): Promise<ForecastSettings> {
+  return get<ForecastSettings>("/api/forecast/settings");
+}
+
+export function updateForecastSettings(
+  body: ForecastSettingsUpdate,
+): Promise<ForecastSettings> {
+  return put<ForecastSettings>("/api/forecast/settings", body);
+}
+
+export function getForecastMembers(): Promise<{ members: MemberForecast[] }> {
+  return get<{ members: MemberForecast[] }>("/api/forecast/members");
+}
+
+export function runLowBalanceScan(): Promise<LowBalanceScanResult> {
+  return post<LowBalanceScanResult>("/api/notifications/low-balance-scan");
+}
+
 // --- passwordless / reset (US-102 / US-103) -----------------
 
 export function requestMagicLink(email: string): Promise<{ ok: boolean }> {
