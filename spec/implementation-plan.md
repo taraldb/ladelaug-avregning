@@ -9,9 +9,14 @@ work that starts in 1B.
 
 ## Status — 2026-08-30
 
-**Release 1A is COMPLETE.** Identity, member administration, the financial ledger,
-audit, member self-service, and a bundled React SPA are all implemented, tested,
-and verified end-to-end.
+**Release 1A is COMPLETE** (`0.1.0`). Identity, member administration, the
+financial ledger, audit, member self-service, and a bundled React SPA.
+
+**Release 1B is COMPLETE** (`0.2.0`) — charger management, Zaptec sync, the
+settlement engine, HTML reports, the email queue, passwordless sign-in /
+password reset, and system health. Work breakdown and decisions:
+[`release-1b-plan.md`](./release-1b-plan.md). Migrations `0002`–`0006`;
+233 pytest tests + 24 Vitest tests green.
 
 | Phase | Scope | State | Commit |
 |---|---|---|---|

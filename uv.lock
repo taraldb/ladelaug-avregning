@@ -337,9 +337,10 @@ wheels = [
 
 [[package]]
 name = "ladelaug-avregning"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "argon2-cffi" },
     { name = "croniter" },
     { name = "fastapi" },
@@ -363,6 +364,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.0" },
     { name = "argon2-cffi", specifier = ">=23.1" },
     { name = "croniter", specifier = ">=2.0" },
     { name = "fastapi", specifier = ">=0.115" },

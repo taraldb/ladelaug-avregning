@@ -2,6 +2,57 @@
 
 Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
+## 2026-08-30 — Release 1B (`0.2.0`)
+
+Zaptec integration, the monthly settlement engine, and everything they need.
+
+- **Charger management (Epic 3)** — charger records (hand-entered or mirrored
+  from Zaptec), effective-dated charger→member assignments (one open per
+  charger; a member may hold several at once), non-overlapping history.
+- **Zaptec integration (Epic 4)** — `ZaptecClient` (OAuth2 password grant,
+  token refresh, retry/backoff); `POST /api/zaptec/sync/chargers` and
+  `/sync/sessions`; archived charging sessions + 15-minute interval import,
+  idempotent, member resolved from the assignment on each part's start date;
+  **cross-month sessions split** (interval data first, pro-rata by duration
+  otherwise); **unassigned consumption blocks settlement** until resolved;
+  `sync_runs` bookkeeping and `GET /api/zaptec/status`. Config-gated
+  (`zaptec.enabled`); `scripts/probe_zaptec.py` for verifying the wire format.
+- **Settlement engine (Epic 6)** — one settlement per calendar month,
+  draft → freeze → preview → post. Freeze snapshots participation (as of the
+  last day of the month), per-member consumption, and balance-before. Invoice
+  lines are `equal` (across participants) or `consumption` (across kWh share;
+  excluded members still pay consumption). `money.allocate_by_weights` is
+  total-preserving — the residual øre land on the largest weight. Preview
+  surfaces warnings (negative balances, missing invoice kWh / attachment,
+  zero consumption, late sessions, kWh mismatch). Post writes one immutable
+  `settlement_charge` ledger row per member (carrying `settlement_id`) and is
+  idempotent. Invoice PDF attachment required before posting.
+- **Reports (Epic 9, HTML)** — a self-contained HTML report per member plus a
+  summary, saved under `state/reports/<month>/` at post time and served at
+  `/api/settlement/{id}/reports/*` and `/api/me/settlements`. PDF rendering is
+  a later follow-up.
+- **Email (Epic 10)** — queued outgoing mail with retry/backoff and a
+  terminal `failed` state; `console` / `file` / `smtp` backends;
+  `POST /api/notifications/process` drains the queue (wire to cron). Posting a
+  settlement enqueues a report email per member with a linked account.
+- **Passwordless sign-in & password reset (US-102 / US-103)** — single-use
+  expiring links; request endpoints never reveal whether an account exists;
+  a reset revokes all of the user's sessions.
+- **System health (US-1104)** — `GET /api/system/health`: Zaptec last-sync
+  state, email queue stats, failed-job count, schema + app version.
+- **Web UI** — admin screens for chargers, the settlement workflow, and
+  system health; member settlement history; magic-link / reset on the login
+  page.
+
+Schema: migrations `0002`–`0006`; `0005` rebuilds `ledger_transactions` to
+widen `txn_type` and add `settlement_id` (append-only triggers preserved).
+New runtime dirs under `state/`: `attachments/`, `reports/`, `mail/`.
+
+Deferred to 1C: forecasting, low-balance warnings, PDF reports. To 1D:
+corrections, refunds, member departure, charging-access workflows.
+
+The per-phase entries below record how it was built.
+
 ## 2026-08-30 — Release 1A
 
 First release: the foundation the settlement engine (1B) will build on.

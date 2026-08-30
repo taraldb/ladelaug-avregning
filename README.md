@@ -7,30 +7,39 @@ metered kWh. The portal keeps an **append-only financial ledger** and an
 **append-only audit log**, and (from Release 1B) imports consumption from Zaptec,
 runs the settlement, and produces per-member reports.
 
-## Status — Release 1A
+## Status — Release 1B (`0.2.0`)
 
-Release 1A is the foundation: identity, members, the ledger, and audit.
+Release 1A was the foundation (identity, members, the append-only ledger,
+audit). Release 1B adds the machinery that turns a monthly electricity invoice
+into per-member charges.
 
-- **Identity & access** — email + password sign-in, server-side sessions
-  (opaque cookie, argon2id, sliding expiry, instant revocation), login rate
-  limiting, and role-based access (admin vs. member). Members only ever see
-  their own data.
-- **Member administration** — member records; effective-dated active/inactive
-  status with full history; settlement-participation decisions (who is in the
-  equal-cost split; excluded members still get consumption costs).
-- **Financial ledger** — record payments, reverse a mistaken payment
-  (equal-and-opposite row, once), manual credit/debit adjustments (reason
-  required). Balance is always the sum of the append-only rows, never stored.
-  Money is integer øre canonical with an exact companion decimal string.
-- **Audit** — every mutation writes one audit event in the same transaction;
-  admins get a filtered, paginated audit view.
-- **Web UI** — a bundled React SPA served by the app: admin screens for members,
-  status, participation, the ledger, and the audit log; a member "My account"
-  view.
+- **Chargers** — records (hand-entered or mirrored from Zaptec) and
+  effective-dated charger→member assignments (one open per charger; a member
+  may hold several at once).
+- **Zaptec integration** — import chargers, archived charging sessions, and
+  15-minute interval data; idempotent; sessions that cross a month boundary are
+  split (interval data first, pro-rata by duration otherwise). Consumption on a
+  charger with no assignment is *unassigned* and blocks the settlement until
+  resolved. Config-gated by `zaptec.enabled`.
+- **Settlement engine** — one settlement per calendar month:
+  `draft → freeze → preview → post`. Freeze snapshots participation,
+  consumption, and balance-before. Invoice lines are split *equally* (across
+  participants) or *by consumption* (by kWh share); rounding is deterministic
+  and total-preserving. Preview shows warnings (negative balances, missing
+  invoice kWh / attachment, zero consumption, late sessions). Post writes one
+  immutable `settlement_charge` ledger row per member and is idempotent. An
+  invoice PDF must be attached before posting.
+- **Reports** — a self-contained HTML report per member plus a summary, saved
+  under `state/reports/<month>/` and served to admins and to the member.
+- **Email** — a queued sender with retry/backoff (`console` / `file` / `smtp`
+  backends). Posting a settlement queues a report email per member.
+- **Passwordless sign-in & password reset** — single-use expiring links; the
+  request endpoints never disclose whether an account exists.
+- **System health** — `GET /api/system/health`: Zaptec sync state, email queue
+  stats, failed jobs, versions.
 
-**Not in 1A** (planned): Zaptec sync and the settlement engine (1B), the member
-forecasting portal and low-balance warnings (1C), corrections / refunds / member
-departure / charging-access workflows (1D).
+**Not in 1B** (planned): forecasting / low-balance warnings and PDF reports
+(1C); corrections / refunds / member departure / charging-access workflows (1D).
 
 ## Stack
 
@@ -108,6 +117,33 @@ supplied via the `LADELAUG_SECRET_KEY` environment variable (or a `.env` file) �
 | `auth.login_max_attempts` / `auth.login_window_seconds` | `5` / `900` | rate limit per (email, IP) |
 | `auth.argon2_time_cost` / `argon2_memory_cost_kib` / `argon2_parallelism` | `3` / `65536` / `2` | tune down for a low-power host |
 | `bootstrap_admin.email` / `bootstrap_admin.password` | — | optional first-run admin |
+| `zaptec.enabled` | `false` | gate for all Zaptec sync endpoints (503 while off) |
+| `zaptec.username` | — | Zaptec login; password via `ZAPTEC_PASSWORD` env |
+| `zaptec.installation_id` | — | optional; blank syncs every visible installation |
+| `zaptec.page_size` / `zaptec.max_retries` | `500` / `3` | |
+| `email.backend` | `console` | `console` (log) / `file` (`state/mail/*.eml`) / `smtp` |
+| `email.from_address` / `email.base_url` | — | sender + public origin for links in emails |
+| `email.smtp_host` / `smtp_port` / `smtp_username` / `smtp_password` / `smtp_starttls` | — | used when `backend: smtp` |
+| `email.magic_link_ttl_minutes` / `password_reset_ttl_minutes` | `30` / `60` | |
+
+### Zaptec + settlement workflow
+
+1. Set `zaptec.*` and `export ZAPTEC_PASSWORD=…` (or put it in `.env`). Verify
+   the API shape first with `uv run python scripts/probe_zaptec.py` (throwaway).
+2. `POST /api/zaptec/sync/chargers`, then assign each charger to a member
+   (Ladere screen).
+3. `POST /api/zaptec/sync/sessions?month=YYYY-MM` to import that month's
+   charging. Resolve any unassigned consumption, then re-import or
+   `POST /api/charging/reresolve?month=YYYY-MM`.
+4. Create a settlement draft for the month, add invoice lines (equal /
+   consumption), set the invoiced kWh, upload the invoice PDF.
+5. **Freeze** (snapshots participation + usage), **Preview** (check the
+   warnings and per-member impact), then **Post**. Posting is irreversible and
+   writes the ledger charges + HTML reports and queues the report emails.
+6. Drain the email queue: `POST /api/notifications/process` — run it from cron,
+   e.g. `*/10 * * * * curl -fsS -X POST -H 'X-Requested-With: fetch' --cookie …`
+   or a small authenticated script. A monthly session sync can be scheduled the
+   same way.
 
 ## Deploy (Docker)
 
@@ -124,7 +160,9 @@ docker run -d --name ladelaug-avregning \
 ```
 
 Put `config.yaml` in the mounted `config/` volume. `state/` holds the SQLite DB
-(and its `-wal` / `-shm` sidecars).
+(and its `-wal` / `-shm` sidecars), plus `attachments/` (invoice PDFs),
+`reports/` (generated settlement HTML), and `mail/` (`.eml` files when
+`email.backend: file`). One `state/` volume covers all of it.
 
 **Behind a reverse proxy** (nginx / SWAG / Traefik / Caddy): the app runs uvicorn
 with `proxy_headers=True` and `forwarded_allow_ips="*"`, so it honours

@@ -11,6 +11,26 @@ reports ship as self-contained **HTML** now, PDF is a follow-up.
 
 Target version: **`0.2.0`** (`VERSION` + `pyproject.toml` in lockstep).
 
+## Status — COMPLETE (2026-08-30)
+
+All of P1–P11 shipped. Deviations from this plan as written:
+
+- **Migrations renumbered** one concern per file: `0002` chargers,
+  `0003` zaptec_installations + sync_runs, `0004` charging_sessions +
+  charging_intervals, `0005` settlements (+ ledger rebuild + late_session_flags),
+  `0006` email_messages + auth_tokens.
+- **P5 + P6 landed as one commit** (`feat(settlement): …`) — freeze / compute /
+  post are one cohesive module; splitting the tests across two commits was not
+  worth the churn.
+- **Late-session detection (US-406)** table (`late_session_flags`) and the
+  `_unresolved_late` warning path exist; the automatic *detector* that compares
+  re-imported sessions against a posted snapshot is a thin follow-up (the
+  correction workflow it feeds is 1D).
+- **`scripts/probe_zaptec.py` not yet run against the real installation** —
+  `.env` carries `ZAPTEC_PASSWORD` + `ZAPTEC_INSTALLATION_ID` but not
+  `ZAPTEC_USERNAME`. The adapter + its respx contract tests are written to the
+  documented API shapes; fill § Probe findings once the probe runs.
+
 ---
 
 ## Decisions locked for 1B
