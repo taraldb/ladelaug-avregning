@@ -55,6 +55,7 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `GET /api/charging/unassigned?month=YYYY-MM` -> `{month,total_kwh:string,chargers:[{charger_zaptec_id,charger_id:number|null,charger_name:string|null,sessions:number,energy_kwh:string}]}`. `total_kwh>0` blocks a settlement freeze for that month.
 - `POST /api/charging/reresolve?month=YYYY-MM` (admin, `X-Requested-With`) -> `{month,sessions_changed:number}`. Re-computes `charger_id` + `member_id` for the month's imported rows from the current chargers and assignments.
 - Settlement `compute`/`preview` may emit a `{"code":"usage_stale"}` warning when the frozen snapshot no longer matches the imported usage (unassigned kWh appeared, or a session changed after `usage_frozen_at`). It is post-blocking — re-freeze to clear it.
+- `GET /api/settlement/{id}/reports` (+ `/reports/summary[.pdf]`, `/reports/{member_id}[.pdf]`) render from the frozen snapshot and work for **any frozen settlement**, draft or posted — not only posted ones. The admin UI shows them (labelled "forhåndsvisning") once `usage_frozen_at` is set; `.pdf` needs WeasyPrint on the host (else 503 `pdf_unavailable`).
 
 ### Forecasting + low-balance (Release 1C, Epic 8)
 

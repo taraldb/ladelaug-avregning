@@ -231,6 +231,15 @@ def test_report_routes_over_http(admin_client, make_member):
     assert member_html.status_code == 200 and "Avregning 2026-07" in member_html.text
     assert admin_client.get(f"/api/settlement/{sid}/reports/9999").status_code == 422
 
+    # the settlement is frozen but NOT posted — the PDF routes must still render
+    # (200) rather than gate on posted; 503 only if WeasyPrint is unavailable.
+    assert admin_client.get(f"/api/settlement/{sid}").json()["settlement"]["status"] == "draft"
+    for url in (
+        f"/api/settlement/{sid}/reports/summary.pdf",
+        f"/api/settlement/{sid}/reports/{m1}.pdf",
+    ):
+        assert admin_client.get(url).status_code in (200, 503)
+
 
 def test_me_settlements_scoped_and_empty_by_default(member_client):
     assert member_client.get("/api/me/settlements").json() == {"settlements": []}

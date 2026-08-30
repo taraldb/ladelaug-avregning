@@ -39,7 +39,7 @@ export default function SettlementDetail() {
   const [preview, setPreview] = useState<SettlementPreview | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const reports = useSWR(
-    data?.settlement.status === "posted" ? `${key}/reports` : null,
+    data?.settlement.usage_frozen_at ? `${key}/reports` : null,
     () => settlementReports(sid),
   );
 
@@ -126,7 +126,11 @@ export default function SettlementDetail() {
         {isDraft && (
           <button
             type="button"
-            onClick={() => void act(() => freezeSettlement(sid), "Forbruk fryst.")}
+            onClick={() =>
+              void act(() => freezeSettlement(sid), "Forbruk fryst.").then(() =>
+                reports.mutate(),
+              )
+            }
             className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
           >
             {s.usage_frozen_at ? "Frys på nytt" : "Frys forbruk"}
@@ -166,24 +170,63 @@ export default function SettlementDetail() {
 
       {preview && <PreviewPanel preview={preview} />}
 
-      {s.status === "posted" && reports.data && (
+      {s.usage_frozen_at && reports.data && (
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold text-slate-200">Rapporter</h2>
+          <h2 className="text-sm font-semibold text-slate-200">
+            {isDraft ? "Rapporter (forhåndsvisning)" : "Rapporter"}
+          </h2>
+          {isDraft && (
+            <p className="text-xs text-slate-500">
+              Bygget fra det fryste øyeblikksbildet. Endres hvis du fryser på nytt, og
+              lagres endelig først ved bokføring.
+            </p>
+          )}
           <ul className="space-y-1 text-sm">
-            <li>
-              <a className="text-emerald-400 hover:underline" href={reports.data.summary_url} target="_blank" rel="noreferrer">
+            <li className="flex items-center gap-3">
+              <a
+                className="text-emerald-400 hover:underline"
+                href={reports.data.summary_url}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Sammendrag
+              </a>
+              <a
+                className="text-slate-400 hover:underline"
+                href={`${reports.data.summary_url}.pdf`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                PDF
               </a>
             </li>
             {reports.data.members.map((m) => (
-              <li key={m.member_id}>
-                <a className="text-emerald-400 hover:underline" href={m.url} target="_blank" rel="noreferrer">
+              <li key={m.member_id} className="flex items-center gap-3">
+                <a
+                  className="text-emerald-400 hover:underline"
+                  href={m.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   {m.full_name} — {formatNok(m.charge_nok)}
+                </a>
+                <a
+                  className="text-slate-400 hover:underline"
+                  href={`${m.url}.pdf`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  PDF
                 </a>
               </li>
             ))}
           </ul>
         </div>
+      )}
+      {s.usage_frozen_at && reports.error && (
+        <p className="text-xs text-slate-500">
+          Rapportforhåndsvisning utilgjengelig: {(reports.error as ApiError).message}
+        </p>
       )}
     </section>
   );

@@ -36,6 +36,10 @@ runbook for cleaning up existing data.
   post-blocking `usage_stale` warning when the frozen snapshot no longer
   matches the imported usage (unassigned kWh appeared, or a session changed
   after `usage_frozen_at`); the "Frys på nytt" button is the remedy.
+- **Report preview before posting** — the admin settlement page now shows the
+  HTML/PDF report links (labelled "forhåndsvisning") as soon as a settlement is
+  frozen, not only after it is posted. The `/reports*` endpoints already
+  rendered from the frozen snapshot; only the UI gate changed.
 
 ## 2026-08-30 — Release 1C (`0.3.0`)
 

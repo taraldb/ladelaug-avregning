@@ -31,6 +31,13 @@ describe("Settlement flow (admin)", () => {
     expect(await screen.findByText(/Lastet opp: faktura.pdf/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Frys forbruk" }));
+
+    // report preview is available before posting, from the frozen snapshot
+    expect(
+      await screen.findByRole("heading", { name: "Rapporter (forhåndsvisning)" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "PDF" }).length).toBeGreaterThan(0);
+
     await user.click(await screen.findByRole("button", { name: "Forhåndsvis" }));
 
     const previewHeading = await screen.findByRole("heading", { name: "Forhåndsvisning" });
@@ -39,6 +46,8 @@ describe("Settlement flow (admin)", () => {
 
     await user.click(screen.getByRole("button", { name: "Bokfør" }));
     expect(await screen.findByText(/Bokført\./)).toBeInTheDocument();
-    expect(await screen.findByText("Rapporter")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Rapporter" }),
+    ).toBeInTheDocument();
   });
 });
