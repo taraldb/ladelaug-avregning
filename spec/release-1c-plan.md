@@ -25,7 +25,7 @@ follow-up `docs:` commit because a commit cannot contain its own hash.
 | **P4** | PDF settlement reports (WeasyPrint) | ☑ done | `5010850` |
 | **P5** | Forecast section in the member HTML report | ☑ done | `24a1156` |
 | **P6** | Web UI — member portal dashboard + forecast admin | ☑ done | `d2690ab` |
-| **P7** | Docs / version bump `0.3.0` | ☑ done | `e25309a` |
+| **P7** | Docs / version bump `0.3.0` | ☑ done | `b0b1071` |
 
 ### Deviations from this plan as written
 
