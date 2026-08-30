@@ -150,6 +150,28 @@ export function seedLedgerTxn(
   return txn;
 }
 
+export function seedCharger(
+  overrides: Partial<Mock1bState["chargers"][number]> = {},
+): Mock1bState["chargers"][number] {
+  const id = overrides.id ?? nextId();
+  const charger = {
+    id,
+    zaptec_id: overrides.zaptec_id ?? null,
+    name: overrides.name ?? `Charger ${id}`,
+    serial_no: overrides.serial_no ?? null,
+    device_type: overrides.device_type ?? null,
+    is_active: overrides.is_active ?? true,
+    last_synced_at: overrides.last_synced_at ?? null,
+    created_at: overrides.created_at ?? "2026-08-01T00:00:00+00:00",
+    updated_at: overrides.updated_at ?? "2026-08-01T00:00:00+00:00",
+    assigned_member_id: overrides.assigned_member_id ?? null,
+    deletable: false,
+    has_usage: overrides.has_usage ?? false,
+  };
+  mock1b.chargers.push(charger);
+  return charger;
+}
+
 export function seedAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
   const id = overrides.id ?? nextId();
   const event: AuditEvent = {
@@ -820,7 +842,12 @@ export const handlers = [
   // --- Release 1B: chargers, zaptec, settlements, system -------------
 
   http.get("/api/chargers", () =>
-    HttpResponse.json({ chargers: mock1b.chargers }),
+    HttpResponse.json({
+      chargers: mock1b.chargers.map((c) => ({
+        ...c,
+        deletable: c.zaptec_id === null && !c.has_usage,
+      })),
+    }),
   ),
   http.post("/api/chargers", async ({ request }) => {
     const body = (await request.json()) as { name: string; serial_no?: string };
@@ -835,9 +862,50 @@ export const handlers = [
       created_at: "2026-08-01T00:00:00+00:00",
       updated_at: "2026-08-01T00:00:00+00:00",
       assigned_member_id: null,
+      deletable: true,
+      has_usage: false,
     };
     mock1b.chargers.push(charger);
     return HttpResponse.json(charger, { status: 201 });
+  }),
+  http.patch("/api/chargers/:id", async ({ params, request }) => {
+    const c = mock1b.chargers.find((x) => x.id === Number(params.id));
+    if (!c)
+      return HttpResponse.json(
+        { detail: { code: "not_found", message: "not found" } },
+        { status: 404 },
+      );
+    const body = (await request.json()) as Partial<{
+      name: string;
+      serial_no: string | null;
+      device_type: string | null;
+      is_active: boolean;
+    }>;
+    Object.assign(c, body);
+    return HttpResponse.json({
+      ...c,
+      deletable: c.zaptec_id === null && !c.has_usage,
+    });
+  }),
+  http.delete("/api/chargers/:id", ({ params }) => {
+    const c = mock1b.chargers.find((x) => x.id === Number(params.id));
+    if (!c)
+      return HttpResponse.json(
+        { detail: { code: "not_found", message: "not found" } },
+        { status: 404 },
+      );
+    if (c.zaptec_id !== null)
+      return HttpResponse.json(
+        { detail: { code: "zaptec_charger", message: "Deaktiver i stedet." } },
+        { status: 422 },
+      );
+    if (c.has_usage)
+      return HttpResponse.json(
+        { detail: { code: "charger_has_usage", message: "Laderen har importert forbruk." } },
+        { status: 422 },
+      );
+    mock1b.chargers = mock1b.chargers.filter((x) => x.id !== c.id);
+    return new HttpResponse(null, { status: 204 });
   }),
   http.post("/api/chargers/:id/assignments", async ({ params, request }) => {
     const body = (await request.json()) as { member_id: number };
@@ -1102,6 +1170,8 @@ interface Mock1bState {
     created_at: string;
     updated_at: string;
     assigned_member_id: number | null;
+    deletable: boolean;
+    has_usage?: boolean;
   }[];
   settlements: {
     id: number;

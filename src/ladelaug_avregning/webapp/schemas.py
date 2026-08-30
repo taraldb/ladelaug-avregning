@@ -398,9 +398,16 @@ class ChargerOut(BaseModel):
     created_at: str
     updated_at: str
     assigned_member_id: int | None = None
+    deletable: bool = False
 
     @classmethod
-    def from_row(cls, row: dict[str, Any], *, assigned_member_id: int | None = None) -> ChargerOut:
+    def from_row(
+        cls,
+        row: dict[str, Any],
+        *,
+        assigned_member_id: int | None = None,
+        deletable: bool = False,
+    ) -> ChargerOut:
         return cls(
             id=row["id"],
             zaptec_id=row["zaptec_id"],
@@ -412,6 +419,7 @@ class ChargerOut(BaseModel):
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             assigned_member_id=assigned_member_id,
+            deletable=deletable,
         )
 
 

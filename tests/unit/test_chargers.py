@@ -142,6 +142,55 @@ async def test_zaptec_assignment_map_and_unassigned(db):
     assert repo.unassigned_charger_ids("2026-02-01") == {c2["id"]}
 
 
+def _seed_session(db, charger_id, *, zaptec_id="z-x"):
+    db.connection.execute(
+        "INSERT INTO charging_sessions "
+        "(zaptec_session_id, charger_id, charger_zaptec_id, period_month, started_at, "
+        " energy_kwh, source, imported_at, updated_at) "
+        "VALUES ('s-1', ?, ?, '2026-08', '2026-08-10T10:00:00+00:00', '5.0', 'zaptec', "
+        "'2026-08-11T00:00:00+00:00', '2026-08-11T00:00:00+00:00')",
+        (charger_id, zaptec_id),
+    )
+    db.connection.commit()
+
+
+async def test_delete_manual_charger_cascades_assignments(db):
+    m1 = await _member(db, "M1")
+    c = await _charger(db, name="Dup")
+    repo = ChargerRepo(db)
+    await repo.assign(c["id"], m1, effective_from="2026-01-01", actor=AuditContext.system())
+
+    await repo.delete(c["id"], actor=AuditContext.system())
+
+    assert repo.get(c["id"]) is None
+    assert repo.assignments(c["id"]) == []
+    event = db.connection.execute(
+        "SELECT * FROM audit_events WHERE event_type = 'charger.deleted'"
+    ).fetchone()
+    assert event["entity_id"] == str(c["id"])
+
+
+async def test_delete_blocked_when_usage_exists(db):
+    c = await _charger(db, name="Used")
+    _seed_session(db, c["id"])
+    with pytest.raises(DomainError) as ei:
+        await ChargerRepo(db).delete(c["id"], actor=AuditContext.system())
+    assert ei.value.code == "charger_has_usage" and ei.value.status == 422
+    assert ChargerRepo(db).get(c["id"]) is not None
+
+
+async def test_delete_zaptec_charger_rejected(db):
+    c = await _charger(db, name="Z", zaptec_id="z-1")
+    with pytest.raises(DomainError) as ei:
+        await ChargerRepo(db).delete(c["id"], actor=AuditContext.system())
+    assert ei.value.code == "zaptec_charger"
+
+
+async def test_delete_unknown_charger_404(db):
+    with pytest.raises(NotFoundError):
+        await ChargerRepo(db).delete(999, actor=AuditContext.system())
+
+
 async def test_assign_unknown_charger_or_member_404(db):
     m1 = await _member(db, "M1")
     c = await _charger(db)
@@ -177,6 +226,22 @@ def test_charger_crud_and_assignment_over_http(admin_client, make_member):
     assert admin_client.get(f"/api/chargers/{cid}").json()["assigned_member_id"] is None
     hist = admin_client.get(f"/api/chargers/{cid}/assignments").json()["assignments"]
     assert len(hist) == 1 and hist[0]["effective_to"] == "2026-06-01"
+
+
+def test_charger_delete_over_http(admin_client):
+    cid = admin_client.post(
+        "/api/chargers", json={"name": "Dup", "serial_no": "ZAP-9"}, headers=FETCH
+    ).json()["id"]
+    listed = admin_client.get("/api/chargers").json()["chargers"]
+    assert next(c for c in listed if c["id"] == cid)["deletable"] is True
+
+    assert admin_client.delete(f"/api/chargers/{cid}").status_code == 403  # needs fetch header
+    assert admin_client.delete(f"/api/chargers/{cid}", headers=FETCH).status_code == 204
+    assert admin_client.get(f"/api/chargers/{cid}").status_code == 404
+
+
+def test_charger_delete_requires_admin(member_client):
+    assert member_client.delete("/api/chargers/1", headers=FETCH).status_code == 403
 
 
 def test_charger_routes_require_admin(member_client):

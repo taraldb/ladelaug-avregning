@@ -1,7 +1,13 @@
 import { screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import AppRouter from "../router";
-import { ADMIN_USER, MEMBER_USER, seedMember, setSession } from "../test/handlers";
+import {
+  ADMIN_USER,
+  MEMBER_USER,
+  seedCharger,
+  seedMember,
+  setSession,
+} from "../test/handlers";
 import { renderApp } from "../test/utils";
 
 describe("Chargers (admin)", () => {
@@ -16,6 +22,49 @@ describe("Chargers (admin)", () => {
 
     expect(await screen.findByText("Garasje 1")).toBeInTheDocument();
     expect(screen.getByText("ZAP-001")).toBeInTheDocument();
+  });
+
+  it("edits a charger row", async () => {
+    setSession(ADMIN_USER);
+    seedCharger({ name: "Gammelt navn", serial_no: "S-1" });
+    const { user } = renderApp(<AppRouter />, { route: "/chargers" });
+
+    await user.click(await screen.findByRole("button", { name: "Rediger" }));
+    const nameField = screen.getByLabelText(/^Navn$/);
+    await user.clear(nameField);
+    await user.type(nameField, "Nytt navn");
+    await user.click(screen.getByRole("button", { name: "Lagre" }));
+
+    expect(await screen.findByText("Nytt navn")).toBeInTheDocument();
+    expect(screen.queryByText("Gammelt navn")).not.toBeInTheDocument();
+  });
+
+  it("deletes a manual charger", async () => {
+    setSession(ADMIN_USER);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    seedCharger({ name: "Duplikat" });
+    const { user } = renderApp(<AppRouter />, { route: "/chargers" });
+
+    await user.click(await screen.findByRole("button", { name: "Slett" }));
+    expect(await screen.findByText("Ingen ladere ennå")).toBeInTheDocument();
+  });
+
+  it("shows no Slett button for a Zaptec charger", async () => {
+    setSession(ADMIN_USER);
+    seedCharger({ name: "Zap", zaptec_id: "z-1" });
+    renderApp(<AppRouter />, { route: "/chargers" });
+
+    expect(await screen.findByText("Zap")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Slett" })).not.toBeInTheDocument();
+  });
+
+  it("shows no Slett button when the charger has usage", async () => {
+    setSession(ADMIN_USER);
+    seedCharger({ name: "Brukt", has_usage: true });
+    renderApp(<AppRouter />, { route: "/chargers" });
+
+    expect(await screen.findByText("Brukt")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Slett" })).not.toBeInTheDocument();
   });
 
   it("is not reachable for a member session", async () => {

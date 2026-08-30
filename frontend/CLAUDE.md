@@ -41,6 +41,14 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `GET /api/me` -> Member. `GET /api/me/balance` -> Balance. `GET /api/me/ledger?limit=&offset=` -> ledger page. `GET /api/me/status` -> `{status,participates,history:[StatusPeriod]}`.
 - `GET /api/me/settlements` -> `{settlements:[MySettlement]}`; each `report_url` is `/api/me/settlements/{id}/report` — the PDF is the same URL with `.pdf` appended.
 
+### Chargers (Release 1B, Epic 3 — admin)
+
+- `GET /api/chargers` -> `{chargers:[Charger]}`. `Charger.deletable` is `true` only for a hand-entered charger (`zaptec_id === null`) with no imported usage.
+- `POST /api/chargers` (201) `{name,serial_no?,zaptec_id?,device_type?}` -> `Charger`.
+- `PATCH /api/chargers/{id}` (admin, `X-Requested-With`) partial `{name?,serial_no?,device_type?,is_active?}` -> `Charger`; 422 `no_changes` | `name_required`; `zaptec_id` is not patchable.
+- `DELETE /api/chargers/{id}` (admin, `X-Requested-With`) -> 204. 422 `zaptec_charger` (mirrored from Zaptec — deactivate instead) | `charger_has_usage`; 404 `not_found`. Cascade-removes the charger's assignment history.
+- `Charger = {id,zaptec_id:string|null,name,serial_no:string|null,device_type:string|null,is_active:boolean,last_synced_at:string|null,created_at,updated_at,assigned_member_id:number|null,deletable:boolean}`
+
 ### Forecasting + low-balance (Release 1C, Epic 8)
 
 - `GET /api/me/forecast` -> `MemberForecast` (member session). Always a flat, fully-populated object; when `available=false` the numeric fields are `0` and `reason ∈ "insufficient_history" | "no_grid_kwh"`.

@@ -142,6 +142,69 @@ class ChargerRepo:
                 )
         return self._require(charger_id)
 
+    def has_usage(self, charger_id: int) -> bool:
+        """True if any imported charging row points at this charger."""
+        return charger_id in self.charger_ids_with_usage()
+
+    def charger_ids_with_usage(self) -> set[int]:
+        """charger ids referenced by any imported session or interval row."""
+        rows = self._db.connection.execute(
+            "SELECT charger_id FROM charging_sessions WHERE charger_id IS NOT NULL "
+            "UNION SELECT charger_id FROM charging_intervals WHERE charger_id IS NOT NULL"
+        ).fetchall()
+        return {int(r["charger_id"]) for r in rows}
+
+    async def delete(self, charger_id: int, *, actor: AuditContext) -> None:
+        """Hard-delete a hand-entered charger and its assignment history.
+
+        Refused for Zaptec-mirrored chargers (deactivate instead — sync would
+        re-create them) and for any charger that already has imported usage.
+        """
+        async with self._db._write() as cur:
+            row = cur.execute("SELECT * FROM chargers WHERE id = ?", (charger_id,)).fetchone()
+            if row is None:
+                raise NotFoundError(f"charger {charger_id} not found")
+            if row["zaptec_id"] is not None:
+                raise DomainError(
+                    "zaptec_charger",
+                    "Deaktiver i stedet – laderen speiles fra Zaptec og kommer "
+                    "tilbake ved neste synk.",
+                )
+            usage = cur.execute(
+                "SELECT "
+                " (SELECT 1 FROM charging_sessions WHERE charger_id = ? LIMIT 1) "
+                " OR (SELECT 1 FROM charging_intervals WHERE charger_id = ? LIMIT 1)",
+                (charger_id, charger_id),
+            ).fetchone()
+            if usage[0]:
+                raise DomainError(
+                    "charger_has_usage",
+                    "Laderen har importert forbruk og kan ikke slettes.",
+                    status=422,
+                )
+            removed = [
+                {"id": int(a["id"]), "member_id": int(a["member_id"])}
+                for a in cur.execute(
+                    "SELECT id, member_id FROM charger_assignments WHERE charger_id = ?",
+                    (charger_id,),
+                ).fetchall()
+            ]
+            cur.execute("DELETE FROM charger_assignments WHERE charger_id = ?", (charger_id,))
+            cur.execute("DELETE FROM chargers WHERE id = ?", (charger_id,))
+            write_audit_row(
+                cur,
+                actor,
+                event_type="charger.deleted",
+                entity_type="charger",
+                entity_id=charger_id,
+                summary=f"Charger {row['name']!r} deleted",
+                detail={
+                    "name": row["name"],
+                    "serial_no": row["serial_no"],
+                    "removed_assignments": removed,
+                },
+            )
+
     async def upsert_from_zaptec(
         self,
         *,
@@ -168,6 +231,22 @@ class ChargerRepo:
                 "SELECT * FROM chargers WHERE zaptec_id = ?", (zaptec_id,)
             ).fetchone()
             if existing is None:
+                adopted = self._adopt_manual_charger(
+                    cur,
+                    zaptec_id=zaptec_id,
+                    name=name,
+                    serial_no=serial_no,
+                    device_id=device_id,
+                    installation_zaptec_id=installation_zaptec_id,
+                    circuit_zaptec_id=circuit_zaptec_id,
+                    device_type=device_type,
+                    is_active=is_active,
+                    payload=payload,
+                    now=now,
+                    actor=actor,
+                )
+                if adopted is not None:
+                    return self._require(adopted), False
                 cur.execute(
                     "INSERT INTO chargers "
                     "(zaptec_id, name, serial_no, installation_zaptec_id, circuit_zaptec_id, "
@@ -400,6 +479,70 @@ class ChargerRepo:
         return {c["id"] for c in self.list() if c["is_active"] and c["id"] not in assigned}
 
     # --- internals ---------------------------------------------------------
+
+    def _adopt_manual_charger(
+        self,
+        cur: sqlite3.Cursor,
+        *,
+        zaptec_id: str,
+        name: str,
+        serial_no: str | None,
+        device_id: str | None,
+        installation_zaptec_id: str | None,
+        circuit_zaptec_id: str | None,
+        device_type: str | None,
+        is_active: bool,
+        payload: str,
+        now: str,
+        actor: AuditContext,
+    ) -> int | None:
+        """If exactly one hand-entered charger's serial matches this Zaptec unit,
+        attach the Zaptec id to it instead of inserting a duplicate. Returns the
+        adopted charger id, or ``None`` to fall through to a plain INSERT."""
+        key = (device_id or serial_no or "").strip().lower()
+        if not key:
+            return None
+        candidates = cur.execute(
+            "SELECT * FROM chargers WHERE zaptec_id IS NULL AND lower(trim(serial_no)) = ?",
+            (key,),
+        ).fetchall()
+        if len(candidates) != 1:
+            return None
+        adopt = dict(candidates[0])
+        charger_id = int(adopt["id"])
+        cur.execute(
+            "UPDATE chargers SET zaptec_id = ?, name = ?, serial_no = ?, "
+            "installation_zaptec_id = ?, circuit_zaptec_id = ?, device_type = ?, "
+            "is_active = ?, last_synced_at = ?, raw_json = ?, updated_at = ? WHERE id = ?",
+            (
+                zaptec_id,
+                name or adopt["name"],
+                serial_no,
+                installation_zaptec_id,
+                circuit_zaptec_id,
+                device_type,
+                1 if is_active else 0,
+                now,
+                payload,
+                now,
+                charger_id,
+            ),
+        )
+        write_audit_row(
+            cur,
+            actor,
+            event_type="charger.adopted",
+            entity_type="charger",
+            entity_id=charger_id,
+            summary=f"Manual charger {adopt['name']!r} adopted by Zaptec {zaptec_id}",
+            detail={
+                "zaptec_id": zaptec_id,
+                "device_id": device_id,
+                "previous_name": adopt["name"],
+                "matched_on": key,
+            },
+        )
+        return charger_id
 
     def _require(self, charger_id: int) -> dict[str, Any]:
         row = self.get(charger_id)

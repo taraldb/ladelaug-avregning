@@ -435,6 +435,7 @@ export interface Charger {
   created_at: string;
   updated_at: string;
   assigned_member_id: number | null;
+  deletable: boolean;
 }
 
 export interface ChargerAssignment {
@@ -458,6 +459,22 @@ export function createCharger(body: {
   device_type?: string;
 }): Promise<Charger> {
   return post<Charger>("/api/chargers", body);
+}
+
+export function updateCharger(
+  chargerId: number,
+  body: {
+    name?: string;
+    serial_no?: string | null;
+    device_type?: string | null;
+    is_active?: boolean;
+  },
+): Promise<Charger> {
+  return patch<Charger>(`/api/chargers/${chargerId}`, body);
+}
+
+export function deleteCharger(chargerId: number): Promise<void> {
+  return del<void>(`/api/chargers/${chargerId}`);
 }
 
 export function assignCharger(

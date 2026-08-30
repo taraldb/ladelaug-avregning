@@ -98,6 +98,54 @@ async def test_sync_passes_device_id_through(db, config):
     assert json.loads(event["detail_json"])["device_id"] == "ZPR253707"
 
 
+async def test_sync_adopts_manual_charger_by_serial(db, config):
+    cfg = _enabled_config(config)
+    repo = ChargerRepo(db)
+    manual = await repo.create(name="146B", serial_no="ZPR333972", actor=AuditContext.system())
+    member = db.connection.execute(
+        "INSERT INTO members (member_reference, full_name, join_date, created_at, updated_at) "
+        "VALUES ('M1', 'M1', '2026-01-01', '2026-01-01T00:00:00+00:00', "
+        "'2026-01-01T00:00:00+00:00') RETURNING id"
+    ).fetchone()["id"]
+    db.connection.commit()
+    await repo.assign(
+        manual["id"], member, effective_from="2026-08-01", actor=AuditContext.system()
+    )
+
+    fake = FakeClient(
+        [{"Id": "inst-1", "Name": "S"}],
+        [_charger("z-1", "146B", serial_no="ZPR333972", device_id="ZPR333972")],
+    )
+    result = await ZaptecSync(db, cfg, client=fake).sync_chargers(actor=AuditContext.system())
+
+    assert result["chargers_created"] == 0 and result["chargers_updated"] == 1
+    rows = ChargerRepo(db).list()
+    assert len(rows) == 1
+    adopted = rows[0]
+    assert adopted["id"] == manual["id"] and adopted["zaptec_id"] == "z-1"
+    assert adopted["name"] == "146B"
+    assert ChargerRepo(db).assignment_on(manual["id"], "2026-08-15") == member
+    assert db.connection.execute(
+        "SELECT 1 FROM audit_events WHERE event_type = 'charger.adopted'"
+    ).fetchone()
+
+
+async def test_sync_does_not_adopt_on_ambiguous_serial(db, config):
+    cfg = _enabled_config(config)
+    repo = ChargerRepo(db)
+    await repo.create(name="A", serial_no="ZPR1", actor=AuditContext.system())
+    await repo.create(name="B", serial_no="zpr1", actor=AuditContext.system())
+
+    fake = FakeClient(
+        [{"Id": "inst-1", "Name": "S"}],
+        [_charger("z-1", "C", serial_no="ZPR1", device_id="ZPR1")],
+    )
+    result = await ZaptecSync(db, cfg, client=fake).sync_chargers(actor=AuditContext.system())
+
+    assert result["chargers_created"] == 1
+    assert len(ChargerRepo(db).list()) == 3
+
+
 async def test_sync_records_error_run_and_reraises(db, config):
     cfg = _enabled_config(config)
 

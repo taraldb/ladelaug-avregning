@@ -54,9 +54,15 @@ async def create_charger(
 async def list_chargers(db: Database = Depends(get_db)) -> dict[str, list[ChargerOut]]:
     repo = ChargerRepo(db)
     assigned = repo.assignment_map()
+    with_usage = repo.charger_ids_with_usage()
     return {
         "chargers": [
-            ChargerOut.from_row(c, assigned_member_id=assigned.get(c["id"])) for c in repo.list()
+            ChargerOut.from_row(
+                c,
+                assigned_member_id=assigned.get(c["id"]),
+                deletable=c["zaptec_id"] is None and c["id"] not in with_usage,
+            )
+            for c in repo.list()
         ]
     }
 
@@ -65,7 +71,11 @@ async def list_chargers(db: Database = Depends(get_db)) -> dict[str, list[Charge
 async def get_charger(charger_id: int, db: Database = Depends(get_db)) -> ChargerOut:
     repo = ChargerRepo(db)
     row = _require_charger(repo, charger_id)
-    return ChargerOut.from_row(row, assigned_member_id=repo.assignment_on(charger_id))
+    return ChargerOut.from_row(
+        row,
+        assigned_member_id=repo.assignment_on(charger_id),
+        deletable=row["zaptec_id"] is None and not repo.has_usage(charger_id),
+    )
 
 
 @router.patch("/{charger_id}", dependencies=[Depends(require_fetch)])
@@ -77,7 +87,20 @@ async def update_charger(
 ) -> ChargerOut:
     repo = ChargerRepo(db)
     row = await repo.update(charger_id, actor=actor, **body.model_dump(exclude_unset=True))
-    return ChargerOut.from_row(row, assigned_member_id=repo.assignment_on(charger_id))
+    return ChargerOut.from_row(
+        row,
+        assigned_member_id=repo.assignment_on(charger_id),
+        deletable=row["zaptec_id"] is None and not repo.has_usage(charger_id),
+    )
+
+
+@router.delete("/{charger_id}", status_code=204, dependencies=[Depends(require_fetch)])
+async def delete_charger(
+    charger_id: int,
+    db: Database = Depends(get_db),
+    actor: AuditContext = Depends(get_audit_context),
+) -> None:
+    await ChargerRepo(db).delete(charger_id, actor=actor)
 
 
 @router.post("/{charger_id}/assignments", dependencies=[Depends(require_fetch)])

@@ -1,13 +1,15 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import useSWR from "swr";
 import {
   ApiError,
   assignCharger,
   createCharger,
+  deleteCharger,
   listChargers,
   listMembers,
   syncChargers,
   unassignCharger,
+  updateCharger,
   zaptecStatus,
   type Charger,
 } from "../api/client";
@@ -19,7 +21,24 @@ export default function Chargers() {
   const members = useSWR("/api/members", () => listMembers());
   const zaptec = useSWR("/api/zaptec/status", () => zaptecStatus());
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Charger | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+
+  async function doDelete(c: Charger) {
+    if (
+      !window.confirm(
+        `Slette laderen «${c.name}»? Tildelingshistorikken for laderen fjernes også.`,
+      )
+    )
+      return;
+    setMsg(null);
+    try {
+      await deleteCharger(c.id);
+      await chargers.mutate();
+    } catch (err) {
+      setMsg(err instanceof ApiError ? err.message : "Kunne ikke slette laderen.");
+    }
+  }
 
   const memberName = (id: number | null) =>
     id == null
@@ -51,13 +70,31 @@ export default function Chargers() {
       key: "actions",
       header: "",
       render: (c) => (
-        <AssignCell
-          charger={c}
-          members={members.data?.members ?? []}
-          onChange={async () => {
-            await chargers.mutate();
-          }}
-        />
+        <div className="flex items-center gap-3">
+          <AssignCell
+            charger={c}
+            members={members.data?.members ?? []}
+            onChange={async () => {
+              await chargers.mutate();
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => setEditing(c)}
+            className="text-xs text-slate-300 hover:text-slate-100"
+          >
+            Rediger
+          </button>
+          {c.deletable && (
+            <button
+              type="button"
+              onClick={() => void doDelete(c)}
+              className="text-xs text-rose-400 hover:text-rose-300"
+            >
+              Slett
+            </button>
+          )}
+        </div>
       ),
     },
   ];
@@ -106,6 +143,15 @@ export default function Chargers() {
         onCreated={async () => {
           await chargers.mutate();
           setOpen(false);
+        }}
+      />
+
+      <EditChargerModal
+        charger={editing}
+        onClose={() => setEditing(null)}
+        onSaved={async () => {
+          await chargers.mutate();
+          setEditing(null);
         }}
       />
     </section>
@@ -264,6 +310,125 @@ function NewChargerModal({
             className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100"
           />
         </label>
+        {error && (
+          <p role="alert" className="text-sm text-rose-400">
+            {error}
+          </p>
+        )}
+      </form>
+    </Modal>
+  );
+}
+
+function EditChargerModal({
+  charger,
+  onClose,
+  onSaved,
+}: {
+  charger: Charger | null;
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [serial, setSerial] = useState("");
+  const [deviceType, setDeviceType] = useState("");
+  const [isActive, setIsActive] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!charger) return;
+    setName(charger.name);
+    setSerial(charger.serial_no ?? "");
+    setDeviceType(charger.device_type ?? "");
+    setIsActive(charger.is_active);
+    setError(null);
+  }, [charger]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!charger) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await updateCharger(charger.id, {
+        name: name.trim(),
+        serial_no: serial.trim() || null,
+        device_type: deviceType.trim() || null,
+        is_active: isActive,
+      });
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Kunne ikke lagre laderen.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={charger !== null}
+      title={`Rediger ${charger?.name ?? ""}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+          >
+            Avbryt
+          </button>
+          <button
+            type="submit"
+            form="edit-charger-form"
+            disabled={submitting}
+            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+          >
+            Lagre
+          </button>
+        </>
+      }
+    >
+      <form id="edit-charger-form" className="space-y-3" onSubmit={onSubmit}>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-300">Navn</span>
+          <input
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-300">Serienummer</span>
+          <input
+            value={serial}
+            onChange={(e) => setSerial(e.target.value)}
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-300">Ladertype</span>
+          <input
+            value={deviceType}
+            onChange={(e) => setDeviceType(e.target.value)}
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100"
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+          />
+          Aktiv
+        </label>
+        {charger?.zaptec_id && (
+          <p className="text-xs text-slate-400">
+            Navn og serienummer overskrives ved neste synk fra Zaptec.
+          </p>
+        )}
         {error && (
           <p role="alert" className="text-sm text-rose-400">
             {error}
