@@ -26,10 +26,8 @@ All of P1–P11 shipped. Deviations from this plan as written:
   `_unresolved_late` warning path exist; the automatic *detector* that compares
   re-imported sessions against a posted snapshot is a thin follow-up (the
   correction workflow it feeds is 1D).
-- **`scripts/probe_zaptec.py` not yet run against the real installation** —
-  `.env` carries `ZAPTEC_PASSWORD` + `ZAPTEC_INSTALLATION_ID` but not
-  `ZAPTEC_USERNAME`. The adapter + its respx contract tests are written to the
-  documented API shapes; fill § Probe findings once the probe runs.
+- **Probe run 2026-08-30** against the live installation — adapter confirmed,
+  see § Probe findings. Only change: interval energy is quantised on parse.
 
 ---
 
@@ -57,13 +55,29 @@ All of P1–P11 shipped. Deviations from this plan as written:
 
 ## Probe findings
 
-_Filled in after running `scripts/probe_zaptec.py` against the real installation._
+Ran `scripts/probe_zaptec.py` against the live installation (Åsveien, Sandnes;
+`e3901076-…`) on 2026-08-30. The adapter parsed everything correctly with **no
+structural changes**; one cosmetic tweak (below).
 
-- OAuth token endpoint: _tbd_
-- Installations list: _tbd_
-- Chargers list: _tbd_
-- Archived charging sessions endpoint + pagination: _tbd_
-- 15-minute interval / energy-details shape: _tbd_
+- **`POST /oauth/token`** — password grant, `{"access_token", "expires_in"}`. ✅
+- **`GET /api/installation`** — one installation; `Id`, `Name`, plus ~40 config
+  fields we ignore. ✅
+- **`GET /api/chargers`** — 4 chargers. Fields used: `Id` (GUID), `Name`,
+  `SerialNo`, `DeviceId` (e.g. `ZPR327383`), `InstallationId`, `CircuitId`,
+  `DeviceType` (integer `1` → stored as `"1"`), `Active` (bool). **No `Deleted`
+  field** — `is_active` comes from `Active` alone (handled).
+- **`GET /api/chargehistory?From=&To=&DetailLevel=1&PageIndex=&PageSize=`** — 32
+  sessions for a ~5-week window. Fields used: `Id`, **`ChargerId`** (the
+  charger's Zaptec GUID — matches `/api/chargers[].Id`, so session→charger→
+  assignment resolution works), `DeviceId`, `StartDateTime` / `EndDateTime`
+  (naive → treated as UTC), `Energy` (clean decimal, e.g. `24.422`),
+  `UserId` / `UserFullName` / `UserEmail`.
+- **`EnergyDetails`** — present with `DetailLevel=1`: `[{"Timestamp": "…+00:00",
+  "Energy": <float>}]`, ~15-min cadence (not aligned to the quarter-hour), first
+  and last points `0.0`, ~18 points for a 4-hour session. **Energy values carry
+  binary-float artefacts** (`0.8840000000000146`) — the client now quantises
+  each interval point to 0.0001 kWh on parse. Settlement math is unaffected
+  either way (it reads the session-level `Energy`).
 
 ---
 

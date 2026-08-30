@@ -100,10 +100,12 @@ class ZaptecSession:
 
     @classmethod
     def parse(cls, item: dict[str, Any]) -> ZaptecSession:
+        # EnergyDetails values arrive as JSON floats with binary artefacts
+        # (0.8840000000000146); quantise to Wh so stored interval rows are clean.
         details = [
             ZaptecIntervalPoint(
                 timestamp=_iso_utc(str(p["Timestamp"])),
-                energy_kwh=_dec(p.get("Energy")),
+                energy_kwh=_dec(p.get("Energy")).quantize(_WH),
             )
             for p in (item.get("EnergyDetails") or [])
             if p.get("Timestamp") is not None
@@ -127,6 +129,9 @@ def _str_or_none(v: Any) -> str | None:
         return None
     s = str(v).strip()
     return s or None
+
+
+_WH = Decimal("0.0001")
 
 
 def _dec(v: Any) -> Decimal:
