@@ -19,3 +19,15 @@
 - **Audit.** Every mutation writes exactly one `audit_events` row. Inside a repo that already
   holds `db._write()`, use `audit.write_audit_row(cur, ...)` (lock-free); for a stand-alone
   event use `await audit.record_audit(db, ...)`. `asyncio.Lock` is not reentrant.
+
+- **Forecast (1C).** `ForecastRepo` is a pure read-model — it computes from posted settlements
+  + the ledger and persists nothing except the `forecast_settings` singleton (audited via
+  `update_settings`) and the `low_balance_notifications` history rows. Member-facing:
+  `/api/me/forecast`, `/api/me/consumption`. Admin: `/api/forecast/settings` (GET/PUT),
+  `/api/forecast/members`. Money in `MemberForecastOut` is canonical integer øre; the object
+  is always fully populated (`available: false` → zeros + a `reason`).
+
+- **PDF (1C).** `reports.pdf.PDF_AVAILABLE` is set by a guarded `import weasyprint` (its
+  native libs may be absent). `html_to_pdf` raises `DomainError("pdf_unavailable", status=503)`
+  when unavailable; the `.pdf` report routes let that propagate. Never import `weasyprint` at
+  module top level outside `reports/pdf.py`.

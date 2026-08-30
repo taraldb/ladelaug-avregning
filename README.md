@@ -5,9 +5,37 @@ A web portal for a Norwegian EV-charging co-op ("ladelaug"). Members hold a
 ("avregning") across members — part as an equal share of fixed costs, part by
 metered kWh. The portal keeps an **append-only financial ledger** and an
 **append-only audit log**, and (from Release 1B) imports consumption from Zaptec,
-runs the settlement, and produces per-member reports.
+runs the settlement, and produces per-member reports. Release 1C adds a member
+portal with a consumption forecast, low-balance warning emails, and PDF reports.
 
-## Status — Release 1B (`0.2.0`)
+## Status — Release 1C (`0.3.0`)
+
+Release 1A was the foundation (identity, members, the append-only ledger,
+audit). Release 1B turned a monthly electricity invoice into per-member charges
+(chargers, Zaptec sync, the settlement engine, HTML reports, email). Release 1C
+gives members a forward view and finishes the reporting.
+
+- **Forecasting** — a trailing-mean forecast (last 3 posted settlements, no
+  seasonality) of each member's next-month kWh and cost, a recommended minimum
+  balance (`cost × buffer_months`, default 2), and a recommended top-up.
+  Tunables (`rate_override_ore_per_kwh`, `buffer_months`, `notify_cooldown_days`,
+  `lookback_settlements`) live in a DB row an admin edits at `/forecast` — no
+  redeploy. `GET /api/me/forecast`, `GET /api/forecast/settings|members`.
+- **Current-month consumption** — `GET /api/me/consumption?month=` shows metered
+  kWh + session count for the running month, before any settlement exists.
+- **Low-balance warnings** — `POST /api/notifications/low-balance-scan` (or the
+  `low-balance-scan` CLI) enqueues a warning email for every member below their
+  recommended minimum, with cooldown / balance-drop / `low→critical` escalation
+  suppression so cron can run it hourly. A dashboard banner shows the same.
+- **PDF reports** — WeasyPrint renders the settlement report to PDF:
+  `GET /api/settlement/{id}/reports/{member_id}.pdf`, `.../summary.pdf`,
+  `GET /api/me/settlements/{id}/report.pdf`; `.pdf` siblings are also written
+  under `state/reports/<month>/` at post time. The report's forecast section
+  ("Prognose neste måned", "Anbefalt innbetaling") is now filled in.
+- **System health** — `GET /api/system/health` also reports
+  `low_balance: {warned_total, members_below}`.
+
+<details><summary>Release 1B (<code>0.2.0</code>)</summary>
 
 Release 1A was the foundation (identity, members, the append-only ledger,
 audit). Release 1B adds the machinery that turns a monthly electricity invoice
@@ -38,8 +66,10 @@ into per-member charges.
 - **System health** — `GET /api/system/health`: Zaptec sync state, email queue
   stats, failed jobs, versions.
 
-**Not in 1B** (planned): forecasting / low-balance warnings and PDF reports
-(1C); corrections / refunds / member departure / charging-access workflows (1D).
+</details>
+
+**Not in 1C** (planned): corrections / refunds / member departure /
+charging-access workflows (1D).
 
 ## Stack
 
@@ -86,9 +116,10 @@ cd frontend && npm run check          # tsc --noEmit + eslint + vitest
 ## CLI
 
 ```
-python -m ladelaug_avregning serve          # run the HTTP server (default)
-python -m ladelaug_avregning migrate        # apply DB migrations and exit
+python -m ladelaug_avregning serve            # run the HTTP server (default)
+python -m ladelaug_avregning migrate          # apply DB migrations and exit
 python -m ladelaug_avregning create-admin --email <e> [--password <p>]
+python -m ladelaug_avregning low-balance-scan  # enqueue low-balance warning emails (cron)
 ```
 
 `create-admin` is idempotent-ish: a second run with an existing email exits
@@ -126,6 +157,12 @@ supplied via the `LADELAUG_SECRET_KEY` environment variable (or a `.env` file) �
 | `email.smtp_host` / `smtp_port` / `smtp_username` / `smtp_password` / `smtp_starttls` | — | used when `backend: smtp` |
 | `email.magic_link_ttl_minutes` / `password_reset_ttl_minutes` | `30` / `60` | |
 
+**Forecast tunables are not in `config.yaml`** — `rate_override_ore_per_kwh`
+(blank = derive from history), `buffer_months` (`2.0`), `notify_cooldown_days`
+(`14`), and `lookback_settlements` (`3`) live in the `forecast_settings` DB row
+and are edited by an admin at `/forecast` (or `PUT /api/forecast/settings`), so
+they change without a restart.
+
 ### Zaptec + settlement workflow
 
 1. Set `zaptec.*` and `export ZAPTEC_PASSWORD=…` (or put it in `.env`). Verify
@@ -144,6 +181,20 @@ supplied via the `LADELAUG_SECRET_KEY` environment variable (or a `.env` file) �
    e.g. `*/10 * * * * curl -fsS -X POST -H 'X-Requested-With: fetch' --cookie …`
    or a small authenticated script. A monthly session sync can be scheduled the
    same way.
+7. Low-balance warnings: `python -m ladelaug_avregning low-balance-scan` (or
+   `POST /api/notifications/low-balance-scan`) enqueues a warning email for each
+   member below their recommended minimum balance. Safe to run hourly — the
+   cooldown / balance-drop / severity-escalation rule suppresses repeats. Follow
+   it with the queue drain in step 6.
+
+### Reports
+
+- `GET /api/settlement/{id}/reports/{member_id}` (HTML) / `…/{member_id}.pdf`
+  (PDF, admin), `…/reports/summary` / `…/summary.pdf`.
+- `GET /api/me/settlements/{id}/report` / `…/report.pdf` (the member's own).
+- PDF needs WeasyPrint's native libraries (bundled in the Docker image; see
+  Deploy). Without them the HTML endpoints work and the `.pdf` ones return
+  `503 pdf_unavailable`.
 
 ## Deploy (Docker)
 
@@ -161,8 +212,14 @@ docker run -d --name ladelaug-avregning \
 
 Put `config.yaml` in the mounted `config/` volume. `state/` holds the SQLite DB
 (and its `-wal` / `-shm` sidecars), plus `attachments/` (invoice PDFs),
-`reports/` (generated settlement HTML), and `mail/` (`.eml` files when
-`email.backend: file`). One `state/` volume covers all of it.
+`reports/` (generated settlement HTML **and PDF**), and `mail/` (`.eml` files
+when `email.backend: file`). One `state/` volume covers all of it.
+
+The runtime image installs WeasyPrint's native dependencies (Pango, HarfBuzz,
+cairo, DejaVu fonts) so the PDF report endpoints work out of the box. Running
+the app outside Docker without those system libraries is supported — the app
+starts and the `.pdf` endpoints return `503 pdf_unavailable` while HTML reports
+keep working.
 
 **Behind a reverse proxy** (nginx / SWAG / Traefik / Caddy): the app runs uvicorn
 with `proxy_headers=True` and `forwarded_allow_ips="*"`, so it honours

@@ -18,10 +18,12 @@ password reset, and system health. Work breakdown and decisions:
 [`release-1b-plan.md`](./release-1b-plan.md). Migrations `0002`–`0006`;
 233 pytest tests + 24 Vitest tests green.
 
-**Release 1C is IN PROGRESS** — forecasting (Epic 8), the member portal
+**Release 1C is COMPLETE** (`0.3.0`) — forecasting (Epic 8), the member portal
 (Epic 9), low-balance warnings (US-805), and PDF settlement reports (US-906,
 deferred from 1B). Work breakdown and decisions:
-[`release-1c-plan.md`](./release-1c-plan.md). Target `0.3.0`; migration `0007`.
+[`release-1c-plan.md`](./release-1c-plan.md). Migration `0007`
+(`forecast_settings`, `low_balance_notifications`); new dep `weasyprint`.
+272 pytest tests + 30 Vitest tests green.
 
 | Phase | Scope | State | Commit |
 |---|---|---|---|
@@ -453,19 +455,22 @@ Vitest + Testing Library + MSW. `npm run check` = `tsc --noEmit && eslint .
   reports); Epic 10 email (also unblocks US-102/103); PDF reports. Depends on 1A
   ledger + members + participation (**snapshot `settlement_participation` at post
   time**).
-- **1C — Member portal + forecasting.** *Planned in detail:*
-  [`release-1c-plan.md`](./release-1c-plan.md). Epic 8 (trailing-mean forecast
-  over the last 3 posted settlements, no seasonality; admin rate override in a
-  `forecast_settings` row; recommended minimum balance = cost × buffer months;
-  low-balance warning email + dashboard banner with cooldown/escalation
-  suppression), Epic 9 (`/api/me/forecast` + `/api/me/consumption`, `MyAccount`
-  dashboard cards), PDF reports via WeasyPrint over the existing HTML report,
-  US-1104 health gains low-balance counters. Migration `0007`. Depends on 1B
-  settlements.
+- **1C — Member portal + forecasting.** ✅ **Done** (`0.3.0`) — built as
+  [`release-1c-plan.md`](./release-1c-plan.md) P1–P7. Epic 8 (trailing-mean
+  forecast over the last 3 posted settlements, no seasonality; admin rate
+  override in a `forecast_settings` row; recommended minimum balance = cost ×
+  buffer months; low-balance warning email + dashboard banner with
+  cooldown/escalation suppression), Epic 9 (`/api/me/forecast` +
+  `/api/me/consumption`, `MyAccount` dashboard cards, admin `/forecast` page),
+  PDF reports via WeasyPrint over the existing HTML report, US-1104 health gains
+  low-balance counters. Migration `0007`; new dep `weasyprint`.
 - **1D — Corrections, refunds, departure, access.** Epic 7 (assess/calculate/post
-  correction as adjustment transactions, original preserved, members notified),
-  US-505 refunds, US-204 member departure (end-status + end-assignments +
-  unsettled detection + refund), US-305 charging-access status with real Zaptec
+  correction as adjustment transactions, original preserved, members notified —
+  the `late_session_flags` table and `_unresolved_late` warning from 1B feed
+  this; the automatic re-import detector is still a thin follow-up), US-505
+  refunds (`settlement_reversal` `txn_type` is already reserved in the ledger
+  CHECK), US-204 member departure (end-status + end-assignments + unsettled
+  detection + refund), US-305 charging-access status with real Zaptec
   enforcement.
 
 ---

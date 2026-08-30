@@ -2,6 +2,69 @@
 
 Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
+## 2026-08-30 — Release 1C (`0.3.0`)
+
+Forecasting, the member portal, low-balance warnings, and PDF settlement
+reports (deferred from 1B).
+
+- **Forecasting (Epic 8)** — `domain/forecast.py` `ForecastRepo`, a pure
+  read-model over posted settlements + the ledger. Per member: `forecast_kwh` =
+  trailing mean of the member's `consumption_kwh` over the last
+  `lookback_settlements` (default 3) posted settlements they appear in (no
+  seasonality — US-801); consumption rate = the admin `rate_override_ore_per_kwh`
+  else the mean of `sum(consumption line øre) ÷ grid_kwh` over settlements with
+  `grid_kwh > 0` (US-802); equal-cost share = mean equal-line total ÷ participant
+  count, counted only when the member currently participates (US-803);
+  recommended minimum balance = `forecast_monthly_cost × buffer_months`
+  (default 2.0 — US-804). Thin history (fewer postings than the lookback, or no
+  positive historical `grid_kwh` and no override) → `available: false` and the
+  portal shows a neutral "ikke nok historikk" state. All arithmetic in integer
+  øre; the only `Decimal` boundary is `forecast_kwh × rate` (`ROUND_HALF_EVEN`).
+- **Forecast settings** — `forecast_settings`, an admin-tunable singleton row
+  (seeded by the migration) for the rate override, buffer months, notify
+  cooldown, and lookback. `GET` / `PUT /api/forecast/settings` (admin; each
+  write is one `forecast.settings_updated` audit row with before/after) and
+  `GET /api/forecast/members` (overview). No new `config.yaml` block — the
+  tunables live in the DB so an admin changes them from the UI without a redeploy.
+- **Member portal (Epic 9)** — `GET /api/me/forecast` (US-903) and
+  `GET /api/me/consumption?month=` (current-month metered kWh + session count
+  before any settlement exists — US-902). `MyAccount` gains a forecast card, a
+  current-month consumption line, and a severity-coloured low-balance banner;
+  each settlement-history row gets a PDF link (US-904). New admin
+  `/forecast` page (rate override + a "run low-balance scan now" button + a
+  per-member overview).
+- **Low-balance warnings (US-805)** — `NotificationRepo.scan_low_balances`
+  enqueues a Norwegian warning email for every member below their recommended
+  minimum, writing one `low_balance_notifications` history row (linked to the
+  queued message) and one `notifications.low_balance_warned` audit event.
+  Duplicate suppression: re-send only when there is no prior row within
+  `notify_cooldown_days`, OR the balance dropped ≥ 1 kr since the last row, OR
+  the severity escalated `low → critical`. `POST /api/notifications/low-balance-scan`
+  (admin) and a `low-balance-scan` CLI subcommand — wire to cron, then drain
+  the queue with `POST /api/notifications/process`. `GET /api/system/health`
+  gains `low_balance: {warned_total, members_below}`.
+- **PDF reports (US-906)** — WeasyPrint renders the existing self-contained HTML
+  report. `GET /api/settlement/{id}/reports/{member_id}.pdf` /
+  `.../reports/summary.pdf` (admin) and `GET /api/me/settlements/{id}/report.pdf`
+  (member). `write_reports` also drops `.pdf` siblings under
+  `state/reports/<month>/` at post time. WeasyPrint dlopen's Pango/cairo/GObject
+  at import; when those native libraries are missing the app still runs and the
+  `.pdf` endpoints return `503 pdf_unavailable`. The runtime Docker image
+  installs the libraries.
+- **Member HTML report** — the 1B "Prognose og anbefalt innbetaling kommer i en
+  senere versjon" placeholder is replaced by a real "Prognose neste måned" +
+  "Anbefalt saldo / innbetaling" section (US-905), computed after the ledger
+  rows land so the balances match.
+
+Schema: migration `0007` — `forecast_settings` + `low_balance_notifications`.
+New dependency: `weasyprint`. Backend 233 → 272 pytest tests (+1 skipped where
+WeasyPrint's native libs are absent); frontend 24 → 30 Vitest tests.
+
+Deferred to 1D: corrections, refunds, member departure, charging-access
+workflows.
+
+The per-phase entries below record how it was built.
+
 ## 2026-08-30 — Release 1B (`0.2.0`)
 
 Zaptec integration, the monthly settlement engine, and everything they need.

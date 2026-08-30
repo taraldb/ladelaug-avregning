@@ -10,7 +10,12 @@ build plan for 1C.
 
 Target version: **`0.3.0`** (`VERSION` + `pyproject.toml` in lockstep).
 
-## Status — IN PROGRESS (planning done 2026-08-30)
+## Status — COMPLETE (2026-08-30)
+
+All of P1–P7 shipped. 272 pytest tests + 30 Vitest tests green; `ruff check` /
+`ruff format --check` clean; `npm run build` green. Committed directly to `main`
+(mirrors the 1A/1B workflow); each phase's status-table update landed as a small
+follow-up `docs:` commit because a commit cannot contain its own hash.
 
 | Phase | Scope | State | Commit |
 |---|---|---|---|
@@ -20,7 +25,24 @@ Target version: **`0.3.0`** (`VERSION` + `pyproject.toml` in lockstep).
 | **P4** | PDF settlement reports (WeasyPrint) | ☑ done | `5010850` |
 | **P5** | Forecast section in the member HTML report | ☑ done | `24a1156` |
 | **P6** | Web UI — member portal dashboard + forecast admin | ☑ done | `d2690ab` |
-| **P7** | Docs / version bump `0.3.0` | ☐ not started | — |
+| **P7** | Docs / version bump `0.3.0` | ☑ done | `e25309a` |
+
+### Deviations from this plan as written
+
+- **`MemberForecastOut` is a flat, always-populated object** — no
+  `available`-conditional fields, and **integer øre only** (no `_nok` companion
+  strings; `forecast_kwh` / `rate_ore_per_kwh` are `Decimal` strings). When
+  `available` is false the numerics are `0` and `reason ∈
+  {"insufficient_history", "no_grid_kwh"}`. The frontend formats øre via a new
+  `formatOre` in `lib/format.ts`. Decisions C1–C5 still hold; only the wire
+  shape is flatter than the C4/P1 prose implied.
+- **`GET /api/forecast/members`** returns rows carrying only `member_id`; the
+  admin page joins names from `GET /api/members` client-side.
+- **`.pdf` routes use `:int` path convertors** (`{member_id:int}.pdf`) — the
+  default string convertor captured `"1.pdf"` and pydantic 422'd before the
+  handler. The existing HTML `member_report` route was switched to `:int` too.
+- **P7 status-table + version commit** is this commit; P1–P6 each got a tiny
+  `docs:` follow-up (`930e131`, `f933145`, `361a55f`).
 
 **Done** = `uv run ruff check` + `uv run ruff format --check` + `uv run pytest -q`
 green (and `npm run check` from P6). Behaviour-changing items touch
