@@ -15,6 +15,7 @@ from ladelaug_avregning.webapp.routes import (
     audit,
     auth,
     chargers,
+    charging,
     health,
     ledger,
     me,
@@ -54,6 +55,7 @@ def create_app(config: AppConfig, db: Database) -> FastAPI:
     app.include_router(members.router)
     app.include_router(chargers.router)
     app.include_router(zaptec.router)
+    app.include_router(charging.router)
     app.include_router(settlement.router)
     app.include_router(ledger.router)
     app.include_router(me.router)

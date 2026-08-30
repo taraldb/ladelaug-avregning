@@ -15,6 +15,7 @@ from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.chargers import ChargerRepo
+from ladelaug_avregning.domain.charging import ChargingRepo
 from ladelaug_avregning.domain.sync_runs import SyncRunRepo
 from ladelaug_avregning.errors import DomainError
 from ladelaug_avregning.zaptec.client import ZaptecClient
@@ -96,6 +97,62 @@ class ZaptecSync:
             "chargers_created": created,
             "chargers_updated": updated,
         }
+
+    async def sync_sessions(
+        self, *, date_from: str, date_to: str, actor: AuditContext
+    ) -> dict[str, Any]:
+        require_enabled(self._config)
+        started = clock.now_utc().isoformat()
+        runs = SyncRunRepo(self._db)
+        client = self._new_client()
+        try:
+            sessions = [
+                s
+                async for s in client.iter_sessions(
+                    date_from=date_from,
+                    date_to=date_to,
+                    installation_id=self._config.zaptec.installation_id or None,
+                )
+            ]
+            result = await ChargingRepo(self._db, tz=self._config.timezone).import_sessions(
+                sessions, actor=actor
+            )
+        except Exception as exc:
+            await runs.record(
+                kind="sessions",
+                status="error",
+                started_at=started,
+                window_from=date_from,
+                window_to=date_to,
+                error=f"{type(exc).__name__}: {exc}",
+                created_by_user_id=actor.actor_user_id,
+            )
+            raise
+        finally:
+            if self._client is None:
+                await client.aclose()
+
+        await runs.record(
+            kind="sessions",
+            status="ok",
+            started_at=started,
+            window_from=date_from,
+            window_to=date_to,
+            items_seen=result["sessions_in"],
+            items_imported=result["rows_inserted"] + result["rows_updated"],
+            created_by_user_id=actor.actor_user_id,
+        )
+        if result["interval_rows_inserted"]:
+            await runs.record(
+                kind="intervals",
+                status="ok",
+                started_at=started,
+                window_from=date_from,
+                window_to=date_to,
+                items_imported=result["interval_rows_inserted"],
+                created_by_user_id=actor.actor_user_id,
+            )
+        return result
 
     async def _upsert_installations(self, installations: list[dict[str, Any]]) -> None:
         now = clock.now_utc().isoformat()
