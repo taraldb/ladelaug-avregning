@@ -19,7 +19,7 @@ Target version: **`0.3.0`** (`VERSION` + `pyproject.toml` in lockstep).
 | **P3** | Low-balance warnings (`0007` history table, scan job, CLI, health) | ☑ done | `e132cdf` |
 | **P4** | PDF settlement reports (WeasyPrint) | ☑ done | `5010850` |
 | **P5** | Forecast section in the member HTML report | ☑ done | `24a1156` |
-| **P6** | Web UI — member portal dashboard + forecast admin | ☐ not started | — |
+| **P6** | Web UI — member portal dashboard + forecast admin | ☑ done | `d2690ab` |
 | **P7** | Docs / version bump `0.3.0` | ☐ not started | — |
 
 **Done** = `uv run ruff check` + `uv run ruff format --check` + `uv run pytest -q`
