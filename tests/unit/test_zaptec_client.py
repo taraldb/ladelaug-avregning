@@ -90,8 +90,34 @@ async def test_list_chargers_parses_and_follows_pagination(respx_mock):
     async with ZaptecClient(_cfg()) as client:
         chargers = await client.list_chargers("inst-1")
     assert [c.zaptec_id for c in chargers] == ["c-1", "c-2"]
-    assert chargers[0].serial_no == "ZAP001" and chargers[0].is_active is True
+    # serial_no comes from the hardware DeviceId, not the installer-set SerialNo.
+    assert chargers[0].serial_no == "d-1" and chargers[0].device_id == "d-1"
+    assert chargers[0].is_active is True
     assert chargers[1].is_active is False
+
+
+@respx.mock
+async def test_list_chargers_serial_falls_back_and_prefers_device_id(respx_mock):
+    _token_route(respx_mock)
+    respx_mock.get(f"{BASE}/api/chargers").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "Pages": 1,
+                "Data": [
+                    # SerialNo duplicates Name (the installation this bug was
+                    # found in); the ZPR… hardware id is in DeviceId.
+                    {"Id": "c-1", "Name": "148C", "SerialNo": "148C", "DeviceId": "ZPR253707"},
+                    # No DeviceId — fall back to SerialNo.
+                    {"Id": "c-2", "Name": "148D", "SerialNo": "ZPR999"},
+                ],
+            },
+        )
+    )
+    async with ZaptecClient(_cfg()) as client:
+        chargers = await client.list_chargers("inst-1")
+    assert chargers[0].serial_no == "ZPR253707"
+    assert chargers[1].serial_no == "ZPR999"
 
 
 @respx.mock

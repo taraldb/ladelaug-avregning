@@ -148,6 +148,7 @@ class ChargerRepo:
         zaptec_id: str,
         name: str,
         serial_no: str | None,
+        device_id: str | None = None,
         installation_zaptec_id: str | None,
         circuit_zaptec_id: str | None,
         device_type: str | None,
@@ -155,7 +156,11 @@ class ChargerRepo:
         raw: dict[str, Any],
         actor: AuditContext,
     ) -> tuple[dict[str, Any], bool]:
-        """Idempotently mirror one Zaptec charger. Returns (row, created)."""
+        """Idempotently mirror one Zaptec charger. Returns (row, created).
+
+        ``device_id`` is Zaptec's immutable hardware id; it is not stored in its
+        own column (``raw_json`` keeps it) but is recorded in the audit detail.
+        """
         now = clock.now_utc().isoformat()
         payload = json.dumps(raw, sort_keys=True, default=str)
         async with self._db._write() as cur:
@@ -190,7 +195,7 @@ class ChargerRepo:
                     entity_type="charger",
                     entity_id=charger_id,
                     summary=f"Charger {name!r} imported from Zaptec",
-                    detail={"zaptec_id": zaptec_id, "created": True},
+                    detail={"zaptec_id": zaptec_id, "device_id": device_id, "created": True},
                 )
                 return self._require(charger_id), True
 

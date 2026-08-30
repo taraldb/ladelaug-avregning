@@ -69,7 +69,10 @@ class ZaptecCharger:
         return cls(
             zaptec_id=str(item["Id"]),
             name=str(item.get("Name") or item.get("SerialNo") or item["Id"]),
-            serial_no=_str_or_none(item.get("SerialNo")),
+            # ``DeviceId`` is the immutable hardware id (``ZPR…``); ``SerialNo`` is
+            # an installer-set label that in some installations just duplicates
+            # ``Name``. Prefer the hardware id so it matches hand-entered rows.
+            serial_no=_str_or_none(item.get("DeviceId")) or _str_or_none(item.get("SerialNo")),
             device_id=_str_or_none(item.get("DeviceId")),
             installation_id=_str_or_none(item.get("InstallationId")),
             circuit_id=_str_or_none(item.get("CircuitId")),

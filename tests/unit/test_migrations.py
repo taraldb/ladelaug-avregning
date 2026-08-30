@@ -92,6 +92,37 @@ def test_audit_is_append_only(db: Database):
         db.connection.execute("DELETE FROM audit_events")
 
 
+def test_0008_backfills_serial_from_device_id(db: Database):
+    body = (MIGRATIONS_DIR / "0008_charger_serial_backfill.sql").read_text(encoding="utf-8")
+    now = "2026-01-01T00:00:00+00:00"
+    db.connection.executemany(
+        "INSERT INTO chargers (zaptec_id, name, serial_no, raw_json, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            # serial_no still duplicates the name -> should be rewritten to DeviceId
+            ("z-1", "148C", "148C", '{"DeviceId": "ZPR253707"}', now, now),
+            # serial_no is NULL -> should be rewritten to DeviceId
+            ("z-2", "148A", None, '{"DeviceId": "ZPR327383"}', now, now),
+            # admin already set a distinct serial -> left untouched
+            ("z-3", "146B", "hand-fixed", '{"DeviceId": "ZPR333972"}', now, now),
+            # hand-entered charger (no zaptec_id) -> never touched
+            (None, "Manual", "Manual", None, now, now),
+        ],
+    )
+    db.connection.commit()
+
+    db.connection.executescript(body)
+
+    rows = {
+        r["name"]: r["serial_no"]
+        for r in db.connection.execute("SELECT name, serial_no FROM chargers")
+    }
+    assert rows["148C"] == "ZPR253707"
+    assert rows["148A"] == "ZPR327383"
+    assert rows["146B"] == "hand-fixed"
+    assert rows["Manual"] == "Manual"
+
+
 def test_one_open_status_period_per_member(db: Database):
     member_id = _seed_member_and_ledger(db.connection)
     db.connection.execute(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import pytest
 
@@ -79,6 +80,22 @@ async def test_sync_chargers_creates_then_updates(db, config):
     runs = SyncRunRepo(db)
     assert runs.latest("chargers")["status"] == "ok"
     assert runs.latest("chargers")["items_seen"] == 2
+
+
+async def test_sync_passes_device_id_through(db, config):
+    cfg = _enabled_config(config)
+    fake = FakeClient(
+        [{"Id": "inst-1", "Name": "S"}],
+        [_charger("z-1", "148C", serial_no="ZPR253707", device_id="ZPR253707")],
+    )
+    await ZaptecSync(db, cfg, client=fake).sync_chargers(actor=AuditContext.system())
+
+    row = ChargerRepo(db).get_by_zaptec_id("z-1")
+    assert row["serial_no"] == "ZPR253707"
+    event = db.connection.execute(
+        "SELECT detail_json FROM audit_events WHERE event_type = 'charger.synced'"
+    ).fetchone()
+    assert json.loads(event["detail_json"])["device_id"] == "ZPR253707"
 
 
 async def test_sync_records_error_run_and_reraises(db, config):

@@ -59,6 +59,7 @@ class ZaptecSync:
                     zaptec_id=dev.zaptec_id,
                     name=dev.name,
                     serial_no=dev.serial_no,
+                    device_id=dev.device_id,
                     installation_zaptec_id=dev.installation_id,
                     circuit_zaptec_id=dev.circuit_id,
                     device_type=dev.device_type,
