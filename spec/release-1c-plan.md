@@ -14,9 +14,9 @@ Target version: **`0.3.0`** (`VERSION` + `pyproject.toml` in lockstep).
 
 | Phase | Scope | State | Commit |
 |---|---|---|---|
-| **P1** | Forecast engine (`domain/forecast.py`, `0007` settings) | ☐ not started | — |
-| **P2** | Forecast + consumption API (`/api/forecast/*`, `/api/me/forecast`, `/api/me/consumption`) | ☐ not started | — |
-| **P3** | Low-balance warnings (`0007` history table, scan job, CLI, health) | ☐ not started | — |
+| **P1** | Forecast engine (`domain/forecast.py`, `0007` settings) | ☑ done | `194e846` |
+| **P2** | Forecast + consumption API (`/api/forecast/*`, `/api/me/forecast`, `/api/me/consumption`) | ☑ done | `4a5a965` |
+| **P3** | Low-balance warnings (`0007` history table, scan job, CLI, health) | ☑ done | `e132cdf` |
 | **P4** | PDF settlement reports (WeasyPrint) | ☐ not started | — |
 | **P5** | Forecast section in the member HTML report | ☐ not started | — |
 | **P6** | Web UI — member portal dashboard + forecast admin | ☐ not started | — |
