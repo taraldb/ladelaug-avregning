@@ -20,6 +20,7 @@ from ladelaug_avregning.webapp.routes import (
     me,
     members,
     settlement,
+    zaptec,
 )
 
 
@@ -52,6 +53,7 @@ def create_app(config: AppConfig, db: Database) -> FastAPI:
     app.include_router(audit.router)
     app.include_router(members.router)
     app.include_router(chargers.router)
+    app.include_router(zaptec.router)
     app.include_router(settlement.router)
     app.include_router(ledger.router)
     app.include_router(me.router)
