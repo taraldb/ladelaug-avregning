@@ -16,6 +16,7 @@ from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.members import MemberRepo
+from ladelaug_avregning.domain.notifications import NotificationRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
 from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.reports import render_member_report, render_summary_report
@@ -173,7 +174,11 @@ async def post_settlement(
     config: AppConfig = Depends(get_config),
     actor: AuditContext = Depends(get_audit_context),
 ) -> dict[str, Any]:
-    return await _repo(db, config).post(settlement_id, actor=actor)
+    result = await _repo(db, config).post(settlement_id, actor=actor)
+    queued = await NotificationRepo(db).enqueue_settlement_reports(
+        settlement_id=settlement_id, result=result, base_url=config.email.base_url
+    )
+    return {**result, "emails_queued": queued}
 
 
 @router.get("/{settlement_id}/reports")

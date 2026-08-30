@@ -94,6 +94,12 @@ class UserRepo:
         row = self._db.connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         return dict(row) if row else None
 
+    def get_by_member_id(self, member_id: int) -> dict[str, Any] | None:
+        row = self._db.connection.execute(
+            "SELECT * FROM users WHERE member_id = ?", (member_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
     def list(self) -> list[dict[str, Any]]:
         rows = self._db.connection.execute("SELECT * FROM users ORDER BY id DESC").fetchall()
         return [_strip_secret(dict(r)) for r in rows]
