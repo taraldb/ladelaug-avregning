@@ -44,8 +44,13 @@ def test_foreign_keys_enabled(db: Database):
 
 def test_rerun_is_noop(db: Database):
     assert run_migrations(db.connection, MIGRATIONS_DIR) == []
-    row = db.connection.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
-    assert [r[0] for r in row] == [1]
+    applied = [
+        r[0]
+        for r in db.connection.execute("SELECT version FROM schema_migrations ORDER BY version")
+    ]
+    on_disk = sorted(int(p.name[:4]) for p in MIGRATIONS_DIR.glob("[0-9][0-9][0-9][0-9]_*.sql"))
+    assert applied == on_disk
+    assert applied[0] == 1
 
 
 def _seed_member_and_ledger(conn):

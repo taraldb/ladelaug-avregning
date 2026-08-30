@@ -323,3 +323,100 @@ class BalanceOut(BaseModel):
     member_id: int
     balance_nok: str
     balance_ore: int
+
+
+# --- chargers (Epic 3) ----------------------------------------------
+
+
+class ChargerIn(BaseModel):
+    name: str
+    serial_no: str | None = None
+    zaptec_id: str | None = None
+    device_type: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _v_name(cls, v: str) -> str:
+        return _required(v, "name")
+
+
+class ChargerPatch(BaseModel):
+    name: str | None = None
+    serial_no: str | None = None
+    device_type: str | None = None
+    is_active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _v_name(cls, v: str | None) -> str | None:
+        return None if v is None else _required(v, "name")
+
+
+class ChargerOut(BaseModel):
+    id: int
+    zaptec_id: str | None
+    name: str
+    serial_no: str | None
+    device_type: str | None
+    is_active: bool
+    last_synced_at: str | None
+    created_at: str
+    updated_at: str
+    assigned_member_id: int | None = None
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any], *, assigned_member_id: int | None = None) -> ChargerOut:
+        return cls(
+            id=row["id"],
+            zaptec_id=row["zaptec_id"],
+            name=row["name"],
+            serial_no=row["serial_no"],
+            device_type=row["device_type"],
+            is_active=bool(row["is_active"]),
+            last_synced_at=row["last_synced_at"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            assigned_member_id=assigned_member_id,
+        )
+
+
+class ChargerAssignIn(BaseModel):
+    member_id: int
+    effective_from: str | None = None
+    note: str | None = None
+
+    @field_validator("effective_from")
+    @classmethod
+    def _v_effective_from(cls, v: str | None) -> str | None:
+        return None if v is None else _iso_date(v)
+
+
+class ChargerUnassignIn(BaseModel):
+    effective_to: str | None = None
+
+    @field_validator("effective_to")
+    @classmethod
+    def _v_effective_to(cls, v: str | None) -> str | None:
+        return None if v is None else _iso_date(v)
+
+
+class ChargerAssignmentOut(BaseModel):
+    id: int
+    charger_id: int
+    member_id: int
+    effective_from: str
+    effective_to: str | None
+    note: str | None
+    created_at: str
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> ChargerAssignmentOut:
+        return cls(
+            id=row["id"],
+            charger_id=row["charger_id"],
+            member_id=row["member_id"],
+            effective_from=row["effective_from"],
+            effective_to=row["effective_to"],
+            note=row["note"],
+            created_at=row["created_at"],
+        )

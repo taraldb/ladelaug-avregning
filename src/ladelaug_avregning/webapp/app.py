@@ -14,6 +14,7 @@ from ladelaug_avregning.errors import register_exception_handlers
 from ladelaug_avregning.webapp.routes import (
     audit,
     auth,
+    chargers,
     health,
     ledger,
     me,
@@ -50,6 +51,7 @@ def create_app(config: AppConfig, db: Database) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(audit.router)
     app.include_router(members.router)
+    app.include_router(chargers.router)
     app.include_router(settlement.router)
     app.include_router(ledger.router)
     app.include_router(me.router)
