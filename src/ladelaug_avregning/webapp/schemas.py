@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
+
+from ladelaug_avregning.money import parse_nok
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -34,6 +37,16 @@ def _iso_date(value: str) -> str:
         return date.fromisoformat(value).isoformat()
     except ValueError as exc:
         raise ValueError("must be a YYYY-MM-DD date") from exc
+
+
+def _positive_nok(value: Any) -> Decimal:
+    try:
+        amount = parse_nok(value)
+    except (ValueError, InvalidOperation) as exc:
+        raise ValueError("not a valid amount") from exc
+    if amount <= 0:
+        raise ValueError("amount must be positive")
+    return amount
 
 
 # --- auth ------------------------------------------------------------------
@@ -231,3 +244,82 @@ class SuggestedParticipantOut(BaseModel):
     full_name: str
     participates: bool
     source: str
+
+
+# --- ledger (US-501..504) --------------------------------------------
+
+
+class PaymentIn(BaseModel):
+    amount: Decimal
+    value_date: str | None = None
+    reference: str | None = None
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _v_amount(cls, v: Any) -> Decimal:
+        return _positive_nok(v)
+
+    @field_validator("value_date")
+    @classmethod
+    def _v_value_date(cls, v: str | None) -> str | None:
+        return None if v is None else _iso_date(v)
+
+
+class AdjustmentIn(BaseModel):
+    direction: Literal["credit", "debit"]
+    amount: Decimal
+    reason: str
+    reference: str | None = None
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _v_amount(cls, v: Any) -> Decimal:
+        return _positive_nok(v)
+
+    @field_validator("reason")
+    @classmethod
+    def _v_reason(cls, v: str) -> str:
+        return _required(v, "reason")
+
+
+class LedgerTxnOut(BaseModel):
+    id: int
+    member_id: int
+    txn_type: str
+    amount_ore: int
+    amount_nok: str
+    currency: str
+    value_date: str
+    reason: str | None
+    reference: str | None
+    reverses_transaction_id: int | None
+    created_by_user_id: int | None
+    recorded_at: str
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> LedgerTxnOut:
+        return cls(
+            **{
+                k: row[k]
+                for k in (
+                    "id",
+                    "member_id",
+                    "txn_type",
+                    "amount_ore",
+                    "amount_nok",
+                    "currency",
+                    "value_date",
+                    "reason",
+                    "reference",
+                    "reverses_transaction_id",
+                    "created_by_user_id",
+                    "recorded_at",
+                )
+            }
+        )
+
+
+class BalanceOut(BaseModel):
+    member_id: int
+    balance_nok: str
+    balance_ore: int

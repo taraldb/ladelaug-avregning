@@ -1,5 +1,8 @@
 # EV Charging HOA Portal - Product Backlog
 
+> Build plan, phase status, and architecture decisions:
+> [`implementation-plan.md`](./implementation-plan.md). **Release 1A is complete.**
+
 ## Roles
 
 ### Member
