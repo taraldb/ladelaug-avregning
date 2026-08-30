@@ -53,6 +53,26 @@ corrections, refunds, member departure, charging-access workflows.
 
 The per-phase entries below record how it was built.
 
+## 2026-08-30 — Trailing-mean forecast engine (Release 1C phase P1)
+
+- `migrations/0007_forecast.sql` — `forecast_settings` (admin-tunable singleton,
+  `id` CHECK `= 1`, seeded by the migration) and `low_balance_notifications`
+  (warning-email send history).
+- `domain/forecast.py` `ForecastRepo` — a pure read-model over posted
+  settlements + the ledger. `settings()` / `update_settings()`
+  (`forecast.settings_updated` audit with before/after), `history_stats()`
+  (per-settlement derived rate + equal-cost share and their trailing means),
+  `member_forecast(member_id)` and `all_member_forecasts()`.
+- Forecast per member: `forecast_kwh` = mean of the member's
+  `consumption_kwh` over the last `lookback_settlements` (default 3) posted
+  settlements they appear in; consumption rate = admin override, else the mean
+  of `sum(consumption line øre) / grid_kwh` over settlements with
+  `grid_kwh > 0`; equal-cost share added only when the member currently
+  participates; recommended minimum balance = `forecast_monthly_cost × buffer`
+  (default 2.0). Fewer postings than the lookback, or no positive historical
+  `grid_kwh` and no override, → `available: false`. All arithmetic in integer
+  øre; the only `Decimal` boundary is `forecast_kwh × rate` (`ROUND_HALF_EVEN`).
+
 ## 2026-08-30 — Release 1A
 
 First release: the foundation the settlement engine (1B) will build on.

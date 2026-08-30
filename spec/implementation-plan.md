@@ -18,6 +18,11 @@ password reset, and system health. Work breakdown and decisions:
 [`release-1b-plan.md`](./release-1b-plan.md). Migrations `0002`–`0006`;
 233 pytest tests + 24 Vitest tests green.
 
+**Release 1C is IN PROGRESS** — forecasting (Epic 8), the member portal
+(Epic 9), low-balance warnings (US-805), and PDF settlement reports (US-906,
+deferred from 1B). Work breakdown and decisions:
+[`release-1c-plan.md`](./release-1c-plan.md). Target `0.3.0`; migration `0007`.
+
 | Phase | Scope | State | Commit |
 |---|---|---|---|
 | **A** | Scaffold + cross-cutting infra | ✅ done | `29d9755` |
@@ -448,10 +453,15 @@ Vitest + Testing Library + MSW. `npm run check` = `tsc --noEmit && eslint .
   reports); Epic 10 email (also unblocks US-102/103); PDF reports. Depends on 1A
   ledger + members + participation (**snapshot `settlement_participation` at post
   time**).
-- **1C — Member portal + forecasting.** Epic 8 (forecast from last 3 settlement
-  months, no seasonality; admin rate override; recommended minimum balance;
-  low-balance warning email + dashboard with duplicate suppression), Epic 9
-  dashboard/history/PDF download, US-1104 system health. Depends on 1B settlements.
+- **1C — Member portal + forecasting.** *Planned in detail:*
+  [`release-1c-plan.md`](./release-1c-plan.md). Epic 8 (trailing-mean forecast
+  over the last 3 posted settlements, no seasonality; admin rate override in a
+  `forecast_settings` row; recommended minimum balance = cost × buffer months;
+  low-balance warning email + dashboard banner with cooldown/escalation
+  suppression), Epic 9 (`/api/me/forecast` + `/api/me/consumption`, `MyAccount`
+  dashboard cards), PDF reports via WeasyPrint over the existing HTML report,
+  US-1104 health gains low-balance counters. Migration `0007`. Depends on 1B
+  settlements.
 - **1D — Corrections, refunds, departure, access.** Epic 7 (assess/calculate/post
   correction as adjustment transactions, original preserved, members notified),
   US-505 refunds, US-204 member departure (end-status + end-assignments +
