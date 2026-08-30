@@ -244,6 +244,33 @@ def test_charger_delete_requires_admin(member_client):
     assert member_client.delete("/api/chargers/1", headers=FETCH).status_code == 403
 
 
+def test_assign_route_reresolves_month(admin_client, make_member, db):
+    m1 = make_member(member_reference="M1")
+    cid = admin_client.post(
+        "/api/chargers", json={"name": "C1", "zaptec_id": "z-1"}, headers=FETCH
+    ).json()["id"]
+    # a session already imported for August, not yet attributed to any member
+    db.connection.execute(
+        "INSERT INTO charging_sessions "
+        "(zaptec_session_id, charger_id, charger_zaptec_id, period_month, started_at, "
+        " energy_kwh, source, imported_at, updated_at) "
+        "VALUES ('s-1', ?, 'z-1', '2026-08', '2026-08-10T10:00:00+00:00', '5.0', 'zaptec', "
+        "'2026-08-11T00:00:00+00:00', '2026-08-11T00:00:00+00:00')",
+        (cid,),
+    )
+    db.connection.commit()
+
+    admin_client.post(
+        f"/api/chargers/{cid}/assignments",
+        json={"member_id": m1, "effective_from": "2026-08-01"},
+        headers=FETCH,
+    )
+    row = db.connection.execute(
+        "SELECT member_id FROM charging_sessions WHERE zaptec_session_id = 's-1'"
+    ).fetchone()
+    assert row["member_id"] == m1
+
+
 def test_charger_routes_require_admin(member_client):
     assert member_client.get("/api/chargers").status_code == 403
 

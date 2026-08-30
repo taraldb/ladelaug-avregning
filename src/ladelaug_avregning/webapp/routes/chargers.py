@@ -11,10 +11,18 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from ladelaug_avregning.audit import AuditContext
+from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.chargers import ChargerRepo
+from ladelaug_avregning.domain.charging import ChargingRepo
 from ladelaug_avregning.errors import NotFoundError
-from ladelaug_avregning.webapp.deps import get_audit_context, get_db, require_admin, require_fetch
+from ladelaug_avregning.webapp.deps import (
+    get_audit_context,
+    get_config,
+    get_db,
+    require_admin,
+    require_fetch,
+)
 from ladelaug_avregning.webapp.schemas import (
     ChargerAssignIn,
     ChargerAssignmentOut,
@@ -108,6 +116,7 @@ async def assign_charger(
     charger_id: int,
     body: ChargerAssignIn,
     db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
     actor: AuditContext = Depends(get_audit_context),
 ) -> dict[str, ChargerAssignmentOut]:
     row = await ChargerRepo(db).assign(
@@ -117,6 +126,9 @@ async def assign_charger(
         note=body.note,
         actor=actor,
     )
+    await ChargingRepo(db, tz=config.timezone).reresolve_after_assignment(
+        charger_id, since_month=row["effective_from"][:7], actor=actor
+    )
     return {"assignment": ChargerAssignmentOut.from_row(row)}
 
 
@@ -125,9 +137,13 @@ async def unassign_charger(
     charger_id: int,
     body: ChargerUnassignIn,
     db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
     actor: AuditContext = Depends(get_audit_context),
 ) -> dict[str, ChargerAssignmentOut]:
     row = await ChargerRepo(db).unassign(charger_id, effective_to=body.effective_to, actor=actor)
+    await ChargingRepo(db, tz=config.timezone).reresolve_after_assignment(
+        charger_id, since_month=row["effective_from"][:7], actor=actor
+    )
     return {"assignment": ChargerAssignmentOut.from_row(row)}
 
 

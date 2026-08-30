@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import useSWR from "swr";
 import {
   ApiError,
@@ -7,8 +7,10 @@ import {
   deleteInvoiceLine,
   freezeSettlement,
   getSettlement,
+  getUnassigned,
   postSettlement,
   previewSettlement,
+  reresolveCharging,
   setSettlementInvoice,
   settlementReports,
   uploadSettlementAttachment,
@@ -25,8 +27,9 @@ const WARNING_LABELS: Record<string, string> = {
   zero_consumption: "Ingen registrert forbruk – forbrukslinjer kan ikke fordeles",
   late_sessions: "Sene ladeøkter ikke behandlet",
   kwh_mismatch: "Fakturert kWh avviker mye fra målt",
+  usage_stale: "Forbruket er endret etter frysing – frys på nytt",
 };
-const BLOCKING = new Set(["zero_consumption"]);
+const BLOCKING = new Set(["zero_consumption", "usage_stale"]);
 
 export default function SettlementDetail() {
   const { id } = useParams();
@@ -116,6 +119,8 @@ export default function SettlementDetail() {
         editable={isDraft}
         onUploaded={mutate}
       />
+
+      {isDraft && <UnassignedPanel month={s.period_month} onResolved={mutate} />}
 
       <div className="flex flex-wrap gap-2">
         {isDraft && (
@@ -398,6 +403,71 @@ function AttachmentPanel({
         </div>
       )}
       {err && <p className="mt-1 text-xs text-rose-400">{err}</p>}
+    </div>
+  );
+}
+
+function UnassignedPanel({
+  month,
+  onResolved,
+}: {
+  month: string;
+  onResolved: () => void | Promise<unknown>;
+}) {
+  const { data, mutate } = useSWR([`/api/charging/unassigned`, month], () =>
+    getUnassigned(month),
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!data || Number(data.total_kwh) === 0) return null;
+
+  async function reresolve() {
+    setErr(null);
+    setBusy(true);
+    try {
+      await reresolveCharging(month);
+      await Promise.all([mutate(), onResolved()]);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Kunne ikke kjøre ny fordeling.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-amber-700/60 bg-amber-950/40 p-3 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-medium text-amber-200">
+          {data.total_kwh} kWh i {month} er ikke fordelt på noe medlem – dette blokkerer
+          frysing.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void reresolve()}
+          className="shrink-0 rounded-md border border-amber-600 px-3 py-1 text-xs text-amber-100 hover:bg-amber-900/60 disabled:opacity-50"
+        >
+          Kjør ny fordeling
+        </button>
+      </div>
+      <ul className="mt-2 space-y-0.5 text-amber-100/80">
+        {data.chargers.map((u) => (
+          <li key={u.charger_zaptec_id}>
+            {u.charger_name ?? u.charger_zaptec_id}: {u.energy_kwh} kWh ({u.sessions} økt
+            {u.sessions === 1 ? "" : "er"})
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-amber-100/70">
+        Tildel laderne et medlem på <Link to="/chargers" className="underline">Ladere</Link> med
+        gyldig fra-dato i {month}, og kjør ny fordeling.
+      </p>
+      {err && (
+        <p role="alert" className="mt-1 text-xs text-rose-400">
+          {err}
+        </p>
+      )}
     </div>
   );
 }

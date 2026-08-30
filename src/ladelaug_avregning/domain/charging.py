@@ -82,17 +82,38 @@ class ChargingRepo:
         ]
         return _rebalance(parts, total, "duration")
 
+    def _resolver(self, chargers: ChargerRepo):
+        """Return ``(charger_id_for, member_for)`` closures that map an imported
+        row to a local charger id (by zaptec_id, else by serial / DeviceId) and
+        then to the member holding that charger on a given date."""
+        idx = chargers.local_id_index()
+        assignment_cache: dict[str, dict[int, int]] = {}
+
+        def charger_id_for(zaptec_id: str, raw: Any) -> int | None:
+            cid = idx["zaptec"].get(zaptec_id)
+            if cid is not None:
+                return cid
+            dev = None
+            if isinstance(raw, dict):
+                dev = raw.get("DeviceId") or raw.get("SerialNo")
+            if dev:
+                return idx["serial"].get(str(dev).strip().lower())
+            return None
+
+        def member_for(charger_id: int | None, on_date: str) -> int | None:
+            if charger_id is None:
+                return None
+            if on_date not in assignment_cache:
+                assignment_cache[on_date] = chargers.assignment_map(on_date)
+            return assignment_cache[on_date].get(charger_id)
+
+        return charger_id_for, member_for
+
     async def import_sessions(
         self, sessions: list[ZaptecSession], *, actor: AuditContext
     ) -> dict[str, Any]:
         chargers = ChargerRepo(self._db)
-        charger_ids = {c["zaptec_id"]: c["id"] for c in chargers.list() if c["zaptec_id"]}
-        assignment_cache: dict[str, dict[str, int]] = {}
-
-        def member_for(charger_zid: str, on_date: str) -> int | None:
-            if on_date not in assignment_cache:
-                assignment_cache[on_date] = chargers.zaptec_assignment_map(on_date)
-            return assignment_cache[on_date].get(charger_zid)
+        charger_id_for, member_for = self._resolver(chargers)
 
         now = clock.now_utc().isoformat()
         inserted = updated = interval_rows = split_sessions = 0
@@ -103,12 +124,12 @@ class ChargingRepo:
                 parts = self._split(s)
                 if len(parts) > 1:
                     split_sessions += 1
-                charger_id = charger_ids.get(s.charger_zaptec_id)
+                charger_id = charger_id_for(s.charger_zaptec_id, s.raw)
                 payload = json.dumps(s.raw, sort_keys=True, default=str)
 
                 for month, pstart, pend, energy, method in parts:
                     touched_months.add(month)
-                    member_id = member_for(s.charger_zaptec_id, pstart.date().isoformat())
+                    member_id = member_for(charger_id, pstart.date().isoformat())
                     energy_str = str(_q(energy))
                     row = cur.execute(
                         "SELECT id, energy_kwh, member_id, ended_at FROM charging_sessions "
@@ -162,7 +183,7 @@ class ChargingRepo:
                 for pt in s.energy_details:
                     imonth = periods.month_key(pt.timestamp, self._tz)
                     idate = periods.local_dt(pt.timestamp, self._tz).date().isoformat()
-                    imember = member_for(s.charger_zaptec_id, idate)
+                    imember = member_for(charger_id, idate)
                     cur.execute(
                         "INSERT OR IGNORE INTO charging_intervals "
                         "(charger_zaptec_id, charger_id, member_id, period_month, interval_start, "
@@ -212,37 +233,43 @@ class ChargingRepo:
         }
 
     async def reresolve_members(self, month: str, *, actor: AuditContext) -> dict[str, Any]:
-        """Recompute ``member_id`` for a month's sessions and intervals from the
-        current charger assignments — run after an admin fills a gap that made
-        consumption unassigned (US-304)."""
+        """Recompute ``charger_id`` and ``member_id`` for a month's sessions and
+        intervals from the current chargers and assignments — run after an admin
+        fills a gap that made consumption unassigned (US-304), or after a charger
+        is created / adopted for usage that was imported before it existed."""
         chargers = ChargerRepo(self._db)
+        charger_id_for, member_for = self._resolver(chargers)
         changed = 0
         async with self._db._write() as cur:
             rows = cur.execute(
-                "SELECT id, charger_zaptec_id, started_at, member_id FROM charging_sessions "
-                "WHERE period_month = ?",
+                "SELECT id, charger_id, charger_zaptec_id, started_at, member_id, raw_json "
+                "FROM charging_sessions WHERE period_month = ?",
                 (month,),
             ).fetchall()
             for r in rows:
+                raw = json.loads(r["raw_json"]) if r["raw_json"] else None
+                cid = charger_id_for(r["charger_zaptec_id"], raw) or r["charger_id"]
                 on_date = periods.local_dt(r["started_at"], self._tz).date().isoformat()
-                resolved = chargers.zaptec_assignment_map(on_date).get(r["charger_zaptec_id"])
-                if resolved != r["member_id"]:
+                resolved = member_for(cid, on_date)
+                if cid != r["charger_id"] or resolved != r["member_id"]:
                     cur.execute(
-                        "UPDATE charging_sessions SET member_id = ?, updated_at = ? WHERE id = ?",
-                        (resolved, clock.now_utc().isoformat(), r["id"]),
+                        "UPDATE charging_sessions SET charger_id = ?, member_id = ?, "
+                        "updated_at = ? WHERE id = ?",
+                        (cid, resolved, clock.now_utc().isoformat(), r["id"]),
                     )
                     changed += 1
             for r in cur.execute(
-                "SELECT id, charger_zaptec_id, interval_start, member_id FROM charging_intervals "
-                "WHERE period_month = ?",
+                "SELECT id, charger_id, charger_zaptec_id, interval_start, member_id "
+                "FROM charging_intervals WHERE period_month = ?",
                 (month,),
             ).fetchall():
+                cid = charger_id_for(r["charger_zaptec_id"], None) or r["charger_id"]
                 on_date = periods.local_dt(r["interval_start"], self._tz).date().isoformat()
-                resolved = chargers.zaptec_assignment_map(on_date).get(r["charger_zaptec_id"])
-                if resolved != r["member_id"]:
+                resolved = member_for(cid, on_date)
+                if cid != r["charger_id"] or resolved != r["member_id"]:
                     cur.execute(
-                        "UPDATE charging_intervals SET member_id = ? WHERE id = ?",
-                        (resolved, r["id"]),
+                        "UPDATE charging_intervals SET charger_id = ?, member_id = ? WHERE id = ?",
+                        (cid, resolved, r["id"]),
                     )
             write_audit_row(
                 cur,
@@ -254,6 +281,62 @@ class ChargingRepo:
                 detail={"month": month, "sessions_changed": changed},
             )
         return {"month": month, "sessions_changed": changed}
+
+    def _posted_months(self) -> set[str]:
+        rows = self._db.connection.execute(
+            "SELECT period_month FROM settlements WHERE status = 'posted'"
+        ).fetchall()
+        return {r["period_month"] for r in rows}
+
+    def _months_for_charger(self, charger_id: int, since_month: str | None) -> list[str]:
+        row = self._db.connection.execute(
+            "SELECT zaptec_id FROM chargers WHERE id = ?", (charger_id,)
+        ).fetchone()
+        zid = row["zaptec_id"] if row else None
+        rows = self._db.connection.execute(
+            "SELECT DISTINCT period_month FROM charging_sessions "
+            "WHERE charger_id = ? OR (? IS NOT NULL AND charger_zaptec_id = ?) "
+            "UNION "
+            "SELECT DISTINCT period_month FROM charging_intervals "
+            "WHERE charger_id = ? OR (? IS NOT NULL AND charger_zaptec_id = ?)",
+            (charger_id, zid, zid, charger_id, zid, zid),
+        ).fetchall()
+        months = {r["period_month"] for r in rows}
+        if since_month is not None:
+            months = {m for m in months if m >= since_month}
+        return sorted(months)
+
+    async def reresolve_after_assignment(
+        self, charger_id: int, *, since_month: str | None = None, actor: AuditContext
+    ) -> dict[str, Any]:
+        """Re-resolve every non-posted month that has usage for ``charger_id``.
+        Called after an assignment is opened or closed so that already-imported
+        sessions pick up the change without a re-sync."""
+        posted = self._posted_months()
+        touched = []
+        for month in self._months_for_charger(charger_id, since_month):
+            if month in posted:
+                continue
+            await self.reresolve_members(month, actor=actor)
+            touched.append(month)
+        return {"months": touched}
+
+    async def reresolve_unresolved(self, *, actor: AuditContext) -> dict[str, Any]:
+        """Re-resolve every non-posted month that still has unattributed sessions.
+        Called after a charger sync so usage imported before the charger existed
+        gets attributed once the charger (and its assignment) is present."""
+        posted = self._posted_months()
+        rows = self._db.connection.execute(
+            "SELECT DISTINCT period_month FROM charging_sessions WHERE member_id IS NULL"
+        ).fetchall()
+        touched = []
+        for r in rows:
+            month = r["period_month"]
+            if month in posted:
+                continue
+            await self.reresolve_members(month, actor=actor)
+            touched.append(month)
+        return {"months": touched}
 
     # --- reads --------------------------------------------------------
 

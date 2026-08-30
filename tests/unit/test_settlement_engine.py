@@ -183,6 +183,40 @@ async def test_negative_balance_is_warned(db):
     assert row["balance_after_ore"] == 5000 - 10000
 
 
+async def test_usage_stale_warning_after_session_changes(db):
+    m1 = await _member(db, "M1")
+    _add_consumption(db, member_id=m1, kwh=10)
+    db.connection.execute("UPDATE charging_sessions SET updated_at = '2000-01-01T00:00:00+00:00'")
+    db.connection.commit()
+    repo, sid = await _draft_with_lines(db, equal_nok="100")
+    await repo.freeze(sid, actor=AuditContext.system())
+    assert not any(w["code"] == "usage_stale" for w in repo.preview(sid)["warnings"])
+
+    # a session for the month is re-imported / re-resolved after the freeze
+    db.connection.execute(
+        "UPDATE charging_sessions SET updated_at = '2999-01-01T00:00:00+00:00' "
+        "WHERE period_month = ?",
+        (MONTH,),
+    )
+    db.connection.commit()
+    assert any(w["code"] == "usage_stale" for w in repo.preview(sid)["warnings"])
+
+
+async def test_usage_stale_warning_when_unassigned_appears_after_freeze(db):
+    m1 = await _member(db, "M1")
+    _add_consumption(db, member_id=m1, kwh=10)
+    db.connection.execute("UPDATE charging_sessions SET updated_at = '2000-01-01T00:00:00+00:00'")
+    db.connection.commit()
+    repo, sid = await _draft_with_lines(db, equal_nok="100")
+    await repo.freeze(sid, actor=AuditContext.system())
+    assert not any(w["code"] == "usage_stale" for w in repo.preview(sid)["warnings"])
+
+    _add_consumption(db, member_id=None, kwh=4, sid="s-unassigned", charger_zid="z-9")
+    db.connection.execute("UPDATE charging_sessions SET updated_at = '2000-01-01T00:00:00+00:00'")
+    db.connection.commit()
+    assert any(w["code"] == "usage_stale" for w in repo.preview(sid)["warnings"])
+
+
 # --- post -------------------------------------------------------
 
 

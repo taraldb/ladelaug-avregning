@@ -464,6 +464,8 @@ class SettlementRepo:
         late = self._unresolved_late(month)
         if late:
             warnings.append({"code": "late_sessions", "count": late})
+        if self._usage_changed_since(month, row["usage_frozen_at"]):
+            warnings.append({"code": "usage_stale"})
         if row["invoice_kwh"] and row["grid_kwh"]:
             diff = abs(Decimal(row["invoice_kwh"]) - Decimal(row["grid_kwh"]))
             if Decimal(row["grid_kwh"]) > 0 and diff / Decimal(row["grid_kwh"]) > Decimal("0.1"):
@@ -675,6 +677,20 @@ class SettlementRepo:
             (month,),
         ).fetchall()
         return {int(r["member_id"]): int(r["n"]) for r in rows}
+
+    def _usage_changed_since(self, month: str, frozen_at: str | None) -> bool:
+        """True if the month still has unassigned consumption, or any session
+        row was imported / re-resolved after the snapshot was frozen — the
+        frozen numbers no longer match the imported usage, so re-freeze."""
+        if not frozen_at:
+            return False
+        if ChargingRepo(self._db, tz=self._tz).unassigned_total_kwh(month) > 0:
+            return True
+        latest = self._db.connection.execute(
+            "SELECT MAX(updated_at) FROM charging_sessions WHERE period_month = ?",
+            (month,),
+        ).fetchone()[0]
+        return bool(latest and latest > frozen_at)
 
     def _unresolved_late(self, month: str) -> int:
         return int(

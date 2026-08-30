@@ -6,6 +6,7 @@ import {
   MEMBER_USER,
   seedCharger,
   seedMember,
+  seedUnassigned,
   setSession,
 } from "../test/handlers";
 import { renderApp } from "../test/utils";
@@ -65,6 +66,31 @@ describe("Chargers (admin)", () => {
 
     expect(await screen.findByText("Brukt")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Slett" })).not.toBeInTheDocument();
+  });
+
+  it("shows the unassigned-consumption banner and re-runs allocation", async () => {
+    setSession(ADMIN_USER);
+    const month = new Date().toISOString().slice(0, 7);
+    seedCharger({ name: "C1", zaptec_id: "z-1" });
+    seedUnassigned(month, [
+      {
+        charger_zaptec_id: "z-1",
+        charger_id: 1,
+        charger_name: "C1",
+        sessions: 3,
+        energy_kwh: "12.500",
+      },
+    ]);
+    const { user } = renderApp(<AppRouter />, { route: "/chargers" });
+
+    expect(
+      await screen.findByText(/12\.500 kWh i .* er ikke fordelt/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Kjør ny fordeling" }));
+    expect(
+      await screen.findByText(/Ny fordeling kjørt: 1 økt/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/er ikke fordelt/)).not.toBeInTheDocument();
   });
 
   it("is not reachable for a member session", async () => {

@@ -47,7 +47,14 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `POST /api/chargers` (201) `{name,serial_no?,zaptec_id?,device_type?}` -> `Charger`.
 - `PATCH /api/chargers/{id}` (admin, `X-Requested-With`) partial `{name?,serial_no?,device_type?,is_active?}` -> `Charger`; 422 `no_changes` | `name_required`; `zaptec_id` is not patchable.
 - `DELETE /api/chargers/{id}` (admin, `X-Requested-With`) -> 204. 422 `zaptec_charger` (mirrored from Zaptec — deactivate instead) | `charger_has_usage`; 404 `not_found`. Cascade-removes the charger's assignment history.
+- `POST /api/chargers/{id}/assignments` `{member_id, effective_from?:"YYYY-MM-DD", note?}` -> `{assignment}`. `effective_from` defaults to today; back-date it to cover already-imported usage. Opening/closing an assignment auto-re-resolves member attribution for every non-posted month with usage for that charger.
 - `Charger = {id,zaptec_id:string|null,name,serial_no:string|null,device_type:string|null,is_active:boolean,last_synced_at:string|null,created_at,updated_at,assigned_member_id:number|null,deletable:boolean}`
+
+### Charging data / attribution (Release 1B, Epic 4 — admin)
+
+- `GET /api/charging/unassigned?month=YYYY-MM` -> `{month,total_kwh:string,chargers:[{charger_zaptec_id,charger_id:number|null,charger_name:string|null,sessions:number,energy_kwh:string}]}`. `total_kwh>0` blocks a settlement freeze for that month.
+- `POST /api/charging/reresolve?month=YYYY-MM` (admin, `X-Requested-With`) -> `{month,sessions_changed:number}`. Re-computes `charger_id` + `member_id` for the month's imported rows from the current chargers and assignments.
+- Settlement `compute`/`preview` may emit a `{"code":"usage_stale"}` warning when the frozen snapshot no longer matches the imported usage (unassigned kWh appeared, or a session changed after `usage_frozen_at`). It is post-blocking — re-freeze to clear it.
 
 ### Forecasting + low-balance (Release 1C, Epic 8)
 

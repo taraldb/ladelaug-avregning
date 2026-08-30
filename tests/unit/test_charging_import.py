@@ -174,6 +174,77 @@ async def test_unassigned_consumption_and_reresolve(db):
     assert repo.consumption_by_member("2026-07") == {m1: Decimal("5.000")}
 
 
+async def test_reresolve_backfills_charger_id_for_late_charger(db):
+    # session imported before the charger row exists -> charger_id + member_id NULL
+    repo = ChargingRepo(db, tz=TZ)
+    s = _session("s-late", "z-1", "2026-08-10T10:00:00+00:00", "2026-08-10T12:00:00+00:00", "6")
+    await repo.import_sessions([s], actor=AuditContext.system())
+    row = db.connection.execute("SELECT charger_id, member_id FROM charging_sessions").fetchone()
+    assert row["charger_id"] is None and row["member_id"] is None
+
+    m1 = await _member(db, "M1")
+    c = await _charger(db, "C1", "z-1")
+    await ChargerRepo(db).assign(
+        c["id"], m1, effective_from="2026-08-01", actor=AuditContext.system()
+    )
+    res = await repo.reresolve_members("2026-08", actor=AuditContext.system())
+    assert res["sessions_changed"] == 1
+    row = db.connection.execute("SELECT charger_id, member_id FROM charging_sessions").fetchone()
+    assert row["charger_id"] == c["id"] and row["member_id"] == m1
+
+
+async def test_reresolve_resolves_manual_charger_by_serial(db):
+    m1 = await _member(db, "M1")
+    manual = await ChargerRepo(db).create(
+        name="146B", serial_no="ZPR333972", actor=AuditContext.system()
+    )
+    await ChargerRepo(db).assign(
+        manual["id"], m1, effective_from="2026-08-01", actor=AuditContext.system()
+    )
+    repo = ChargingRepo(db, tz=TZ)
+    s = ZaptecSession(
+        session_id="s-serial",
+        charger_zaptec_id="z-unknown",
+        device_id="ZPR333972",
+        started_at="2026-08-10T10:00:00+00:00",
+        ended_at="2026-08-10T12:00:00+00:00",
+        energy_kwh=Decimal("4.0"),
+        user_id="u",
+        user_full_name="Kari",
+        energy_details=[],
+        raw={"Id": "s-serial", "DeviceId": "ZPR333972"},
+    )
+    await repo.import_sessions([s], actor=AuditContext.system())
+    row = db.connection.execute("SELECT charger_id, member_id FROM charging_sessions").fetchone()
+    assert row["charger_id"] == manual["id"] and row["member_id"] == m1
+
+
+async def test_reresolve_unresolved_skips_posted_months(db):
+    m1 = await _member(db, "M1")
+    c = await _charger(db, "C1", "z-1")
+    repo = ChargingRepo(db, tz=TZ)
+    await repo.import_sessions(
+        [
+            _session("p", "z-1", "2026-07-10T10:00:00+00:00", "2026-07-10T11:00:00+00:00", "2"),
+            _session("q", "z-1", "2026-08-10T10:00:00+00:00", "2026-08-10T11:00:00+00:00", "3"),
+        ],
+        actor=AuditContext.system(),
+    )
+    db.connection.execute(
+        "INSERT INTO settlements (period_month, status, created_at) "
+        "VALUES ('2026-07', 'posted', '2026-08-01T00:00:00+00:00')"
+    )
+    db.connection.commit()
+    await ChargerRepo(db).assign(
+        c["id"], m1, effective_from="2026-01-01", actor=AuditContext.system()
+    )
+
+    res = await repo.reresolve_unresolved(actor=AuditContext.system())
+    assert res["months"] == ["2026-08"]
+    assert repo.consumption_by_member("2026-07") == {}  # posted month left alone
+    assert repo.consumption_by_member("2026-08") == {m1: Decimal("3.000")}
+
+
 async def test_member_resolved_by_assignment_on_session_date(db):
     m1, m2 = await _member(db, "M1"), await _member(db, "M2")
     c = await _charger(db, "C1", "z-1")

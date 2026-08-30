@@ -69,6 +69,10 @@ class ZaptecSync:
                 )
                 created += int(was_created)
                 updated += int(not was_created)
+            # Usage imported before its charger existed (or before it was
+            # adopted) is still unattributed — resolve it now that the charger
+            # and its assignments are present.
+            await ChargingRepo(self._db, tz=self._config.timezone).reresolve_unresolved(actor=actor)
         except Exception as exc:
             await runs.record(
                 kind="chargers",

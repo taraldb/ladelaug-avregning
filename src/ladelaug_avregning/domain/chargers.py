@@ -450,6 +450,22 @@ class ChargerRepo:
         ).fetchall()
         return {int(r["charger_id"]): int(r["member_id"]) for r in rows}
 
+    def local_id_index(self) -> dict[str, dict[str, int]]:
+        """Two lookups from charger identifiers to the local charger id:
+        ``zaptec`` (by zaptec_id) and ``serial`` (by lower-cased serial_no).
+        Used to attribute imported charging rows to a charger even when the
+        session predates the charger's creation or the charger is hand-entered.
+        """
+        by_zaptec: dict[str, int] = {}
+        by_serial: dict[str, int] = {}
+        for c in self.list():
+            cid = int(c["id"])
+            if c["zaptec_id"]:
+                by_zaptec[str(c["zaptec_id"])] = cid
+            if c["serial_no"]:
+                by_serial[str(c["serial_no"]).strip().lower()] = cid
+        return {"zaptec": by_zaptec, "serial": by_serial}
+
     def zaptec_assignment_map(self, on_date: str | None = None) -> dict[str, int]:
         """charger zaptec_id -> member_id for assignments covering on_date. Used
         when resolving imported charging sessions to a member."""

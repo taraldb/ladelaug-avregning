@@ -908,15 +908,43 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.post("/api/chargers/:id/assignments", async ({ params, request }) => {
-    const body = (await request.json()) as { member_id: number };
+    const body = (await request.json()) as {
+      member_id: number;
+      effective_from?: string;
+    };
     const c = mock1b.chargers.find((x) => x.id === Number(params.id));
     if (c) c.assigned_member_id = body.member_id;
-    return HttpResponse.json({ assignment: { id: nextId(), charger_id: Number(params.id) } });
+    return HttpResponse.json({
+      assignment: {
+        id: nextId(),
+        charger_id: Number(params.id),
+        member_id: body.member_id,
+        effective_from: body.effective_from ?? "2026-01-01",
+        effective_to: null,
+      },
+    });
   }),
   http.post("/api/chargers/:id/unassign", ({ params }) => {
     const c = mock1b.chargers.find((x) => x.id === Number(params.id));
     if (c) c.assigned_member_id = null;
     return HttpResponse.json({ assignment: { id: nextId(), charger_id: Number(params.id) } });
+  }),
+
+  http.get("/api/charging/unassigned", ({ request }) => {
+    const month = new URL(request.url).searchParams.get("month") ?? "";
+    const chargers = mock1b.unassigned.get(month) ?? [];
+    const total = chargers.reduce((s, c) => s + Number(c.energy_kwh), 0);
+    return HttpResponse.json({
+      month,
+      chargers,
+      total_kwh: total.toFixed(3),
+    });
+  }),
+  http.post("/api/charging/reresolve", ({ request }) => {
+    const month = new URL(request.url).searchParams.get("month") ?? "";
+    const had = mock1b.unassigned.get(month)?.length ?? 0;
+    mock1b.unassigned.delete(month);
+    return HttpResponse.json({ month, sessions_changed: had });
   }),
 
   http.get("/api/zaptec/status", () =>
@@ -1213,12 +1241,31 @@ interface Mock1bState {
     balance_after_nok: string;
     report_url: string;
   }[];
+  unassigned: Map<string, UnassignedCharger[]>;
+}
+
+interface UnassignedCharger {
+  charger_zaptec_id: string;
+  charger_id: number | null;
+  charger_name: string | null;
+  sessions: number;
+  energy_kwh: string;
 }
 
 let mock1b: Mock1bState = freshMock1b();
 
 function freshMock1b(): Mock1bState {
-  return { chargers: [], settlements: [], details: new Map(), mySettlements: [] };
+  return {
+    chargers: [],
+    settlements: [],
+    details: new Map(),
+    mySettlements: [],
+    unassigned: new Map(),
+  };
+}
+
+export function seedUnassigned(month: string, chargers: UnassignedCharger[]): void {
+  mock1b.unassigned.set(month, chargers);
 }
 
 function previewFor(id: number) {

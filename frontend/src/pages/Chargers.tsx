@@ -5,8 +5,10 @@ import {
   assignCharger,
   createCharger,
   deleteCharger,
+  getUnassigned,
   listChargers,
   listMembers,
+  reresolveCharging,
   syncChargers,
   unassignCharger,
   updateCharger,
@@ -16,13 +18,32 @@ import {
 import Modal from "../components/Modal";
 import Table, { type Column } from "../components/Table";
 
+function thisMonth(): string {
+  return new Date().toISOString().slice(0, 7);
+}
+
 export default function Chargers() {
   const chargers = useSWR("/api/chargers", () => listChargers());
   const members = useSWR("/api/members", () => listMembers());
   const zaptec = useSWR("/api/zaptec/status", () => zaptecStatus());
+  const month = thisMonth();
+  const unassigned = useSWR([`/api/charging/unassigned`, month], () =>
+    getUnassigned(month),
+  );
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Charger | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+
+  async function doReresolve() {
+    setMsg(null);
+    try {
+      const r = await reresolveCharging(month);
+      setMsg(`Ny fordeling kjørt: ${r.sessions_changed} økt(er) oppdatert.`);
+      await Promise.all([chargers.mutate(), unassigned.mutate()]);
+    } catch (err) {
+      setMsg(err instanceof ApiError ? err.message : "Kunne ikke kjøre ny fordeling.");
+    }
+  }
 
   async function doDelete(c: Charger) {
     if (
@@ -50,8 +71,7 @@ export default function Chargers() {
     try {
       const r = await syncChargers();
       setMsg(`Synk fullført: ${r.chargers_created} nye, ${r.chargers_updated} oppdatert.`);
-      await chargers.mutate();
-      await zaptec.mutate();
+      await Promise.all([chargers.mutate(), zaptec.mutate(), unassigned.mutate()]);
     } catch (err) {
       setMsg(err instanceof ApiError ? err.message : "Synk feilet.");
     }
@@ -74,8 +94,9 @@ export default function Chargers() {
           <AssignCell
             charger={c}
             members={members.data?.members ?? []}
+            defaultEffectiveFrom={`${month}-01`}
             onChange={async () => {
-              await chargers.mutate();
+              await Promise.all([chargers.mutate(), unassigned.mutate()]);
             }}
           />
           <button
@@ -130,6 +151,32 @@ export default function Chargers() {
         </p>
       )}
 
+      {unassigned.data && Number(unassigned.data.total_kwh) > 0 && (
+        <div className="rounded-md border border-amber-700/60 bg-amber-950/40 p-3 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-medium text-amber-200">
+              {unassigned.data.total_kwh} kWh i {month} er ikke fordelt på noe medlem
+            </p>
+            <button
+              type="button"
+              onClick={() => void doReresolve()}
+              className="shrink-0 rounded-md border border-amber-600 px-3 py-1 text-xs text-amber-100 hover:bg-amber-900/60"
+            >
+              Kjør ny fordeling
+            </button>
+          </div>
+          <ul className="mt-2 space-y-0.5 text-amber-100/80">
+            {unassigned.data.chargers.map((u) => (
+              <li key={u.charger_zaptec_id}>
+                {u.charger_name ?? u.charger_zaptec_id}: {u.energy_kwh} kWh ({u.sessions} økt
+                {u.sessions === 1 ? "" : "er"}) — tildel laderen et medlem med gyldig fra-dato
+                i {month}.
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <Table
         columns={columns}
         rows={chargers.data?.chargers ?? []}
@@ -161,20 +208,26 @@ export default function Chargers() {
 function AssignCell({
   charger,
   members,
+  defaultEffectiveFrom,
   onChange,
 }: {
   charger: Charger;
   members: { id: number; full_name: string }[];
+  defaultEffectiveFrom: string;
   onChange: () => void | Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [effectiveFrom, setEffectiveFrom] = useState(defaultEffectiveFrom);
 
   async function assign(memberId: number) {
     setErr(null);
     setBusy(true);
     try {
-      await assignCharger(charger.id, { member_id: memberId });
+      await assignCharger(charger.id, {
+        member_id: memberId,
+        effective_from: effectiveFrom || undefined,
+      });
       await onChange();
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Feil");
@@ -198,6 +251,13 @@ function AssignCell({
 
   return (
     <div className="flex items-center gap-2">
+      <input
+        type="date"
+        aria-label={`Gjelder fra for ${charger.name}`}
+        value={effectiveFrom}
+        onChange={(e) => setEffectiveFrom(e.target.value)}
+        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+      />
       <select
         aria-label={`Tildel ${charger.name}`}
         disabled={busy}
