@@ -53,6 +53,22 @@ corrections, refunds, member departure, charging-access workflows.
 
 The per-phase entries below record how it was built.
 
+## 2026-08-30 — Forecast settings + member forecast/consumption API (Release 1C phase P2)
+
+- `webapp/routes/forecast.py` — admin router (`require_admin`):
+  `GET /api/forecast/settings`, `PUT /api/forecast/settings` (`require_fetch`;
+  the audit row is written by `ForecastRepo.update_settings`), and
+  `GET /api/forecast/members` (overview list from `all_member_forecasts()`).
+- `routes/me.py` — `GET /api/me/forecast` (the caller's own
+  `ForecastRepo.member_forecast`) and
+  `GET /api/me/consumption?month=YYYY-MM` (metered kWh + session count for the
+  month, defaulting to the current Europe/Oslo month; `US-902` pre-settlement
+  view). Member id is always resolved from the session.
+- `ChargingRepo.member_consumption(member_id, month)` and
+  `member_session_count(member_id, month)`.
+- `schemas.py` — `ForecastSettingsIn` / `ForecastSettingsOut`,
+  `MemberForecastOut`, `MemberConsumptionOut`.
+
 ## 2026-08-30 — Trailing-mean forecast engine (Release 1C phase P1)
 
 - `migrations/0007_forecast.sql` — `forecast_settings` (admin-tunable singleton,

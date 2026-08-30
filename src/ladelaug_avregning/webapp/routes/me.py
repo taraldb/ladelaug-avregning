@@ -15,6 +15,9 @@ from fastapi.responses import HTMLResponse
 
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
+from ladelaug_avregning.domain import periods
+from ladelaug_avregning.domain.charging import ChargingRepo
+from ladelaug_avregning.domain.forecast import ForecastRepo
 from ladelaug_avregning.domain.ledger import LedgerRepo
 from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
@@ -22,7 +25,13 @@ from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.money import nok_to_ore
 from ladelaug_avregning.reports import render_member_report
 from ladelaug_avregning.webapp.deps import get_config, get_current_member, get_db
-from ladelaug_avregning.webapp.schemas import LedgerTxnOut, MemberOut, StatusPeriodOut
+from ladelaug_avregning.webapp.schemas import (
+    LedgerTxnOut,
+    MemberConsumptionOut,
+    MemberForecastOut,
+    MemberOut,
+    StatusPeriodOut,
+)
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -78,6 +87,32 @@ async def my_status(
         "participates": repo.effective_participation(member_id),
         "history": [StatusPeriodOut.from_row(r) for r in repo.status_history(member_id)],
     }
+
+
+@router.get("/forecast")
+async def my_forecast(
+    member_id: int = Depends(get_current_member), db: Database = Depends(get_db)
+) -> MemberForecastOut:
+    return MemberForecastOut.from_forecast(ForecastRepo(db).member_forecast(member_id))
+
+
+@router.get("/consumption")
+async def my_consumption(
+    member_id: int = Depends(get_current_member),
+    month: str | None = Query(default=None),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> MemberConsumptionOut:
+    resolved = month or periods.current_month(config.timezone)
+    if not periods.valid_month(resolved):
+        raise DomainError("bad_month", "month must be YYYY-MM")
+    charging = ChargingRepo(db, tz=config.timezone)
+    return MemberConsumptionOut(
+        member_id=member_id,
+        month=resolved,
+        consumption_kwh=str(charging.member_consumption(member_id, resolved)),
+        session_count=charging.member_session_count(member_id, resolved),
+    )
 
 
 @router.get("/settlements")

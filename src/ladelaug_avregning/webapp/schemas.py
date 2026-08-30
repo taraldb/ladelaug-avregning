@@ -502,3 +502,101 @@ class ChargerAssignmentOut(BaseModel):
             note=row["note"],
             created_at=row["created_at"],
         )
+
+
+# --- forecasting (Epic 8) ------------------------------------------
+
+
+class ForecastSettingsIn(BaseModel):
+    """Partial update of the ``forecast_settings`` singleton. Only the fields
+    present in the request body are applied; an explicit
+    ``rate_override_ore_per_kwh: null`` clears the override."""
+
+    rate_override_ore_per_kwh: int | None = None
+    buffer_months: float | None = None
+    notify_cooldown_days: int | None = None
+    lookback_settlements: int | None = None
+
+    @field_validator("rate_override_ore_per_kwh")
+    @classmethod
+    def _v_rate(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("rate_override_ore_per_kwh must be a positive integer")
+        return v
+
+    @field_validator("buffer_months")
+    @classmethod
+    def _v_buffer(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("buffer_months must be greater than 0")
+        return v
+
+    @field_validator("notify_cooldown_days")
+    @classmethod
+    def _v_cooldown(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("notify_cooldown_days must be a non-negative integer")
+        return v
+
+    @field_validator("lookback_settlements")
+    @classmethod
+    def _v_lookback(cls, v: int | None) -> int | None:
+        if v is not None and v < 1:
+            raise ValueError("lookback_settlements must be a positive integer")
+        return v
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> ForecastSettingsIn:
+        if not self.model_fields_set:
+            raise ValueError("provide at least one forecast setting to update")
+        return self
+
+    def to_update_kwargs(self) -> dict[str, Any]:
+        return {name: getattr(self, name) for name in self.model_fields_set}
+
+
+class ForecastSettingsOut(BaseModel):
+    rate_override_ore_per_kwh: int | None
+    buffer_months: float
+    notify_cooldown_days: int
+    lookback_settlements: int
+    updated_at: str | None
+    updated_by_user_id: int | None
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> ForecastSettingsOut:
+        return cls(
+            rate_override_ore_per_kwh=row["rate_override_ore_per_kwh"],
+            buffer_months=row["buffer_months"],
+            notify_cooldown_days=row["notify_cooldown_days"],
+            lookback_settlements=row["lookback_settlements"],
+            updated_at=row["updated_at"],
+            updated_by_user_id=row["updated_by_user_id"],
+        )
+
+
+class MemberForecastOut(BaseModel):
+    member_id: int
+    available: bool
+    forecast_kwh: str
+    rate_ore_per_kwh: str
+    rate_source: str | None
+    equal_share_ore: int
+    forecast_monthly_cost_ore: int
+    recommended_minimum_ore: int
+    balance_ore: int
+    recommended_topup_ore: int
+    low_balance: bool
+    severity: str | None
+    reason: str | None = None
+
+    @classmethod
+    def from_forecast(cls, forecast: dict[str, Any]) -> MemberForecastOut:
+        return cls(**forecast)
+
+
+class MemberConsumptionOut(BaseModel):
+    member_id: int
+    month: str
+    consumption_kwh: str
+    session_count: int

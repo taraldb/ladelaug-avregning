@@ -50,13 +50,23 @@ def test_me_returns_own_record(member_client):
     assert body["member_reference"] == "M-100"
 
 
+_ME_PATHS = (
+    "/api/me",
+    "/api/me/balance",
+    "/api/me/ledger",
+    "/api/me/status",
+    "/api/me/forecast",
+    "/api/me/consumption",
+)
+
+
 def test_me_requires_member_role(admin_client):
-    for path in ("/api/me", "/api/me/balance", "/api/me/ledger", "/api/me/status"):
+    for path in _ME_PATHS:
         assert admin_client.get(path).status_code == 403
 
 
 def test_me_requires_authentication(client):
-    for path in ("/api/me", "/api/me/balance", "/api/me/ledger", "/api/me/status"):
+    for path in _ME_PATHS:
         assert client.get(path).status_code == 401
 
 
@@ -81,6 +91,27 @@ def test_me_ledger_is_exactly_own_rows(member_client, config, db):
     assert body["total"] == 1
     assert [t["reference"] for t in body["transactions"]] == ["mine-1"]
     assert all(t["member_id"] == MY_ID for t in body["transactions"])
+
+
+def test_me_consumption_and_forecast_are_scoped_to_own_member(member_client, db):
+    other = _add_member(db, "M-200")
+    db.connection.execute(
+        "INSERT INTO charging_sessions (zaptec_session_id, charger_zaptec_id, member_id, "
+        "period_month, started_at, ended_at, energy_kwh, split_method, source, imported_at, "
+        "updated_at) VALUES ('x1', 'z1', ?, '2026-08', '2026-08-10T10:00:00+00:00', "
+        "'2026-08-10T12:00:00+00:00', '42.000', 'none', 'test', "
+        "'2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')",
+        (other,),
+    )
+    db.connection.commit()
+
+    cons = member_client.get("/api/me/consumption?month=2026-08").json()
+    assert cons["member_id"] == MY_ID
+    assert cons["consumption_kwh"] == "0" and cons["session_count"] == 0
+
+    fc = member_client.get("/api/me/forecast").json()
+    assert fc["member_id"] == MY_ID
+    assert fc["available"] is False
 
 
 def test_me_status_reflects_own_timeline(member_client, config):

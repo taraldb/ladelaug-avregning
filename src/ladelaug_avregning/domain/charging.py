@@ -270,6 +270,18 @@ class ChargingRepo:
             )
         return out
 
+    def member_consumption(self, member_id: int, month: str) -> Decimal:
+        """That member's metered kWh for the month, before any settlement (US-902)."""
+        return self.consumption_by_member(month).get(member_id, Decimal(0))
+
+    def member_session_count(self, member_id: int, month: str) -> int:
+        return int(
+            self._db.connection.execute(
+                "SELECT COUNT(*) FROM charging_sessions WHERE period_month = ? AND member_id = ?",
+                (month, member_id),
+            ).fetchone()[0]
+        )
+
     def total_kwh(self, month: str) -> Decimal:
         rows = self._db.connection.execute(
             "SELECT energy_kwh FROM charging_sessions WHERE period_month = ?", (month,)

@@ -16,6 +16,7 @@ from ladelaug_avregning.webapp.routes import (
     auth,
     chargers,
     charging,
+    forecast,
     health,
     ledger,
     me,
@@ -62,6 +63,7 @@ def create_app(config: AppConfig, db: Database) -> FastAPI:
     app.include_router(ledger.router)
     app.include_router(notifications.router)
     app.include_router(system.router)
+    app.include_router(forecast.router)
     app.include_router(me.router)
 
     # Mounted last so it only serves paths no /api route claimed.
