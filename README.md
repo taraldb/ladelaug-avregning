@@ -8,12 +8,19 @@ metered kWh. The portal keeps an **append-only financial ledger** and an
 runs the settlement, and produces per-member reports. Release 1C adds a member
 portal with a consumption forecast, low-balance warning emails, and PDF reports.
 
-## Status — Release 1C (`0.3.0`)
+## Status — Release 1C (`0.3.1`)
 
 Release 1A was the foundation (identity, members, the append-only ledger,
 audit). Release 1B turned a monthly electricity invoice into per-member charges
 (chargers, Zaptec sync, the settlement engine, HTML reports, email). Release 1C
 gives members a forward view and finishes the reporting.
+
+`0.3.1` is a charger bug-fix batch: synced chargers store the hardware serial
+(`DeviceId`) rather than a name duplicate, admins can edit and delete
+hand-entered chargers, Zaptec sync adopts a matching manual charger instead of
+duplicating it, and usage imported before its charger or assignment existed is
+attributed retroactively (with an unassigned-kWh banner and a "re-run
+allocation" action). See `spec/charger-attribution-fix.md`.
 
 - **Forecasting** — a trailing-mean forecast (last 3 posted settlements, no
   seasonality) of each member's next-month kWh and cost, a recommended minimum

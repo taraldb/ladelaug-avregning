@@ -2,6 +2,41 @@
 
 Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
+## 2026-08-30 — Charger fixes (`0.3.1`)
+
+Bug-fix batch for chargers and pre-import usage attribution. See
+`spec/charger-attribution-fix.md` for the full write-up and the operator
+runbook for cleaning up existing data.
+
+- **Zaptec charger serial** — `ZaptecCharger.parse` now maps `serial_no` from
+  the hardware `DeviceId` (fallback `SerialNo`), so a synced charger no longer
+  shows the same string in "Navn" and "Serienr." `device_id` is threaded into
+  `upsert_from_zaptec` and the sync audit detail (no new column). Migration
+  `0008_charger_serial_backfill.sql` fixes already-synced rows from
+  `raw_json.DeviceId`, leaving hand-corrected serials and manual chargers alone.
+- **Charger edit / delete** — `EditChargerModal` wires the existing
+  `PATCH /api/chargers/{id}` into the UI. New `DELETE /api/chargers/{id}`:
+  hard delete, hand-entered chargers only, refused when the charger has
+  imported usage (`charger_has_usage`, 422) or is Zaptec-mirrored
+  (`zaptec_charger`, 422); cascades the assignment history; one
+  `charger.deleted` audit row. `ChargerOut.deletable` gates the button.
+- **Adopt on sync** — `upsert_from_zaptec` adopts a single hand-entered charger
+  whose serial matches the incoming `DeviceId` (attaches `zaptec_id`, keeps the
+  admin's name, `charger.adopted` audit) instead of creating a duplicate;
+  ambiguous matches fall through to a normal insert.
+- **Retroactive attribution** — imported charging rows resolve to a local
+  `charger_id` (by `zaptec_id`, then by serial / `DeviceId`) rather than
+  `zaptec_id` alone, and `import_sessions` / `reresolve_members` backfill
+  `charger_id` onto the stored rows. `assign` / `unassign` and `sync_chargers`
+  now auto-run `reresolve_after_assignment` / `reresolve_unresolved`, skipping
+  months owned by a posted settlement. The assign control gains a back-date
+  field; the Chargers page and settlement detail show an unassigned-kWh banner
+  with `POST /api/charging/reresolve` ("Kjør ny fordeling").
+- **Stale-snapshot guard** — `settlement.compute` / `preview` emit a
+  post-blocking `usage_stale` warning when the frozen snapshot no longer
+  matches the imported usage (unassigned kWh appeared, or a session changed
+  after `usage_frozen_at`); the "Frys på nytt" button is the remedy.
+
 ## 2026-08-30 — Release 1C (`0.3.0`)
 
 Forecasting, the member portal, low-balance warnings, and PDF settlement
