@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import contextlib
 import html
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
+
+from ladelaug_avregning.money import ore_to_nok
 
 _CSS = """
 :root { color-scheme: light; }
@@ -61,7 +64,46 @@ def _page(title: str, body: str) -> str:
     )
 
 
-def render_member_report(result: dict[str, Any], member: dict[str, Any]) -> str:
+def _forecast_section(forecast: dict[str, Any] | None) -> str:
+    """The "Prognose neste måned" / "Anbefalt saldo" block (decision C10).
+
+    ``forecast`` is a :meth:`ForecastRepo.member_forecast` dict. When it is
+    ``None`` or ``available`` is false we fall back to a short neutral footer —
+    no placeholder promise.
+    """
+    if not forecast or not forecast.get("available"):
+        return (
+            "<footer>Prognose for neste måned er ikke tilgjengelig ennå "
+            "(for lite avregningshistorikk).</footer>"
+        )
+
+    kwh = Decimal(str(forecast["forecast_kwh"])).quantize(Decimal("0.01"))
+    monthly_cost = ore_to_nok(int(forecast["forecast_monthly_cost_ore"]))
+    recommended_minimum = ore_to_nok(int(forecast["recommended_minimum_ore"]))
+    topup_ore = max(0, int(forecast["recommended_minimum_ore"]) - int(forecast["balance_ore"]))
+    topup = ore_to_nok(topup_ore)
+    return (
+        "<h2>Prognose neste måned</h2>"
+        '<dl class="kv">'
+        f"<dt>Forventet forbruk</dt><dd>{_esc(kwh)} kWh</dd>"
+        f"<dt>Estimert månedskostnad</dt><dd>{_nok(str(monthly_cost))}</dd>"
+        "</dl>"
+        "<h2>Anbefalt saldo / innbetaling</h2>"
+        '<dl class="kv">'
+        f"<dt>Anbefalt saldo</dt><dd>{_nok(str(recommended_minimum))}</dd>"
+        "<dt>Anbefalt innbetaling for å nå anbefalt saldo</dt>"
+        f"<dd>{_nok(str(topup))}</dd>"
+        "</dl>"
+        "<footer>Prognosen er et estimat basert på de siste avregningene og "
+        "kan endre seg.</footer>"
+    )
+
+
+def render_member_report(
+    result: dict[str, Any],
+    member: dict[str, Any],
+    forecast: dict[str, Any] | None = None,
+) -> str:
     month = _esc(result["period_month"])
     name = _esc(member["full_name"])
     ref = _esc(member["member_reference"])
@@ -97,8 +139,7 @@ def render_member_report(result: dict[str, Any], member: dict[str, Any]) -> str:
         f"<dt>Belastet</dt><dd>-{_nok(member['charge_nok'])}</dd>"
         f"<dt>Saldo etter avregning</dt><dd{after_cls}>{_nok(member['balance_after_nok'])}</dd>"
         "</dl>"
-        "<footer>Prognose og anbefalt innbetaling kommer i en senere versjon."
-        "</footer>"
+        f"{_forecast_section(forecast)}"
     )
     return _page(f"Avregning {result['period_month']} – {member['full_name']}", body)
 
@@ -147,10 +188,19 @@ def _write_pdf_sibling(out_dir: Path, stem: str, html_doc: str) -> None:
 
 
 def write_reports(
-    result: dict[str, Any], members: list[dict[str, Any]], out_dir: Path
+    result: dict[str, Any],
+    members: list[dict[str, Any]],
+    out_dir: Path,
+    forecasts: dict[int, dict[str, Any]] | None = None,
 ) -> list[str]:
-    """Write the summary + one file per member. Returns the relative filenames."""
+    """Write the summary + one file per member. Returns the relative filenames.
+
+    ``forecasts`` maps ``member_id`` to a
+    :meth:`ForecastRepo.member_forecast` dict; each member's entry is rendered
+    into their report's forecast section (decision C10).
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
+    forecasts = forecasts or {}
     written: list[str] = []
 
     summary_html = render_summary_report(result)
@@ -164,7 +214,7 @@ def write_reports(
         if m is None:
             continue
         stem = f"medlem-{snap['member_id']}"
-        member_html = render_member_report(result, m)
+        member_html = render_member_report(result, m, forecasts.get(snap["member_id"]))
         (out_dir / f"{stem}.html").write_text(member_html, encoding="utf-8")
         written.append(f"{stem}.html")
         _write_pdf_sibling(out_dir, stem, member_html)

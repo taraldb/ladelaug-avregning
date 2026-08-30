@@ -15,6 +15,7 @@ from ladelaug_avregning import clock
 from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
+from ladelaug_avregning.domain.forecast import ForecastRepo
 from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.notifications import NotificationRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
@@ -243,7 +244,8 @@ async def member_report(
     entry = _repo(db, config).member_entry(settlement_id, member_id)
     if entry is None:
         raise DomainError("not_in_settlement", f"Member {member_id} is not in this settlement.")
-    return HTMLResponse(render_member_report(entry["result"], entry["member"]))
+    forecast = ForecastRepo(db).member_forecast(member_id)
+    return HTMLResponse(render_member_report(entry["result"], entry["member"], forecast))
 
 
 @router.get("/{settlement_id}/reports/{member_id:int}.pdf")
@@ -256,5 +258,6 @@ async def member_report_pdf(
     entry = _repo(db, config).member_entry(settlement_id, member_id)
     if entry is None:
         raise DomainError("not_in_settlement", f"Member {member_id} is not in this settlement.")
-    html = render_member_report(entry["result"], entry["member"])
+    forecast = ForecastRepo(db).member_forecast(member_id)
+    html = render_member_report(entry["result"], entry["member"], forecast)
     return _pdf_response(html, f"avregning-{settlement_id}-medlem-{member_id}.pdf")

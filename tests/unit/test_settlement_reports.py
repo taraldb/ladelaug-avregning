@@ -65,6 +65,27 @@ def _result_and_member():
     return result, member
 
 
+_PLACEHOLDER = "Prognose og anbefalt innbetaling kommer i en senere versjon"
+
+
+def _available_forecast():
+    return {
+        "member_id": 1,
+        "available": True,
+        "forecast_kwh": "13.333333333333333333333333333",
+        "rate_ore_per_kwh": "250",
+        "rate_source": "derived",
+        "equal_share_ore": 20000,
+        "forecast_monthly_cost_ore": 53333,
+        "recommended_minimum_ore": 106666,
+        "balance_ore": 40000,
+        "recommended_topup_ore": 66666,
+        "low_balance": True,
+        "severity": "critical",
+        "reason": None,
+    }
+
+
 def test_render_member_report_contains_key_figures():
     result, member = _result_and_member()
     page = render_member_report(result, member)
@@ -75,6 +96,31 @@ def test_render_member_report_contains_key_figures():
     assert f"450,00{NBSP}kr" in page
     assert f"1{NBSP}050,00{NBSP}kr" in page  # balance after
     assert "<!doctype html>" in page
+    # The 1B stub is gone; with no forecast a neutral footer stands in.
+    assert _PLACEHOLDER not in page
+    assert "Prognose neste måned" not in page
+    assert "ikke tilgjengelig" in page
+
+
+def test_render_member_report_forecast_section():
+    result, member = _result_and_member()
+    page = render_member_report(result, member, _available_forecast())
+    assert _PLACEHOLDER not in page
+    assert "Prognose neste måned" in page
+    assert "13.33 kWh" in page  # forecast kWh, quantised
+    assert "Anbefalt saldo / innbetaling" in page
+    assert f"1{NBSP}066,66{NBSP}kr" in page  # recommended minimum balance
+    assert "Anbefalt innbetaling for å nå anbefalt saldo" in page
+    assert f"666,66{NBSP}kr" in page  # recommended top-up
+
+
+def test_render_member_report_forecast_unavailable_is_neutral():
+    result, member = _result_and_member()
+    fc = {**_available_forecast(), "available": False, "reason": "insufficient_history"}
+    page = render_member_report(result, member, fc)
+    assert _PLACEHOLDER not in page
+    assert "Prognose neste måned" not in page
+    assert "ikke tilgjengelig" in page
 
 
 def test_render_summary_lists_members_and_warnings():

@@ -150,7 +150,8 @@ def _my_report_html(settlement_id: int, member_id: int, db: Database, config: Ap
     entry = repo.member_entry(settlement_id, member_id)
     if entry is None:
         raise DomainError("not_in_settlement", "You are not part of this settlement.")
-    return render_member_report(entry["result"], entry["member"])
+    forecast = ForecastRepo(db).member_forecast(member_id)
+    return render_member_report(entry["result"], entry["member"], forecast)
 
 
 @router.get("/settlements/{settlement_id}/report", response_class=HTMLResponse)

@@ -53,6 +53,26 @@ corrections, refunds, member departure, charging-access workflows.
 
 The per-phase entries below record how it was built.
 
+## 2026-08-30 — Forecast section in member report (Release 1C phase P5)
+
+- `render_member_report(result, member, forecast=None)` — the 1B placeholder
+  footer ("Prognose og anbefalt innbetaling kommer i en senere versjon") is
+  replaced by a real "Prognose neste måned" (forecast kWh, estimated monthly
+  cost) + "Anbefalt saldo / innbetaling" (recommended balance, and
+  `max(0, recommended_minimum_ore − balance_ore)` as "Anbefalt innbetaling for å
+  nå anbefalt saldo") section when a forecast dict is supplied and
+  `available`. Without one, a short neutral footer stands in — no placeholder
+  promise (decision C10).
+- `write_reports(result, members, out_dir, forecasts=None)` threads a
+  `{member_id: forecast_dict}` map to each member's report.
+- `SettlementRepo.post` builds those forecasts via `ForecastRepo.member_forecast`
+  *after* the ledger rows are written (so `balance_ore` reflects the just-posted
+  charge) and passes them to `write_reports`, wrapped best-effort like the
+  existing report write.
+- The on-demand report endpoints (`GET /api/settlement/{id}/reports/{member_id}`
+  + `.pdf`, `GET /api/me/settlements/{id}/report` + `.pdf`) compute a fresh
+  forecast and render the section too.
+
 ## 2026-08-30 — PDF settlement reports (Release 1C phase P4)
 
 - `reports/pdf.py` — `PDF_AVAILABLE` (set by a guarded `import weasyprint`) and

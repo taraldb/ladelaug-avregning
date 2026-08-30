@@ -17,6 +17,7 @@ Allocation (US-606 / US-607 / US-610):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sqlite3
@@ -616,6 +617,18 @@ class SettlementRepo:
             )
 
         posted = {**result, "status": "posted", "members_charged": posted_members}
+
+        # Forecast per member, computed *after* the ledger rows land so the
+        # report's balance reflects the just-posted charge (decision C10).
+        # Best-effort — a forecast failure must never break a post.
+        forecasts: dict[int, dict[str, Any]] = {}
+        with contextlib.suppress(Exception):
+            from ladelaug_avregning.domain.forecast import ForecastRepo
+
+            frepo = ForecastRepo(self._db)
+            forecasts = {
+                m["member_id"]: frepo.member_forecast(m["member_id"]) for m in result["members"]
+            }
         try:
             from ladelaug_avregning.reports import write_reports
 
@@ -623,6 +636,7 @@ class SettlementRepo:
                 posted,
                 self.snapshot_members(settlement_id),
                 self._state / "reports" / month,
+                forecasts,
             )
         except OSError:  # pragma: no cover - report write must not break a post
             pass
