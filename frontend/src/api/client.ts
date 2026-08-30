@@ -113,8 +113,33 @@ export function patch<T>(path: string, body: unknown): Promise<T> {
   return request<T>("PATCH", path, body);
 }
 
+export function put<T>(path: string, body: unknown): Promise<T> {
+  return request<T>("PUT", path, body);
+}
+
 export function del<T>(path: string): Promise<T> {
   return request<T>("DELETE", path);
+}
+
+/** Multipart POST (file upload). Sends the CSRF header, no Content-Type (the
+ * browser sets the multipart boundary). */
+export async function postForm<T>(path: string, form: FormData): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-Requested-With": "fetch", Accept: "application/json" },
+      body: form,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Network request failed";
+    throw new ApiError(0, "network_error", message);
+  }
+  const text = await res.text();
+  const data = text ? safeParse(text) : undefined;
+  if (!res.ok) throw errorFromResponse(res.status, data);
+  return data as T;
 }
 
 // SWR fetcher: `useSWR<T>(key, fetcher)`.
@@ -192,7 +217,9 @@ export type TxnType =
   | "payment"
   | "payment_reversal"
   | "adjustment_credit"
-  | "adjustment_debit";
+  | "adjustment_debit"
+  | "settlement_charge"
+  | "settlement_reversal";
 
 export interface LedgerTxn {
   id: number;
@@ -393,4 +420,402 @@ export function getMyLedger(
 
 export function getMyStatus(): Promise<MyStatus> {
   return get<MyStatus>("/api/me/status");
+}
+
+// --- chargers (admin, Epic 3) -----------------------------------
+
+export interface Charger {
+  id: number;
+  zaptec_id: string | null;
+  name: string;
+  serial_no: string | null;
+  device_type: string | null;
+  is_active: boolean;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+  assigned_member_id: number | null;
+}
+
+export interface ChargerAssignment {
+  id: number;
+  charger_id: number;
+  member_id: number;
+  effective_from: string;
+  effective_to: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+export function listChargers(): Promise<{ chargers: Charger[] }> {
+  return get<{ chargers: Charger[] }>("/api/chargers");
+}
+
+export function createCharger(body: {
+  name: string;
+  serial_no?: string;
+  zaptec_id?: string;
+  device_type?: string;
+}): Promise<Charger> {
+  return post<Charger>("/api/chargers", body);
+}
+
+export function assignCharger(
+  chargerId: number,
+  body: { member_id: number; effective_from?: string; note?: string },
+): Promise<{ assignment: ChargerAssignment }> {
+  return post<{ assignment: ChargerAssignment }>(
+    `/api/chargers/${chargerId}/assignments`,
+    body,
+  );
+}
+
+export function unassignCharger(
+  chargerId: number,
+  body: { effective_to?: string } = {},
+): Promise<{ assignment: ChargerAssignment }> {
+  return post<{ assignment: ChargerAssignment }>(
+    `/api/chargers/${chargerId}/unassign`,
+    body,
+  );
+}
+
+export function chargerAssignments(
+  chargerId: number,
+): Promise<{ assignments: ChargerAssignment[] }> {
+  return get<{ assignments: ChargerAssignment[] }>(
+    `/api/chargers/${chargerId}/assignments`,
+  );
+}
+
+// --- Zaptec sync + charging data (admin, Epic 4) ---------------
+
+export interface SyncRun {
+  id: number;
+  kind: string;
+  status: string;
+  started_at: string;
+  finished_at: string;
+  window_from: string | null;
+  window_to: string | null;
+  items_seen: number;
+  items_imported: number;
+  error: string | null;
+}
+
+export interface ZaptecStatus {
+  enabled: boolean;
+  installation_id: string | null;
+  last: Record<string, SyncRun | null>;
+  recent: SyncRun[];
+  failures: number;
+}
+
+export function zaptecStatus(): Promise<ZaptecStatus> {
+  return get<ZaptecStatus>("/api/zaptec/status");
+}
+
+export function syncChargers(): Promise<Record<string, number>> {
+  return post<Record<string, number>>("/api/zaptec/sync/chargers");
+}
+
+export function syncSessions(month: string): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>(
+    `/api/zaptec/sync/sessions?month=${encodeURIComponent(month)}`,
+  );
+}
+
+export interface ConsumptionResponse {
+  month: string;
+  total_kwh: string;
+  unassigned_kwh: string;
+  by_member: { member_id: number; energy_kwh: string }[];
+}
+
+export function getConsumption(month: string): Promise<ConsumptionResponse> {
+  return get<ConsumptionResponse>(
+    `/api/charging/consumption?month=${encodeURIComponent(month)}`,
+  );
+}
+
+export interface UnassignedResponse {
+  month: string;
+  total_kwh: string;
+  chargers: {
+    charger_zaptec_id: string;
+    charger_id: number | null;
+    charger_name: string | null;
+    sessions: number;
+    energy_kwh: string;
+  }[];
+}
+
+export function getUnassigned(month: string): Promise<UnassignedResponse> {
+  return get<UnassignedResponse>(
+    `/api/charging/unassigned?month=${encodeURIComponent(month)}`,
+  );
+}
+
+export function reresolveCharging(
+  month: string,
+): Promise<{ month: string; sessions_changed: number }> {
+  return post<{ month: string; sessions_changed: number }>(
+    `/api/charging/reresolve?month=${encodeURIComponent(month)}`,
+  );
+}
+
+// --- settlement engine (admin, Epic 6) ------------------------
+
+export type SettlementStatus = "draft" | "posted";
+export type AllocationMethod = "equal" | "consumption";
+
+export interface Settlement {
+  id: number;
+  period_month: string;
+  status: SettlementStatus;
+  invoice_kwh: string | null;
+  invoice_total_nok: string | null;
+  grid_kwh: string | null;
+  attachment_filename: string | null;
+  attachment_path: string | null;
+  note: string | null;
+  usage_frozen_at: string | null;
+  created_at: string;
+  posted_at: string | null;
+}
+
+export interface InvoiceLine {
+  id: number;
+  settlement_id: number;
+  description: string;
+  category: string | null;
+  allocation_method: AllocationMethod;
+  amount_ore: number;
+  amount_nok: string;
+  sort_order: number;
+}
+
+export interface SettlementMemberSnapshot {
+  member_id: number;
+  member_reference: string;
+  full_name: string;
+  is_active: number;
+  participates_equal: number;
+  consumption_kwh: string;
+  session_count: number;
+  balance_before_ore: number;
+}
+
+export interface SettlementDetail {
+  settlement: Settlement;
+  lines: InvoiceLine[];
+  snapshot: SettlementMemberSnapshot[];
+}
+
+export interface PreviewMemberRow {
+  member_id: number;
+  member_reference: string;
+  full_name: string;
+  consumption_kwh: string;
+  session_count: number;
+  balance_before_nok: string;
+  charge_nok: string;
+  charge_ore: number;
+  balance_after_nok: string;
+  balance_after_ore: number;
+  lines: {
+    invoice_line_id: number | null;
+    description: string;
+    kind: AllocationMethod;
+    amount_nok: string;
+  }[];
+}
+
+export interface SettlementPreview {
+  settlement_id: number;
+  period_month: string;
+  status: string;
+  invoice_kwh: string | null;
+  grid_kwh: string | null;
+  invoice_lines_total_nok: string;
+  total_charged_nok: string;
+  total_charged_ore: number;
+  members: PreviewMemberRow[];
+  lines: {
+    line_id: number;
+    description: string;
+    kind: AllocationMethod;
+    amount_ore: number;
+    allocated_ore: number;
+    recipients: number;
+  }[];
+  warnings: { code: string; [k: string]: unknown }[];
+}
+
+export function listSettlements(): Promise<{ settlements: Settlement[] }> {
+  return get<{ settlements: Settlement[] }>("/api/settlement");
+}
+
+export function getSettlement(id: number): Promise<SettlementDetail> {
+  return get<SettlementDetail>(`/api/settlement/${id}`);
+}
+
+export function createSettlementDraft(
+  period_month: string,
+): Promise<{ settlement: Settlement }> {
+  return post<{ settlement: Settlement }>("/api/settlement/drafts", {
+    period_month,
+  });
+}
+
+export function setSettlementInvoice(
+  id: number,
+  body: { invoice_kwh?: string; note?: string },
+): Promise<SettlementDetail> {
+  return put<SettlementDetail>(`/api/settlement/${id}/invoice`, body);
+}
+
+export function addInvoiceLine(
+  id: number,
+  body: {
+    description: string;
+    allocation_method: AllocationMethod;
+    amount: string;
+    category?: string;
+  },
+): Promise<{ line: InvoiceLine }> {
+  return post<{ line: InvoiceLine }>(`/api/settlement/${id}/lines`, body);
+}
+
+export function deleteInvoiceLine(
+  id: number,
+  lineId: number,
+): Promise<SettlementDetail> {
+  return del<SettlementDetail>(`/api/settlement/${id}/lines/${lineId}`);
+}
+
+export function uploadSettlementAttachment(
+  id: number,
+  file: File,
+): Promise<{ settlement: Settlement }> {
+  const form = new FormData();
+  form.append("file", file);
+  return postForm<{ settlement: Settlement }>(
+    `/api/settlement/${id}/attachment`,
+    form,
+  );
+}
+
+export function freezeSettlement(id: number): Promise<SettlementDetail> {
+  return post<SettlementDetail>(`/api/settlement/${id}/freeze`);
+}
+
+export function previewSettlement(id: number): Promise<SettlementPreview> {
+  return get<SettlementPreview>(`/api/settlement/${id}/preview`);
+}
+
+export function postSettlement(
+  id: number,
+): Promise<SettlementPreview & { members_charged: number; emails_queued: number }> {
+  return post<SettlementPreview & { members_charged: number; emails_queued: number }>(
+    `/api/settlement/${id}/post`,
+  );
+}
+
+export interface SettlementReportList {
+  settlement_id: number;
+  period_month: string;
+  summary_url: string;
+  members: { member_id: number; full_name: string; charge_nok: string; url: string }[];
+}
+
+export function settlementReports(id: number): Promise<SettlementReportList> {
+  return get<SettlementReportList>(`/api/settlement/${id}/reports`);
+}
+
+// --- notifications + system (admin) ---------------------------
+
+export interface EmailMessage {
+  id: number;
+  to_address: string;
+  subject: string;
+  template: string | null;
+  status: string;
+  attempts: number;
+  max_attempts: number;
+  last_error: string | null;
+  next_attempt_at: string;
+  created_at: string;
+  sent_at: string | null;
+}
+
+export interface NotificationsResponse {
+  stats: { queued: number; sent: number; failed: number; next_attempt_at: string | null };
+  messages: EmailMessage[];
+}
+
+export function listNotifications(): Promise<NotificationsResponse> {
+  return get<NotificationsResponse>("/api/notifications");
+}
+
+export function processNotifications(): Promise<Record<string, number>> {
+  return post<Record<string, number>>("/api/notifications/process");
+}
+
+export interface SystemHealth {
+  version: string;
+  schema_version: number;
+  zaptec: {
+    enabled: boolean;
+    installation_id: string | null;
+    last: Record<string, SyncRun | null>;
+    failed_runs: number;
+  };
+  email: { queued: number; sent: number; failed: number; next_attempt_at: string | null };
+  failed_jobs: number;
+  ok: boolean;
+}
+
+export function systemHealth(): Promise<SystemHealth> {
+  return get<SystemHealth>("/api/system/health");
+}
+
+// --- member: settlement history (US-904) ---------------------
+
+export interface MySettlement {
+  settlement_id: number;
+  period_month: string;
+  posted_at: string | null;
+  consumption_kwh: string;
+  charge_nok: string;
+  balance_after_nok: string;
+  report_url: string;
+}
+
+export function getMySettlements(): Promise<{ settlements: MySettlement[] }> {
+  return get<{ settlements: MySettlement[] }>("/api/me/settlements");
+}
+
+// --- passwordless / reset (US-102 / US-103) -----------------
+
+export function requestMagicLink(email: string): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>("/api/auth/magic-link", { email });
+}
+
+export function consumeMagicLink(token: string): Promise<LoginResponse> {
+  return post<LoginResponse>("/api/auth/magic-link/consume", { token });
+}
+
+export function requestPasswordReset(email: string): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>("/api/auth/password-reset/request", { email });
+}
+
+export function consumePasswordReset(
+  token: string,
+  password: string,
+): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>("/api/auth/password-reset/consume", {
+    token,
+    password,
+  });
 }

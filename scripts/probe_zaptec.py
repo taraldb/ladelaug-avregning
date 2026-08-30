@@ -25,8 +25,10 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from ladelaug_avregning.config import ZaptecConfig
+from ladelaug_avregning.config import ZaptecConfig, _load_dotenv
 from ladelaug_avregning.zaptec.client import ZaptecClient
+
+_load_dotenv()  # pick up ZAPTEC_* from .env
 
 
 def _keys(obj: object) -> object:
@@ -44,15 +46,20 @@ def _sample(obj: object, limit: int = 2000) -> str:
 
 async def _run(args: argparse.Namespace) -> int:
     password = os.environ.get("ZAPTEC_PASSWORD", "")
-    if not password:
-        print("ZAPTEC_PASSWORD is not set (env or .env).", file=sys.stderr)
+    username = args.username or os.environ.get("ZAPTEC_USERNAME", "")
+    installation = args.installation or os.environ.get("ZAPTEC_INSTALLATION_ID", "")
+    if not password or not username:
+        print(
+            "Need ZAPTEC_USERNAME + ZAPTEC_PASSWORD (env / .env, or --username).",
+            file=sys.stderr,
+        )
         return 2
 
     cfg = ZaptecConfig(
         enabled=True,
-        username=args.username,
+        username=username,
         password=password,
-        installation_id=args.installation or "",
+        installation_id=installation,
         page_size=args.page_size,
     )
 
@@ -105,8 +112,8 @@ async def _run(args: argparse.Namespace) -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--username", required=True)
-    p.add_argument("--installation", default=None)
+    p.add_argument("--username", default=None, help="or set ZAPTEC_USERNAME")
+    p.add_argument("--installation", default=None, help="or set ZAPTEC_INSTALLATION_ID")
     p.add_argument("--from", dest="from_", default=None, help="YYYY-MM-DD (default: 35 days ago)")
     p.add_argument("--to", default=None, help="YYYY-MM-DD (default: today)")
     p.add_argument("--page-size", type=int, default=100)

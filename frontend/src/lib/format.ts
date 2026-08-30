@@ -56,6 +56,10 @@ export function txnTypeLabel(type: string): string {
       return "Justering (kredit)";
     case "adjustment_debit":
       return "Justering (debet)";
+    case "settlement_charge":
+      return "Avregning";
+    case "settlement_reversal":
+      return "Avregning (reversert)";
     default:
       return type;
   }

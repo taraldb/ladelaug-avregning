@@ -3,6 +3,7 @@ import {
   ApiError,
   getMyBalance,
   getMyLedger,
+  getMySettlements,
   getMyStatus,
   type LedgerTxn,
 } from "../api/client";
@@ -36,6 +37,7 @@ export default function MyAccount() {
   const balance = useSWR("/api/me/balance", () => getMyBalance());
   const ledger = useSWR("/api/me/ledger", () => getMyLedger());
   const status = useSWR("/api/me/status", () => getMyStatus());
+  const settlements = useSWR("/api/me/settlements", () => getMySettlements());
 
   if ([balance.error, ledger.error, status.error].some(isForbidden)) {
     return (
@@ -68,6 +70,31 @@ export default function MyAccount() {
           rowKey={(t) => t.id}
           empty="Ingen transaksjoner"
         />
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-slate-100">Avregninger</h2>
+        {settlements.data && settlements.data.settlements.length > 0 ? (
+          <ul className="space-y-1 text-sm text-slate-300">
+            {settlements.data.settlements.map((s) => (
+              <li key={s.settlement_id} className="flex justify-between border-b border-slate-800 py-1">
+                <span>
+                  {s.period_month} · {s.consumption_kwh} kWh · belastet {formatNok(s.charge_nok)}
+                </span>
+                <a
+                  className="text-emerald-400 hover:underline"
+                  href={s.report_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Rapport
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-400">Ingen avregninger ennå.</p>
+        )}
       </div>
 
       <div>

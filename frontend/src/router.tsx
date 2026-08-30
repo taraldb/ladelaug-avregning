@@ -1,10 +1,15 @@
 import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import AuditLog from "./pages/AuditLog";
+import AuthAction from "./pages/AuthAction";
+import Chargers from "./pages/Chargers";
 import Login from "./pages/Login";
 import Members from "./pages/Members";
 import MemberDetail from "./pages/MemberDetail";
 import MyAccount from "./pages/MyAccount";
+import SettlementDetail from "./pages/SettlementDetail";
+import Settlements from "./pages/Settlements";
+import SystemHealth from "./pages/SystemHealth";
 
 function FullPageMessage({ children }: { children: React.ReactNode }) {
   return (
@@ -61,8 +66,17 @@ function Layout() {
                   <NavLink to="/members" className={navLinkClass}>
                     Medlemmer
                   </NavLink>
+                  <NavLink to="/chargers" className={navLinkClass}>
+                    Ladere
+                  </NavLink>
+                  <NavLink to="/settlements" className={navLinkClass}>
+                    Avregninger
+                  </NavLink>
                   <NavLink to="/audit" className={navLinkClass}>
                     Revisjonslogg
+                  </NavLink>
+                  <NavLink to="/system" className={navLinkClass}>
+                    System
                   </NavLink>
                 </>
               )}
@@ -101,6 +115,8 @@ export default function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/auth/magic-link" element={<AuthAction mode="magic-link" />} />
+      <Route path="/auth/reset" element={<AuthAction mode="reset" />} />
       <Route
         element={
           <RequireAuth>
@@ -113,7 +129,11 @@ export default function AppRouter() {
         <Route element={<RequireAdmin />}>
           <Route path="/members" element={<Members />} />
           <Route path="/members/:id" element={<MemberDetail />} />
+          <Route path="/chargers" element={<Chargers />} />
+          <Route path="/settlements" element={<Settlements />} />
+          <Route path="/settlements/:id" element={<SettlementDetail />} />
           <Route path="/audit" element={<AuditLog />} />
+          <Route path="/system" element={<SystemHealth />} />
         </Route>
         <Route path="*" element={<HomeRedirect />} />
       </Route>

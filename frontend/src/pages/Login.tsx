@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { ApiError } from "../api/client";
+import { ApiError, requestMagicLink, requestPasswordReset } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
 export default function Login() {
@@ -10,6 +10,25 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  async function sendLink(kind: "magic" | "reset") {
+    setError(null);
+    setNotice(null);
+    if (!email.trim()) {
+      setError("Skriv inn e-postadressen din først.");
+      return;
+    }
+    try {
+      if (kind === "magic") await requestMagicLink(email.trim());
+      else await requestPasswordReset(email.trim());
+      setNotice(
+        "Hvis adressen finnes hos oss, har vi sendt en e-post med en lenke.",
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Noe gikk galt.");
+    }
+  }
 
   if (user) {
     return <Navigate to={user.role === "admin" ? "/" : "/my-account"} replace />;
@@ -71,6 +90,14 @@ export default function Login() {
               {error}
             </p>
           )}
+          {notice && (
+            <p
+              role="status"
+              className="rounded-md border border-slate-700 bg-slate-800/60 px-3 py-2 text-sm text-slate-200"
+            >
+              {notice}
+            </p>
+          )}
 
           <button
             type="submit"
@@ -80,6 +107,15 @@ export default function Login() {
             {submitting ? "Logger inn …" : "Logg inn"}
           </button>
         </form>
+
+        <div className="mt-4 flex justify-between text-xs text-slate-400">
+          <button type="button" onClick={() => void sendLink("magic")} className="hover:text-slate-200">
+            Send innloggingslenke
+          </button>
+          <button type="button" onClick={() => void sendLink("reset")} className="hover:text-slate-200">
+            Glemt passord?
+          </button>
+        </div>
       </div>
     </div>
   );

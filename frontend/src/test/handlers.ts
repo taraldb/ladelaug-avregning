@@ -59,6 +59,7 @@ let state: MockState = freshState();
 
 export function resetMockState(): void {
   state = freshState();
+  mock1b = freshMock1b();
 }
 
 export function setSession(user: AuthUser | null): void {
@@ -706,7 +707,289 @@ export const handlers = [
       ),
     });
   }),
+
+  http.get("/api/me/settlements", () => {
+    const member = currentMemberOr403();
+    if (member instanceof Response) return member;
+    return HttpResponse.json({ settlements: mock1b.mySettlements });
+  }),
+
+  // --- Release 1B: chargers, zaptec, settlements, system -------------
+
+  http.get("/api/chargers", () =>
+    HttpResponse.json({ chargers: mock1b.chargers }),
+  ),
+  http.post("/api/chargers", async ({ request }) => {
+    const body = (await request.json()) as { name: string; serial_no?: string };
+    const charger = {
+      id: nextId(),
+      zaptec_id: null,
+      name: body.name,
+      serial_no: body.serial_no ?? null,
+      device_type: null,
+      is_active: true,
+      last_synced_at: null,
+      created_at: "2026-08-01T00:00:00+00:00",
+      updated_at: "2026-08-01T00:00:00+00:00",
+      assigned_member_id: null,
+    };
+    mock1b.chargers.push(charger);
+    return HttpResponse.json(charger, { status: 201 });
+  }),
+  http.post("/api/chargers/:id/assignments", async ({ params, request }) => {
+    const body = (await request.json()) as { member_id: number };
+    const c = mock1b.chargers.find((x) => x.id === Number(params.id));
+    if (c) c.assigned_member_id = body.member_id;
+    return HttpResponse.json({ assignment: { id: nextId(), charger_id: Number(params.id) } });
+  }),
+  http.post("/api/chargers/:id/unassign", ({ params }) => {
+    const c = mock1b.chargers.find((x) => x.id === Number(params.id));
+    if (c) c.assigned_member_id = null;
+    return HttpResponse.json({ assignment: { id: nextId(), charger_id: Number(params.id) } });
+  }),
+
+  http.get("/api/zaptec/status", () =>
+    HttpResponse.json({
+      enabled: false,
+      installation_id: null,
+      last: { chargers: null, sessions: null, intervals: null },
+      recent: [],
+      failures: 0,
+    }),
+  ),
+  http.post("/api/zaptec/sync/chargers", () =>
+    HttpResponse.json({ chargers_created: 0, chargers_updated: 0, installations: 0, chargers_seen: 0 }),
+  ),
+  http.post("/api/zaptec/sync/sessions", () =>
+    HttpResponse.json({ rows_inserted: 0, rows_updated: 0, sessions_in: 0 }),
+  ),
+
+  http.get("/api/settlement", () =>
+    HttpResponse.json({ settlements: mock1b.settlements }),
+  ),
+  http.post("/api/settlement/drafts", async ({ request }) => {
+    const body = (await request.json()) as { period_month: string };
+    const settlement = {
+      id: nextId(),
+      period_month: body.period_month,
+      status: "draft" as const,
+      invoice_kwh: null,
+      invoice_total_nok: null,
+      grid_kwh: null,
+      attachment_filename: null,
+      attachment_path: null,
+      note: null,
+      usage_frozen_at: null,
+      created_at: "2026-08-01T00:00:00+00:00",
+      posted_at: null,
+    };
+    mock1b.settlements.push(settlement);
+    mock1b.details.set(settlement.id, { settlement, lines: [], snapshot: [] });
+    return HttpResponse.json({ settlement });
+  }),
+  http.get("/api/settlement/:id", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    return d
+      ? HttpResponse.json(d)
+      : HttpResponse.json(errorBody("not_found", "not found"), { status: 404 });
+  }),
+  http.put("/api/settlement/:id/invoice", async ({ params, request }) => {
+    const body = (await request.json()) as { invoice_kwh?: string };
+    const d = mock1b.details.get(Number(params.id));
+    if (d && body.invoice_kwh) d.settlement.invoice_kwh = body.invoice_kwh;
+    return HttpResponse.json(d);
+  }),
+  http.post("/api/settlement/:id/lines", async ({ params, request }) => {
+    const body = (await request.json()) as {
+      description: string;
+      allocation_method: "equal" | "consumption";
+      amount: string;
+    };
+    const d = mock1b.details.get(Number(params.id));
+    const line = {
+      id: nextId(),
+      settlement_id: Number(params.id),
+      description: body.description,
+      category: null,
+      allocation_method: body.allocation_method,
+      amount_ore: Math.round(Number(body.amount) * 100),
+      amount_nok: Number(body.amount).toFixed(2),
+      sort_order: (d?.lines.length ?? 0) + 1,
+    };
+    d?.lines.push(line);
+    return HttpResponse.json({ line }, { status: 201 });
+  }),
+  http.delete("/api/settlement/:id/lines/:lineId", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    if (d) d.lines = d.lines.filter((l) => l.id !== Number(params.lineId));
+    return HttpResponse.json(d);
+  }),
+  http.post("/api/settlement/:id/attachment", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    if (d) d.settlement.attachment_filename = "faktura.pdf";
+    return HttpResponse.json({ settlement: d?.settlement });
+  }),
+  http.post("/api/settlement/:id/freeze", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    if (d) {
+      d.settlement.usage_frozen_at = "2026-08-01T00:00:00+00:00";
+      d.settlement.grid_kwh = "10";
+    }
+    return HttpResponse.json(d);
+  }),
+  http.get("/api/settlement/:id/preview", ({ params }) =>
+    HttpResponse.json(previewFor(Number(params.id))),
+  ),
+  http.post("/api/settlement/:id/post", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    if (d) d.settlement.status = "posted";
+    return HttpResponse.json({
+      ...previewFor(Number(params.id)),
+      status: "posted",
+      members_charged: 1,
+      emails_queued: 1,
+    });
+  }),
+  http.get("/api/settlement/:id/reports", ({ params }) =>
+    HttpResponse.json({
+      settlement_id: Number(params.id),
+      period_month: "2026-07",
+      summary_url: `/api/settlement/${params.id}/reports/summary`,
+      members: [
+        {
+          member_id: 7,
+          full_name: "Member Seven",
+          charge_nok: "100.00",
+          url: `/api/settlement/${params.id}/reports/7`,
+        },
+      ],
+    }),
+  ),
+
+  http.get("/api/system/health", () =>
+    HttpResponse.json({
+      version: "0.2.0",
+      schema_version: 6,
+      zaptec: { enabled: false, installation_id: null, last: {}, failed_runs: 0 },
+      email: { queued: 0, sent: 2, failed: 0, next_attempt_at: null },
+      failed_jobs: 0,
+      ok: true,
+    }),
+  ),
+  http.get("/api/notifications", () =>
+    HttpResponse.json({
+      stats: { queued: 0, sent: 2, failed: 0, next_attempt_at: null },
+      messages: [],
+    }),
+  ),
+  http.post("/api/notifications/process", () =>
+    HttpResponse.json({ due: 0, sent: 0, failed: 0, retried: 0 }),
+  ),
+
+  http.post("/api/auth/magic-link", () => HttpResponse.json({ ok: true })),
+  http.post("/api/auth/magic-link/consume", () =>
+    HttpResponse.json({ user: MEMBER_USER }),
+  ),
+  http.post("/api/auth/password-reset/request", () =>
+    HttpResponse.json({ ok: true }),
+  ),
+  http.post("/api/auth/password-reset/consume", () =>
+    HttpResponse.json({ ok: true }),
+  ),
 ];
+
+interface Mock1bState {
+  chargers: {
+    id: number;
+    zaptec_id: string | null;
+    name: string;
+    serial_no: string | null;
+    device_type: string | null;
+    is_active: boolean;
+    last_synced_at: string | null;
+    created_at: string;
+    updated_at: string;
+    assigned_member_id: number | null;
+  }[];
+  settlements: {
+    id: number;
+    period_month: string;
+    status: "draft" | "posted";
+    invoice_kwh: string | null;
+    invoice_total_nok: string | null;
+    grid_kwh: string | null;
+    attachment_filename: string | null;
+    attachment_path: string | null;
+    note: string | null;
+    usage_frozen_at: string | null;
+    created_at: string;
+    posted_at: string | null;
+  }[];
+  details: Map<
+    number,
+    {
+      settlement: Mock1bState["settlements"][number];
+      lines: {
+        id: number;
+        settlement_id: number;
+        description: string;
+        category: string | null;
+        allocation_method: "equal" | "consumption";
+        amount_ore: number;
+        amount_nok: string;
+        sort_order: number;
+      }[];
+      snapshot: unknown[];
+    }
+  >;
+  mySettlements: {
+    settlement_id: number;
+    period_month: string;
+    posted_at: string | null;
+    consumption_kwh: string;
+    charge_nok: string;
+    balance_after_nok: string;
+    report_url: string;
+  }[];
+}
+
+let mock1b: Mock1bState = freshMock1b();
+
+function freshMock1b(): Mock1bState {
+  return { chargers: [], settlements: [], details: new Map(), mySettlements: [] };
+}
+
+function previewFor(id: number) {
+  const d = mock1b.details.get(id);
+  const total = (d?.lines ?? []).reduce((s, l) => s + l.amount_ore, 0);
+  return {
+    settlement_id: id,
+    period_month: d?.settlement.period_month ?? "2026-07",
+    status: d?.settlement.status ?? "draft",
+    invoice_kwh: d?.settlement.invoice_kwh ?? null,
+    grid_kwh: d?.settlement.grid_kwh ?? null,
+    invoice_lines_total_nok: (total / 100).toFixed(2),
+    total_charged_nok: (total / 100).toFixed(2),
+    total_charged_ore: total,
+    members: [
+      {
+        member_id: 7,
+        member_reference: "M-7",
+        full_name: "Member Seven",
+        consumption_kwh: "10",
+        session_count: 2,
+        balance_before_nok: "1000.00",
+        charge_nok: (total / 100).toFixed(2),
+        charge_ore: total,
+        balance_after_nok: ((100000 - total) / 100).toFixed(2),
+        balance_after_ore: 100000 - total,
+        lines: [],
+      },
+    ],
+    lines: [],
+    warnings: [] as { code: string }[],
+  };
+}
 
 function ledgerPage(memberId: number, rawUrl: string): Response {
   const url = new URL(rawUrl);
