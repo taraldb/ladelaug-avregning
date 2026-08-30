@@ -8,12 +8,18 @@ goes ``failed`` and shows up in the system-health view (US-1104).
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from ladelaug_avregning import clock
+from ladelaug_avregning.audit import AuditContext, write_audit_row
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.email.sender import EmailSender
+from ladelaug_avregning.money import ore_to_nok
+
+# a warning is re-sent inside the cooldown window if the balance drops by at
+# least this many øre, or the severity escalates from 'low' to 'critical'
+_BALANCE_DROP_RESEND_ORE = 100
 
 # minutes to wait before the Nth retry (index = attempts already made)
 _BACKOFF_MINUTES = [1, 5, 15, 60, 240]
@@ -179,3 +185,159 @@ class NotificationRepo:
             )
             queued += 1
         return queued
+
+    async def scan_low_balances(self, *, actor: AuditContext) -> dict[str, int]:
+        """Enqueue a Norwegian low-balance warning for every member whose forecast
+        says ``low_balance`` (US-805), skipping members whose forecast is not
+        ``available`` and applying the decision-C6 suppression rule. Each send
+        writes one ``low_balance_notifications`` row (linked to the queued
+        ``email_messages`` id) and one ``notifications.low_balance_warned`` audit
+        event in the same locked transaction. Idempotent within the cooldown
+        window — safe to run hourly from cron."""
+        from ladelaug_avregning.domain.forecast import ForecastRepo
+        from ladelaug_avregning.domain.members import MemberRepo
+        from ladelaug_avregning.domain.users import UserRepo
+
+        forecast_repo = ForecastRepo(self._db)
+        cooldown_days = int(forecast_repo.settings()["notify_cooldown_days"])
+        members = MemberRepo(self._db)
+        users = UserRepo(self._db)
+        now = clock.now_utc()
+
+        scanned = below = queued = suppressed = 0
+        for fc in forecast_repo.all_member_forecasts():
+            if not fc["available"]:
+                continue
+            scanned += 1
+            if not fc["low_balance"]:
+                continue
+            below += 1
+
+            member_id = int(fc["member_id"])
+            last = self._db.connection.execute(
+                "SELECT severity, balance_ore, created_at FROM low_balance_notifications "
+                "WHERE member_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+                (member_id,),
+            ).fetchone()
+            trigger = _warn_trigger(fc, last, now, cooldown_days)
+            if trigger is None:
+                suppressed += 1
+                continue
+
+            to_address = _member_email(member_id, users, members)
+            if not to_address:
+                suppressed += 1
+                continue
+
+            await self._enqueue_low_balance_warning(
+                member_id=member_id,
+                to_address=to_address,
+                forecast=fc,
+                trigger=trigger,
+                actor=actor,
+            )
+            queued += 1
+
+        return {"scanned": scanned, "below": below, "queued": queued, "suppressed": suppressed}
+
+    async def _enqueue_low_balance_warning(
+        self,
+        *,
+        member_id: int,
+        to_address: str,
+        forecast: dict[str, Any],
+        trigger: str,
+        actor: AuditContext,
+    ) -> None:
+        severity = forecast["severity"]
+        balance_ore = int(forecast["balance_ore"])
+        minimum_ore = int(forecast["recommended_minimum_ore"])
+        cost_ore = int(forecast["forecast_monthly_cost_ore"])
+        topup_ore = int(forecast["recommended_topup_ore"])
+        now = clock.now_utc().isoformat()
+
+        lines = [
+            "Hei,",
+            "",
+            f"Saldoen din i ladelauget er lav: {ore_to_nok(balance_ore)} kr.",
+            f"Anbefalt minstesaldo er {ore_to_nok(minimum_ore)} kr.",
+            f"Vi anbefaler at du betaler inn minst {ore_to_nok(topup_ore)} kr.",
+        ]
+        if severity == "critical":
+            lines.append(
+                f"Saldoen dekker ikke neste måneds forventede kostnad på {ore_to_nok(cost_ore)} kr."
+            )
+        lines += ["", "Logg inn på Min konto i portalen for detaljer."]
+        body_text = "\n".join(lines) + "\n"
+        subject = "Varsel: lav saldo på ladelaugskontoen din"
+
+        async with self._db._write() as cur:
+            cur.execute(
+                "INSERT INTO email_messages "
+                "(to_address, subject, body_text, body_html, template, related_entity_type, "
+                " related_entity_id, status, attempts, max_attempts, next_attempt_at, created_at) "
+                "VALUES (?, ?, ?, NULL, 'low_balance_warning', 'member', ?, 'queued', 0, 5, ?, ?)",
+                (to_address, subject, body_text, str(member_id), now, now),
+            )
+            email_id = int(cur.lastrowid or 0)
+            cur.execute(
+                "INSERT INTO low_balance_notifications "
+                "(member_id, severity, balance_ore, recommended_minimum_ore, "
+                " forecast_monthly_cost_ore, email_message_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (member_id, severity, balance_ore, minimum_ore, cost_ore, email_id, now),
+            )
+            write_audit_row(
+                cur,
+                actor,
+                event_type="notifications.low_balance_warned",
+                entity_type="member",
+                entity_id=member_id,
+                summary=(
+                    f"Low-balance warning ({severity}) queued for member {member_id}: "
+                    f"balance {ore_to_nok(balance_ore)} kr < minimum {ore_to_nok(minimum_ore)} kr"
+                ),
+                detail={
+                    "member_id": member_id,
+                    "severity": severity,
+                    "trigger": trigger,
+                    "balance_ore": balance_ore,
+                    "recommended_minimum_ore": minimum_ore,
+                    "forecast_monthly_cost_ore": cost_ore,
+                    "email_message_id": email_id,
+                },
+            )
+
+
+def _warn_trigger(
+    forecast: dict[str, Any],
+    last: Any,
+    now: datetime,
+    cooldown_days: int,
+) -> str | None:
+    """Return why a warning should be (re-)sent, or ``None`` to suppress it
+    (decision C6): send when there is no prior row within the cooldown window,
+    OR the balance dropped by >= 100 øre since the last row, OR the severity
+    escalated from 'low' to 'critical'."""
+    if last is None:
+        return "first_warning"
+    last_at = datetime.fromisoformat(last["created_at"])
+    if now - last_at >= timedelta(days=cooldown_days):
+        return "cooldown_elapsed"
+    if int(last["balance_ore"]) - int(forecast["balance_ore"]) >= _BALANCE_DROP_RESEND_ORE:
+        return "balance_dropped"
+    if last["severity"] == "low" and forecast["severity"] == "critical":
+        return "severity_escalated"
+    return None
+
+
+def _member_email(member_id: int, users: Any, members: Any) -> str | None:
+    """The member's linked, enabled portal account email, else their own
+    ``members.email``."""
+    user = users.get_by_member_id(member_id)
+    if user and not user["disabled"] and user["email"]:
+        return str(user["email"])
+    member = members.get(member_id)
+    if member and member["email"]:
+        return str(member["email"])
+    return None

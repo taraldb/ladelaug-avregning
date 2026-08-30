@@ -1,8 +1,9 @@
 """Command-line entry point.
 
-python -m ladelaug_avregning serve          # run the HTTP server (default)
-python -m ladelaug_avregning migrate        # apply migrations and exit
-python -m ladelaug_avregning create-admin   # create an administrator account
+python -m ladelaug_avregning serve            # run the HTTP server (default)
+python -m ladelaug_avregning migrate          # apply migrations and exit
+python -m ladelaug_avregning create-admin     # create an administrator account
+python -m ladelaug_avregning low-balance-scan # enqueue low-balance warning emails
 """
 
 from __future__ import annotations
@@ -150,6 +151,28 @@ def _cmd_create_admin(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_low_balance_scan(args: argparse.Namespace) -> int:
+    import asyncio
+
+    from ladelaug_avregning.audit import AuditContext
+    from ladelaug_avregning.db import Database
+    from ladelaug_avregning.domain.notifications import NotificationRepo
+
+    config = _load_config_or_exit(args.config)
+    configure_logging(config.logging.level)
+    db = Database(config.database.path)
+    try:
+        counts = asyncio.run(NotificationRepo(db).scan_low_balances(actor=AuditContext.system()))
+    finally:
+        db.close()
+    print(
+        "Low-balance scan: "
+        f"scanned={counts['scanned']} below={counts['below']} "
+        f"queued={counts['queued']} suppressed={counts['suppressed']}"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ladelaug_avregning")
     parser.add_argument("--config", type=Path, default=_DEFAULT_CONFIG, help="path to config.yaml")
@@ -162,6 +185,8 @@ def build_parser() -> argparse.ArgumentParser:
     ca.add_argument("--email", required=True)
     ca.add_argument("--password", help="prompted for if omitted")
 
+    sub.add_parser("low-balance-scan", help="enqueue low-balance warning emails")
+
     return parser
 
 
@@ -173,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         "serve": _cmd_serve,
         "migrate": _cmd_migrate,
         "create-admin": _cmd_create_admin,
+        "low-balance-scan": _cmd_low_balance_scan,
     }[command]
     return handler(args)
 

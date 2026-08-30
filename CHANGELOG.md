@@ -53,6 +53,23 @@ corrections, refunds, member departure, charging-access workflows.
 
 The per-phase entries below record how it was built.
 
+## 2026-08-30 — Low-balance warnings (Release 1C phase P3)
+
+- `NotificationRepo.scan_low_balances(*, actor)` — iterates
+  `ForecastRepo.all_member_forecasts()`, skips `available: false`, and for each
+  member below their recommended minimum enqueues a Norwegian warning email,
+  inserts one `low_balance_notifications` row (linked to the queued
+  `email_messages` id) and one `notifications.low_balance_warned` audit event in
+  one locked transaction. Suppression (decision C6): re-send only when there is
+  no prior row within `notify_cooldown_days`, OR the balance dropped ≥ 100 øre
+  since the last row, OR the severity escalated `low → critical`. Returns
+  `{scanned, below, queued, suppressed}`; idempotent within the cooldown window.
+- `POST /api/notifications/low-balance-scan` (admin, `require_fetch`) and a
+  `low-balance-scan` CLI subcommand — mirror `/process`; wire to cron and drain
+  the queue afterwards.
+- `GET /api/system/health` gains
+  `low_balance: {warned_total, members_below}`.
+
 ## 2026-08-30 — Forecast settings + member forecast/consumption API (Release 1C phase P2)
 
 - `webapp/routes/forecast.py` — admin router (`require_admin`):

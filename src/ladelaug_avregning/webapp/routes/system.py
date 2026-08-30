@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends
 from ladelaug_avregning import __version__
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
+from ladelaug_avregning.domain.forecast import ForecastRepo
 from ladelaug_avregning.domain.notifications import NotificationRepo
 from ladelaug_avregning.domain.sync_runs import SyncRunRepo
 from ladelaug_avregning.webapp.deps import get_config, get_db, require_admin
@@ -28,6 +29,13 @@ async def health(
         0
     ]
     email_stats = notif.stats()
+    warned_total = db.connection.execute(
+        "SELECT COUNT(*) FROM low_balance_notifications"
+    ).fetchone()[0]
+    members_below = sum(
+        1 for f in ForecastRepo(db).all_member_forecasts() if f["available"] and f["low_balance"]
+    )
+    low_balance = {"warned_total": int(warned_total), "members_below": members_below}
     zaptec = {
         "enabled": config.zaptec.enabled,
         "installation_id": config.zaptec.installation_id or None,
@@ -39,6 +47,7 @@ async def health(
         "schema_version": schema_version,
         "zaptec": zaptec,
         "email": email_stats,
+        "low_balance": low_balance,
         "failed_jobs": email_stats["failed"] + zaptec["failed_runs"],
         "ok": email_stats["failed"] == 0 and zaptec["failed_runs"] == 0,
     }

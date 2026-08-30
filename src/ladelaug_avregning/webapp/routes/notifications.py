@@ -11,11 +11,18 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.notifications import NotificationRepo
 from ladelaug_avregning.email.sender import build_sender
-from ladelaug_avregning.webapp.deps import get_config, get_db, require_admin, require_fetch
+from ladelaug_avregning.webapp.deps import (
+    get_audit_context,
+    get_config,
+    get_db,
+    require_admin,
+    require_fetch,
+)
 
 router = APIRouter(
     prefix="/api/notifications", dependencies=[Depends(require_admin)], tags=["notifications"]
@@ -39,3 +46,13 @@ async def process_queue(
     )
     sender = build_sender(config.email, state_dir=state_dir)
     return await NotificationRepo(db).process_queue(sender, limit=min(limit, 200))
+
+
+@router.post("/low-balance-scan", dependencies=[Depends(require_fetch)])
+async def low_balance_scan(
+    db: Database = Depends(get_db),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, int]:
+    """Enqueue low-balance warning emails (US-805). Mirrors ``/process`` — wire
+    it to a cron; drain the queue afterwards with ``/process``."""
+    return await NotificationRepo(db).scan_low_balances(actor=actor)
