@@ -1,0 +1,13 @@
+# Local development only. For production, deploy the ghcr.io image on your
+# Docker host (see README.md).
+services:
+  ladelaug-avregning:
+    build: .
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config
+      - ./state:/app/state
+    restart: unless-stopped

@@ -1,0 +1,35 @@
+# Copy this file to config/config.yaml and edit. config.yaml is gitignored.
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  # Directory of the built frontend. Served at / by the app when it exists.
+  static_dir: "frontend/dist"
+
+database:
+  path: "state/ladelaug.db"
+
+timezone: "Europe/Oslo"
+
+logging:
+  level: "INFO" # DEBUG | INFO | WARNING | ERROR | CRITICAL
+
+auth:
+  # HMAC / integrity secret. Leave empty here and provide it via the
+  # LADELAUG_SECRET_KEY environment variable (or a .env file). The app refuses
+  # to start if neither is set.
+  secret_key: ""
+  session_ttl_hours: 720 # 30 days, sliding
+  cookie_secure: true # set false only for plain-HTTP localhost development
+  cookie_name: "ladelaug_session"
+  login_max_attempts: 5
+  login_window_seconds: 900 # 15 minutes
+  argon2_time_cost: 3
+  argon2_memory_cost_kib: 65536 # 64 MiB
+  argon2_parallelism: 2
+
+bootstrap_admin:
+  # Optional. If both are set and the users table is empty, an admin account is
+  # created on startup. Otherwise use: python -m ladelaug_avregning create-admin
+  email: ""
+  password: ""
