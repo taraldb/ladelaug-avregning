@@ -57,6 +57,41 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class EmailRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _v_email(cls, v: str) -> str:
+        return _required(v, "email").lower()
+
+
+class TokenConsumeRequest(BaseModel):
+    token: str
+
+    @field_validator("token")
+    @classmethod
+    def _v_token(cls, v: str) -> str:
+        return _required(v, "token")
+
+
+class PasswordResetRequest(BaseModel):
+    token: str
+    password: str
+
+    @field_validator("token")
+    @classmethod
+    def _v_token(cls, v: str) -> str:
+        return _required(v, "token")
+
+    @field_validator("password")
+    @classmethod
+    def _v_password(cls, v: str) -> str:
+        if len(v) < 10:
+            raise ValueError("password must be at least 10 characters")
+        return v
+
+
 class UserOut(BaseModel):
     id: int
     email: str
