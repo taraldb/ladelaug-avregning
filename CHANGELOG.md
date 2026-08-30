@@ -40,6 +40,10 @@ runbook for cleaning up existing data.
   HTML/PDF report links (labelled "forhåndsvisning") as soon as a settlement is
   frozen, not only after it is posted. The `/reports*` endpoints already
   rendered from the frozen snapshot; only the UI gate changed.
+- **Live month-consumption panel** — draft settlements show a "Forbruk i
+  {måned} (foreløpig)" panel with the running metered total and per-member
+  breakdown from `GET /api/charging/consumption`, so an admin sees what will be
+  captured before clicking "Frys forbruk".
 
 ## 2026-08-30 — Release 1C (`0.3.0`)
 

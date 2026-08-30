@@ -52,6 +52,7 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 
 ### Charging data / attribution (Release 1B, Epic 4 — admin)
 
+- `GET /api/charging/consumption?month=YYYY-MM` -> `{month,total_kwh:string,unassigned_kwh:string,by_member:[{member_id:number,energy_kwh:string}]}` — live metered kWh for the month from imported sessions (before any freeze). The admin settlement page shows it as a "foreløpig" panel on drafts.
 - `GET /api/charging/unassigned?month=YYYY-MM` -> `{month,total_kwh:string,chargers:[{charger_zaptec_id,charger_id:number|null,charger_name:string|null,sessions:number,energy_kwh:string}]}`. `total_kwh>0` blocks a settlement freeze for that month.
 - `POST /api/charging/reresolve?month=YYYY-MM` (admin, `X-Requested-With`) -> `{month,sessions_changed:number}`. Re-computes `charger_id` + `member_id` for the month's imported rows from the current chargers and assignments.
 - Settlement `compute`/`preview` may emit a `{"code":"usage_stale"}` warning when the frozen snapshot no longer matches the imported usage (unassigned kWh appeared, or a session changed after `usage_frozen_at`). It is post-blocking — re-freeze to clear it.

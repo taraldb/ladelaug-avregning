@@ -6,8 +6,10 @@ import {
   addInvoiceLine,
   deleteInvoiceLine,
   freezeSettlement,
+  getConsumption,
   getSettlement,
   getUnassigned,
+  listMembers,
   postSettlement,
   previewSettlement,
   reresolveCharging,
@@ -119,6 +121,8 @@ export default function SettlementDetail() {
         editable={isDraft}
         onUploaded={mutate}
       />
+
+      {isDraft && <ConsumptionPanel month={s.period_month} />}
 
       {isDraft && <UnassignedPanel month={s.period_month} onResolved={mutate} />}
 
@@ -446,6 +450,47 @@ function AttachmentPanel({
         </div>
       )}
       {err && <p className="mt-1 text-xs text-rose-400">{err}</p>}
+    </div>
+  );
+}
+
+function ConsumptionPanel({ month }: { month: string }) {
+  const { data } = useSWR([`/api/charging/consumption`, month], () =>
+    getConsumption(month),
+  );
+  const members = useSWR("/api/members", () => listMembers());
+  if (!data) return null;
+
+  const name = (id: number) =>
+    members.data?.members.find((m) => m.id === id)?.full_name ?? `#${id}`;
+  const unassigned = Number(data.unassigned_kwh);
+
+  return (
+    <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 text-sm">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-sm font-semibold text-slate-200">
+          Forbruk i {month} (foreløpig)
+        </h2>
+        <span className="text-slate-300">
+          Totalt {data.total_kwh} kWh
+          {unassigned > 0 && (
+            <span className="text-amber-300"> · {data.unassigned_kwh} kWh ikke fordelt</span>
+          )}
+        </span>
+      </div>
+      {data.by_member.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-slate-300">
+          {data.by_member.map((r) => (
+            <li key={r.member_id} className="flex justify-between">
+              <span>{name(r.member_id)}</span>
+              <span>{r.energy_kwh} kWh</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-xs text-slate-500">
+        Live tall fra importerte ladeøkter. Låses inn i avregningen ved «Frys forbruk».
+      </p>
     </div>
   );
 }

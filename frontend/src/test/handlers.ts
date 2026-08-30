@@ -930,6 +930,15 @@ export const handlers = [
     return HttpResponse.json({ assignment: { id: nextId(), charger_id: Number(params.id) } });
   }),
 
+  http.get("/api/charging/consumption", ({ request }) => {
+    const month = new URL(request.url).searchParams.get("month") ?? "";
+    const c = mock1b.consumption.get(month) ?? {
+      total_kwh: "0",
+      unassigned_kwh: "0",
+      by_member: [],
+    };
+    return HttpResponse.json({ month, ...c });
+  }),
   http.get("/api/charging/unassigned", ({ request }) => {
     const month = new URL(request.url).searchParams.get("month") ?? "";
     const chargers = mock1b.unassigned.get(month) ?? [];
@@ -1242,6 +1251,7 @@ interface Mock1bState {
     report_url: string;
   }[];
   unassigned: Map<string, UnassignedCharger[]>;
+  consumption: Map<string, MonthConsumption>;
 }
 
 interface UnassignedCharger {
@@ -1250,6 +1260,12 @@ interface UnassignedCharger {
   charger_name: string | null;
   sessions: number;
   energy_kwh: string;
+}
+
+interface MonthConsumption {
+  total_kwh: string;
+  unassigned_kwh: string;
+  by_member: { member_id: number; energy_kwh: string }[];
 }
 
 let mock1b: Mock1bState = freshMock1b();
@@ -1261,11 +1277,16 @@ function freshMock1b(): Mock1bState {
     details: new Map(),
     mySettlements: [],
     unassigned: new Map(),
+    consumption: new Map(),
   };
 }
 
 export function seedUnassigned(month: string, chargers: UnassignedCharger[]): void {
   mock1b.unassigned.set(month, chargers);
+}
+
+export function seedMonthConsumption(month: string, c: MonthConsumption): void {
+  mock1b.consumption.set(month, c);
 }
 
 function previewFor(id: number) {

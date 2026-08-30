@@ -1,7 +1,12 @@
 import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import AppRouter from "../router";
-import { ADMIN_USER, setSession } from "../test/handlers";
+import {
+  ADMIN_USER,
+  seedMember,
+  seedMonthConsumption,
+  setSession,
+} from "../test/handlers";
 import { renderApp } from "../test/utils";
 
 describe("Settlement flow (admin)", () => {
@@ -49,5 +54,29 @@ describe("Settlement flow (admin)", () => {
     expect(
       await screen.findByRole("heading", { name: "Rapporter" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows a live month-consumption panel on a draft", async () => {
+    setSession(ADMIN_USER);
+    const month = new Date().toISOString().slice(0, 7);
+    const kari = seedMember({ full_name: "Kari Nordmann" });
+    seedMonthConsumption(month, {
+      total_kwh: "42.000",
+      unassigned_kwh: "3.500",
+      by_member: [{ member_id: kari.id, energy_kwh: "38.500" }],
+    });
+    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+
+    await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
+    await screen.findByRole("heading", { name: /Avregning 20/ });
+
+    const heading = await screen.findByRole("heading", {
+      name: `Forbruk i ${month} (foreløpig)`,
+    });
+    const panel = heading.parentElement?.parentElement as HTMLElement;
+    expect(panel).toHaveTextContent("Totalt 42.000 kWh");
+    expect(panel).toHaveTextContent("3.500 kWh ikke fordelt");
+    expect(within(panel).getByText("Kari Nordmann")).toBeInTheDocument();
+    expect(within(panel).getByText("38.500 kWh")).toBeInTheDocument();
   });
 });
