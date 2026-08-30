@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from ladelaug_avregning import clock
 from ladelaug_avregning.audit import AuditContext
@@ -19,7 +19,11 @@ from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.notifications import NotificationRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
 from ladelaug_avregning.errors import DomainError, NotFoundError
-from ladelaug_avregning.reports import render_member_report, render_summary_report
+from ladelaug_avregning.reports import (
+    html_to_pdf,
+    render_member_report,
+    render_summary_report,
+)
 from ladelaug_avregning.webapp.deps import (
     get_audit_context,
     get_config,
@@ -41,6 +45,17 @@ router = APIRouter(
 
 def _repo(db: Database, config: AppConfig) -> SettlementRepo:
     return SettlementRepo(db, tz=config.timezone)
+
+
+def _pdf_response(html: str, filename: str) -> Response:
+    """Render ``html`` to a PDF ``Response``. ``503 pdf_unavailable`` propagates
+    from :func:`html_to_pdf` when WeasyPrint is not loadable on this host."""
+    pdf = html_to_pdf(html)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 def _detail(repo: SettlementRepo, settlement_id: int) -> dict[str, Any]:
@@ -210,7 +225,15 @@ async def summary_report(
     return HTMLResponse(render_summary_report(_repo(db, config).compute(settlement_id)))
 
 
-@router.get("/{settlement_id}/reports/{member_id}", response_class=HTMLResponse)
+@router.get("/{settlement_id}/reports/summary.pdf")
+async def summary_report_pdf(
+    settlement_id: int, db: Database = Depends(get_db), config: AppConfig = Depends(get_config)
+) -> Response:
+    html = render_summary_report(_repo(db, config).compute(settlement_id))
+    return _pdf_response(html, f"avregning-{settlement_id}-sammendrag.pdf")
+
+
+@router.get("/{settlement_id}/reports/{member_id:int}", response_class=HTMLResponse)
 async def member_report(
     settlement_id: int,
     member_id: int,
@@ -221,3 +244,17 @@ async def member_report(
     if entry is None:
         raise DomainError("not_in_settlement", f"Member {member_id} is not in this settlement.")
     return HTMLResponse(render_member_report(entry["result"], entry["member"]))
+
+
+@router.get("/{settlement_id}/reports/{member_id:int}.pdf")
+async def member_report_pdf(
+    settlement_id: int,
+    member_id: int,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> Response:
+    entry = _repo(db, config).member_entry(settlement_id, member_id)
+    if entry is None:
+        raise DomainError("not_in_settlement", f"Member {member_id} is not in this settlement.")
+    html = render_member_report(entry["result"], entry["member"])
+    return _pdf_response(html, f"avregning-{settlement_id}-medlem-{member_id}.pdf")

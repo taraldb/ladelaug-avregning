@@ -41,6 +41,14 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN mkdir -p /app/config /app/state && chown -R 99:100 /app
 
+# WeasyPrint (PDF settlement reports, US-906) dlopen's Pango/HarfBuzz/cairo at
+# import time. Without these the app still runs — the .pdf endpoints just return
+# 503 pdf_unavailable — but the deploy target wants working PDFs.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libffi8 libjpeg62-turbo \
+        libopenjp2-7 fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 VOLUME ["/app/config", "/app/state"]
 
 EXPOSE 8080

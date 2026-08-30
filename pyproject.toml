@@ -16,6 +16,7 @@ dependencies = [
     "croniter>=2.0",
     "workalendar>=17.0",
     "tzdata>=2024.1",
+    "weasyprint>=60",
 ]
 
 [project.optional-dependencies]

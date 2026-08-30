@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import html
 from pathlib import Path
 from typing import Any
@@ -134,6 +135,17 @@ def render_summary_report(result: dict[str, Any]) -> str:
     return _page(f"Avregning {result['period_month']} – sammendrag", body)
 
 
+def _write_pdf_sibling(out_dir: Path, stem: str, html_doc: str) -> None:
+    """Best-effort: write ``<stem>.pdf`` next to ``<stem>.html``. A PDF failure
+    must never break a settlement post, so every exception is swallowed."""
+    from ladelaug_avregning.reports.pdf import PDF_AVAILABLE, html_to_pdf
+
+    if not PDF_AVAILABLE:
+        return
+    with contextlib.suppress(Exception):  # PDF is a nice-to-have at post time
+        (out_dir / f"{stem}.pdf").write_bytes(html_to_pdf(html_doc, base_url=str(out_dir)))
+
+
 def write_reports(
     result: dict[str, Any], members: list[dict[str, Any]], out_dir: Path
 ) -> list[str]:
@@ -141,15 +153,19 @@ def write_reports(
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
 
-    (out_dir / "sammendrag.html").write_text(render_summary_report(result), encoding="utf-8")
+    summary_html = render_summary_report(result)
+    (out_dir / "sammendrag.html").write_text(summary_html, encoding="utf-8")
     written.append("sammendrag.html")
+    _write_pdf_sibling(out_dir, "sammendrag", summary_html)
 
     by_id = {m["member_id"]: m for m in result["members"]}
     for snap in members:
         m = by_id.get(snap["member_id"])
         if m is None:
             continue
-        name = f"medlem-{snap['member_id']}.html"
-        (out_dir / name).write_text(render_member_report(result, m), encoding="utf-8")
-        written.append(name)
+        stem = f"medlem-{snap['member_id']}"
+        member_html = render_member_report(result, m)
+        (out_dir / f"{stem}.html").write_text(member_html, encoding="utf-8")
+        written.append(f"{stem}.html")
+        _write_pdf_sibling(out_dir, stem, member_html)
     return written

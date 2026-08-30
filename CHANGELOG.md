@@ -53,6 +53,25 @@ corrections, refunds, member departure, charging-access workflows.
 
 The per-phase entries below record how it was built.
 
+## 2026-08-30 — PDF settlement reports (Release 1C phase P4)
+
+- `reports/pdf.py` — `PDF_AVAILABLE` (set by a guarded `import weasyprint`) and
+  `html_to_pdf(html, *, base_url=None) -> bytes`. WeasyPrint dlopen's
+  Pango/cairo/GObject at import time; when those native libraries are missing the
+  import is swallowed, `PDF_AVAILABLE` is `False`, and `html_to_pdf` raises
+  `DomainError("pdf_unavailable", status=503)`. Nothing at import time raises.
+- `GET /api/settlement/{id}/reports/{member_id}.pdf` and
+  `GET /api/settlement/{id}/reports/summary.pdf` (admin) and
+  `GET /api/me/settlements/{id}/report.pdf` (member, resolved from the session) —
+  render the same HTML as the existing endpoints through `html_to_pdf` and return
+  `application/pdf` with an inline `Content-Disposition`. `503 pdf_unavailable`
+  propagates naturally.
+- `reports.write_reports` also writes the sibling `.pdf` (`medlem-<id>.pdf`,
+  `sammendrag.pdf`) at post time, but only when `PDF_AVAILABLE` and wrapped so any
+  failure is swallowed — a settlement post never fails because of PDF.
+- `weasyprint` added to `[project].dependencies`; the Dockerfile runtime stage
+  installs the WeasyPrint native libraries.
+
 ## 2026-08-30 — Low-balance warnings (Release 1C phase P3)
 
 - `NotificationRepo.scan_low_balances(*, actor)` — iterates

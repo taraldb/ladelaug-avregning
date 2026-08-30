@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
@@ -23,7 +23,7 @@ from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
 from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.money import nok_to_ore
-from ladelaug_avregning.reports import render_member_report
+from ladelaug_avregning.reports import html_to_pdf, render_member_report
 from ladelaug_avregning.webapp.deps import get_config, get_current_member, get_db
 from ladelaug_avregning.webapp.schemas import (
     LedgerTxnOut,
@@ -142,13 +142,7 @@ async def my_settlements(
     return {"settlements": out}
 
 
-@router.get("/settlements/{settlement_id}/report", response_class=HTMLResponse)
-async def my_settlement_report(
-    settlement_id: int,
-    member_id: int = Depends(get_current_member),
-    db: Database = Depends(get_db),
-    config: AppConfig = Depends(get_config),
-) -> HTMLResponse:
+def _my_report_html(settlement_id: int, member_id: int, db: Database, config: AppConfig) -> str:
     repo = SettlementRepo(db, tz=config.timezone)
     row = repo.get(settlement_id)
     if row is None or row["status"] != "posted":
@@ -156,4 +150,29 @@ async def my_settlement_report(
     entry = repo.member_entry(settlement_id, member_id)
     if entry is None:
         raise DomainError("not_in_settlement", "You are not part of this settlement.")
-    return HTMLResponse(render_member_report(entry["result"], entry["member"]))
+    return render_member_report(entry["result"], entry["member"])
+
+
+@router.get("/settlements/{settlement_id}/report", response_class=HTMLResponse)
+async def my_settlement_report(
+    settlement_id: int,
+    member_id: int = Depends(get_current_member),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> HTMLResponse:
+    return HTMLResponse(_my_report_html(settlement_id, member_id, db, config))
+
+
+@router.get("/settlements/{settlement_id}/report.pdf")
+async def my_settlement_report_pdf(
+    settlement_id: int,
+    member_id: int = Depends(get_current_member),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> Response:
+    html = _my_report_html(settlement_id, member_id, db, config)
+    return Response(
+        content=html_to_pdf(html),
+        media_type="application/pdf",
+        headers={"Content-Disposition": (f'inline; filename="avregning-{settlement_id}.pdf"')},
+    )
