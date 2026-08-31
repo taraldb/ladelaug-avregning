@@ -51,6 +51,9 @@ zaptec:
   # records the status and emails the member; it does not call Zaptec to
   # enforce it — an admin acts here.
   portal_url: "https://portal.zaptec.com"
+  # Debug: leave "" for off. A path makes the client dump one JSON file per
+  # Zaptec HTTP call (token + password redacted). Or set ZAPTEC_CAPTURE_DIR.
+  capture_dir: ""
 
 email:
   # backend: console (log only) | file (.eml under state/mail/) | smtp

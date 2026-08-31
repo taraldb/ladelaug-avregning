@@ -93,9 +93,12 @@ into per-member charges.
   may hold several at once).
 - **Zaptec integration** — import chargers, archived charging sessions, and
   15-minute interval data; idempotent; sessions that cross a month boundary are
-  split (interval data first, pro-rata by duration otherwise). Consumption on a
+  split (interval data first, pro-rata by duration otherwise). Session energy is
+  stored to 2 decimals — the precision Zaptec's "Charge history" report shows and
+  totals — so the per-month kWh sum reconciles with that report. Consumption on a
   charger with no assignment is *unassigned* and blocks the settlement until
-  resolved. Config-gated by `zaptec.enabled`.
+  resolved. Config-gated by `zaptec.enabled`. Set `zaptec.capture_dir` to dump
+  every Zaptec request/response to disk when debugging a sync.
 - **Settlement engine** — one settlement per calendar month:
   `draft → freeze → preview → post`. Freeze snapshots participation,
   consumption, and balance-before. Invoice lines are split *equally* (across
@@ -200,6 +203,7 @@ supplied via the `LADELAUG_SECRET_KEY` environment variable (or a `.env` file) �
 | `zaptec.username` | — | Zaptec login; password via `ZAPTEC_PASSWORD` env |
 | `zaptec.installation_id` | — | optional; blank syncs every visible installation |
 | `zaptec.page_size` / `zaptec.max_retries` | `500` / `3` | |
+| `zaptec.capture_dir` | — | debug: dump one JSON file per Zaptec HTTP call there (token + password redacted); also `ZAPTEC_CAPTURE_DIR` env |
 | `email.backend` | `console` | `console` (log) / `file` (`state/mail/*.eml`) / `smtp` |
 | `email.from_address` / `email.base_url` | — | sender + public origin for links in emails |
 | `email.smtp_host` / `smtp_port` / `smtp_username` / `smtp_password` / `smtp_starttls` | — | used when `backend: smtp` |

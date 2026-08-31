@@ -22,7 +22,11 @@ from ladelaug_avregning.domain import periods
 from ladelaug_avregning.domain.chargers import ChargerRepo
 from ladelaug_avregning.zaptec.client import ZaptecSession
 
-_KWH = Decimal("0.001")
+# Session energy is stored to 2 decimals — the same precision Zaptec's
+# "Charge history" report shows and totals — so our per-month kWh sum matches
+# that report. ``_rebalance`` puts any cross-month rounding drift back on the
+# largest part, so a split still sums to the (2-dp) session total.
+_KWH = Decimal("0.01")
 _SplitPart = tuple[str, datetime, datetime, Decimal, str]
 
 

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, model_validator
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 _SECRET_KEY_ENV = "LADELAUG_SECRET_KEY"
 _ZAPTEC_PASSWORD_ENV = "ZAPTEC_PASSWORD"
+_ZAPTEC_CAPTURE_DIR_ENV = "ZAPTEC_CAPTURE_DIR"
 
 
 class ServerConfig(BaseModel):
@@ -69,6 +70,11 @@ class ZaptecConfig(BaseModel):
     # records the status and notifies; it does not call Zaptec to enforce it
     # (that is a Release 2 item). The portal is where an admin acts.
     portal_url: str = "https://portal.zaptec.com"
+    # Debug: empty = off. A path (cwd-relative) makes the client write one
+    # pretty-printed JSON file per Zaptec HTTP call there (token / chargers /
+    # each chargehistory page); the bearer token and password are redacted.
+    # Also settable via the ZAPTEC_CAPTURE_DIR environment variable.
+    capture_dir: str = ""
 
 
 class EmailConfig(BaseModel):
@@ -116,6 +122,9 @@ class AppConfig(BaseModel):
         env_zaptec_pw = os.environ.get(_ZAPTEC_PASSWORD_ENV, "").strip()
         if env_zaptec_pw:
             self.zaptec.password = env_zaptec_pw
+        env_capture_dir = os.environ.get(_ZAPTEC_CAPTURE_DIR_ENV, "").strip()
+        if env_capture_dir:
+            self.zaptec.capture_dir = env_capture_dir
         if self.zaptec.enabled and not (self.zaptec.username and self.zaptec.password):
             problems.append(
                 "zaptec.enabled is true but zaptec.username / zaptec.password are not both set "
