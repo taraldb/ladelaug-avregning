@@ -128,6 +128,51 @@ async def test_update_line_only_amount(db):
     assert repo.get(sid)["invoice_total_nok"] == "300.00"  # 250 + 50
 
 
+async def test_negative_line_is_allowed_and_credits_on_post(db):
+    m1 = await _member(db, "M1")
+    m2 = await _member(db, "M2")
+    repo = SettlementRepo(db)
+    s = await repo.create_draft(MONTH, actor=AuditContext.system())
+    sid = int(s["id"])
+    await repo.add_line(
+        sid,
+        description="Fastledd",
+        allocation_method="equal",
+        amount=Decimal(300),
+        actor=AuditContext.system(),
+    )
+    # a credit line (e.g. a rebate) — negative amount is allowed
+    rabatt = await repo.add_line(
+        sid,
+        description="Rabatt",
+        allocation_method="equal",
+        amount=Decimal(-60),
+        actor=AuditContext.system(),
+    )
+    assert rabatt["amount_nok"] == "-60.00"
+    assert repo.get(sid)["invoice_total_nok"] == "240.00"
+
+    await repo.set_invoice(sid, invoice_kwh="10", actor=AuditContext.system())
+    await repo.add_attachment(
+        sid, filename="f.pdf", content=b"%PDF-1.4", actor=AuditContext.system()
+    )
+    await repo.freeze(sid, actor=AuditContext.system())
+    await repo.post(sid, actor=AuditContext.system())
+
+    ledger = LedgerRepo(db)
+    # (300 - 60) / 2 = 120 each
+    assert ledger.balance(m1) == Decimal("-120.00")
+    assert ledger.balance(m2) == Decimal("-120.00")
+
+
+async def test_update_line_to_negative_amount(db):
+    repo, sid = await _draft_with_lines(db, equal_nok="100")
+    line = repo.lines(sid)[0]
+    await repo.update_line(sid, line["id"], amount=Decimal(-25), actor=AuditContext.system())
+    assert next(l for l in repo.lines(sid) if l["id"] == line["id"])["amount_nok"] == "-25.00"
+    assert repo.get(sid)["invoice_total_nok"] == "-25.00"
+
+
 async def test_update_line_validation_and_not_found(db):
     repo, sid = await _draft_with_lines(db, equal_nok="100")
     line = repo.lines(sid)[0]

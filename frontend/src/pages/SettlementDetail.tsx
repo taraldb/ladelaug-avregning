@@ -479,7 +479,7 @@ function MethodToggle({
       aria-label="Fordeling"
       className="inline-flex rounded-md border border-slate-700 p-0.5"
     >
-      {(["equal", "consumption"] as const).map((m) => (
+      {(["consumption", "equal"] as const).map((m) => (
         <button
           key={m}
           type="button"
@@ -593,7 +593,7 @@ function LinesPanel({
 }) {
   const sid = detail.settlement.id;
   const [description, setDescription] = useState("");
-  const [method, setMethod] = useState<AllocationMethod>("equal");
+  const [method, setMethod] = useState<AllocationMethod>("consumption");
   const [amount, setAmount] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -609,7 +609,7 @@ function LinesPanel({
       });
       setDescription("");
       setAmount("");
-      setMethod("equal");
+      setMethod("consumption");
       await onChange();
     } catch (e2) {
       setErr(e2 instanceof ApiError ? e2.message : "Kunne ikke legge til linje.");

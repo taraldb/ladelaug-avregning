@@ -20,6 +20,7 @@ describe("Settlement flow (admin)", () => {
     await screen.findByRole("heading", { name: /Avregning 20/ });
 
     await user.type(screen.getByLabelText(/Beskrivelse/), "Fastledd");
+    await user.click(screen.getByRole("button", { name: "Likt" }));
     await user.type(screen.getByLabelText(/Beløp/), "500");
     await user.click(screen.getByRole("button", { name: "Legg til" }));
     expect(await screen.findByText("Fastledd")).toBeInTheDocument();
@@ -58,7 +59,7 @@ describe("Settlement flow (admin)", () => {
     ).toBeInTheDocument();
   });
 
-  it("adds a line with the Forbruk toggle, then edits it", async () => {
+  it("defaults to Forbruk, adds a line, then edits it to a negative Likt line", async () => {
     setSession(ADMIN_USER);
     const { user } = renderApp(<AppRouter />, { route: "/settlements" });
     await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
@@ -68,9 +69,12 @@ describe("Settlement flow (admin)", () => {
       await screen.findByRole("heading", { name: "Fakturalinjer" })
     ).closest("div")!;
 
-    // add — pick "Forbruk" on the segmented toggle instead of a dropdown
+    // "Forbruk" is the pre-selected option on the segmented toggle
+    expect(
+      within(linesPanel).getByRole("button", { name: "Forbruk" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
     await user.type(within(linesPanel).getByLabelText(/Beskrivelse/), "Strøm");
-    await user.click(within(linesPanel).getByRole("button", { name: "Forbruk" }));
     await user.type(within(linesPanel).getByLabelText(/Beløp/), "1200");
     await user.click(within(linesPanel).getByRole("button", { name: "Legg til" }));
 
@@ -78,7 +82,7 @@ describe("Settlement flow (admin)", () => {
     expect(within(row).getByText("Forbruk")).toBeInTheDocument();
     expect(within(row).getByText(/1\s?200,00\s?kr/)).toBeInTheDocument();
 
-    // edit — change amount and flip the method back to "Likt"
+    // edit — flip to "Likt" and set a negative (credit) amount
     await user.click(within(row).getByRole("button", { name: "Endre" }));
     const editForm = await within(linesPanel).findByRole("form", {
       name: /Endre linje Strøm/,
@@ -86,14 +90,14 @@ describe("Settlement flow (admin)", () => {
     await user.click(within(editForm).getByRole("button", { name: "Likt" }));
     const amountField = within(editForm).getByLabelText(/Beløp/);
     await user.clear(amountField);
-    await user.type(amountField, "999");
+    await user.type(amountField, "-150");
     await user.click(within(editForm).getByRole("button", { name: "Lagre" }));
 
     const editedRow = (
       await within(linesPanel).findByText("Strøm")
     ).closest("tr")!;
     expect(within(editedRow).getByText("Likt")).toBeInTheDocument();
-    expect(within(editedRow).getByText(/999,00\s?kr/)).toBeInTheDocument();
+    expect(within(editedRow).getByText(/-150,00\s?kr/)).toBeInTheDocument();
   });
 
   it("assesses and books a correction on a posted settlement", async () => {

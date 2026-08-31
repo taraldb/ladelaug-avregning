@@ -181,8 +181,8 @@ class SettlementRepo:
         if allocation_method not in ("equal", "consumption"):
             raise DomainError("bad_method", "allocation_method must be 'equal' or 'consumption'.")
         amount_dec = parse_nok(amount)
-        if amount_dec <= 0:
-            raise DomainError("bad_amount", "line amount must be positive")
+        if amount_dec == 0:
+            raise DomainError("bad_amount", "line amount must not be zero")
         ore, nok = _ore_nok(nok_to_ore(amount_dec))
         now = clock.now_utc().isoformat()
         async with self._db._write() as cur:
@@ -255,8 +255,8 @@ class SettlementRepo:
             updates["allocation_method"] = allocation_method
         if amount is not _UNSET:
             amount_dec = parse_nok(amount)
-            if amount_dec <= 0:
-                raise DomainError("bad_amount", "line amount must be positive")
+            if amount_dec == 0:
+                raise DomainError("bad_amount", "line amount must not be zero")
             ore, nok = _ore_nok(nok_to_ore(amount_dec))
             updates["amount_ore"] = ore
             updates["amount_nok"] = nok

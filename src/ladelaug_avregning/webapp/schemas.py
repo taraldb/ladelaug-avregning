@@ -49,6 +49,17 @@ def _positive_nok(value: Any) -> Decimal:
     return amount
 
 
+def _nonzero_nok(value: Any) -> Decimal:
+    """A monetary amount that may be negative (a credit line) but not zero."""
+    try:
+        amount = parse_nok(value)
+    except (ValueError, InvalidOperation) as exc:
+        raise ValueError("not a valid amount") from exc
+    if amount == 0:
+        raise ValueError("amount must not be zero")
+    return amount
+
+
 # --- auth ------------------------------------------------------------------
 
 
@@ -611,7 +622,7 @@ class SettlementInvoiceIn(BaseModel):
 class InvoiceLineIn(BaseModel):
     description: str
     allocation_method: Literal["equal", "consumption"]
-    amount: Decimal
+    amount: Decimal  # may be negative (a credit line); not zero
     category: str | None = None
 
     @field_validator("description")
@@ -622,7 +633,7 @@ class InvoiceLineIn(BaseModel):
     @field_validator("amount", mode="before")
     @classmethod
     def _v_amount(cls, v: Any) -> Decimal:
-        return _positive_nok(v)
+        return _nonzero_nok(v)
 
 
 class InvoiceLinePatch(BaseModel):
@@ -642,7 +653,7 @@ class InvoiceLinePatch(BaseModel):
     @field_validator("amount", mode="before")
     @classmethod
     def _v_amount(cls, v: Any) -> Decimal | None:
-        return None if v is None else _positive_nok(v)
+        return None if v is None else _nonzero_nok(v)
 
     @model_validator(mode="after")
     def _at_least_one(self) -> InvoiceLinePatch:
