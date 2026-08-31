@@ -50,3 +50,35 @@
   native libs may be absent). `html_to_pdf` raises `DomainError("pdf_unavailable", status=503)`
   when unavailable; the `.pdf` report routes let that propagate. Never import `weasyprint` at
   module top level outside `reports/pdf.py`.
+
+- **Refunds (1D).** `POST /api/members/{id}/refunds` → `LedgerRepo.refund` inserts a `refund`
+  row (negative `amount_ore`) + `ledger.refunded`. `refund_exceeds_balance` (422) unless
+  `allow_negative`. `txn_type` CHECK widened in migration `0010` (`refund`,
+  `settlement_correction`).
+
+- **Settlement corrections (1D, Epic 7).** `SettlementRepo.assess_correction` (posted only,
+  422 `not_posted`) recomputes from *current* `ChargingRepo.consumption_by_member` against the
+  frozen `settlement_invoice_lines` + frozen `participates_equal`; `delta_ore = charged_ore −
+  corrected_charge_ore` where `charged_ore` is `−SUM(amount_ore)` over the settlement's ledger
+  rows (so a 2nd correction nets against the 1st). `post_correction` writes one
+  `settlement_correction` ledger row per non-zero delta + a `settlement_corrections` /
+  `settlement_correction_members` record, resolves the month's `late_session_flags`, audits
+  `settlement.corrected`. Routes `GET`/`POST /api/settlement/{id}/correction`; the `POST`
+  calls `NotificationRepo.enqueue_correction_reports`. `_detail()` adds `corrections` and
+  `correction_pending`.
+
+- **Member departure (1D, US-204).** `MemberRepo.departure_check` /
+  `process_departure` orchestrate `set_status('inactive')` + `ChargerRepo.unassign` per open
+  assignment (+ `reresolve_after_assignment`) + an optional `LedgerRepo.refund` of the whole
+  positive balance, refused (`unsettled_consumption`, 422) while any month ≤ the leaving date
+  has the member's sessions outside a posted settlement. One stand-alone `member.departed`
+  audit row via `record_audit`. Routes on the members router.
+
+- **Charging access (1D, US-305).** `domain/access.py` `AccessRepo` over
+  `charging_access_events`; `routes/access.py` (its own `require_admin` router,
+  `prefix="/api/members"`, registered right after `members`) — `GET`/`POST
+  /api/members/{id}/access`. `record()` does one `_write()` that inserts the `email_messages`
+  row (for `warned`/`restored` only), the event, and the `access.{action}` audit row (the
+  low-balance pattern). Portal: `GET /api/me/access` → `{status, portal_url}`
+  (`config.zaptec.portal_url`). **No Zaptec write call — status of record only.** Health adds
+  `access: {disabled}` + `corrections: {settlements_with_pending}` (informational).

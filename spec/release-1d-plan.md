@@ -12,18 +12,37 @@ Target version: **`0.5.0`** (`VERSION` + `pyproject.toml` in lockstep).
 (`87d5c06`); several of its new files are untracked in the working tree and are
 **left as-is** — out of scope for 1D.
 
-## Status — IN PROGRESS
+## Status — COMPLETE (2026-08-31)
+
+All of P1–P8 shipped. 347 pytest tests + 53 Vitest tests green; `ruff check` /
+`ruff format --check` clean; `npm run build` green. Committed directly to `main`
+(mirrors 1A/1B/1C).
 
 | Phase | Scope | State | Commit |
 |---|---|---|---|
-| **P1** | Ledger: `refund` + `settlement_correction` txn types, migration `0010` | ☐ | |
-| **P2** | API: member refunds (US-505) | ☐ | |
-| **P3** | Settlement corrections engine (Epic 7 — US-701/702/703) | ☐ | |
-| **P4** | API: correction endpoints + member notifications | ☐ | |
-| **P5** | Member departure workflow (US-204) | ☐ | |
-| **P6** | Charging-access status + notifications (US-305, US-1003/1004) | ☐ | |
-| **P7** | Web UI — corrections, refunds, departure, access | ☐ | |
-| **P8** | Docs / version bump `0.5.0` | ☐ | |
+| **P1** | Ledger: `refund` + `settlement_correction` txn types, migration `0010` | ☑ done | `519d541` |
+| **P2** | API: member refunds (US-505) | ☑ done | `321899f` |
+| **P3** | Settlement corrections engine (Epic 7 — US-701/702/703) | ☑ done | `df86ef3` |
+| **P4** | API: correction endpoints + member notifications | ☑ done | `eef7a70` |
+| **P5** | Member departure workflow (US-204) | ☑ done | `661bfce` |
+| **P6** | Charging-access status + notifications (US-305, US-1003/1004) | ☑ done | `fa74b13` |
+| **P7** | Web UI — corrections, refunds, departure, access | ☑ done | `c5a9412` |
+| **P8** | Docs / version bump `0.5.0` | ☑ done | (this commit) |
+
+### Deviations from this plan as written
+
+- **US-505 uses a dedicated `refund` `txn_type`**, not the reserved
+  `settlement_reversal` (which stays unused) — a refund and a settlement reversal
+  are semantically different and the report/label code keys off the type.
+- **The overdraw guard lives in `LedgerRepo.refund`** (`allow_negative` kwarg),
+  not only the route, so `process_departure` gets it for free.
+- **`assess_correction` derives the "already charged" baseline from the ledger**
+  (`−SUM(amount_ore)` over the settlement's rows), not from a stored original, so
+  a second correction nets against the first with no extra bookkeeping.
+- **Charging access is its own router** (`routes/access.py`, `prefix=/api/members`)
+  registered right after `members`, rather than folded into the members router.
+- **P8 status-table + version bump is this commit**; P1–P7 each landed as a
+  single commit (no per-phase `docs:` follow-ups this time).
 
 **Done** = `uv run ruff check src tests` + `uv run ruff format --check` +
 `uv run pytest -q` green (and `npm run check` from P7). Behaviour-changing items

@@ -7,7 +7,7 @@ work that starts in 1B.
 
 ---
 
-## Status — 2026-08-30
+## Status — 2026-08-31
 
 **Release 1A is COMPLETE** (`0.1.0`). Identity, member administration, the
 financial ledger, audit, member self-service, and a bundled React SPA.
@@ -24,6 +24,20 @@ deferred from 1B). Work breakdown and decisions:
 [`release-1c-plan.md`](./release-1c-plan.md). Migration `0007`
 (`forecast_settings`, `low_balance_notifications`); new dep `weasyprint`.
 272 pytest tests + 30 Vitest tests green.
+
+**Feedback batch (`0.4.0`)** — admin login provisioning (`/api/users`), a
+cross-member movements list, multiple invoice attachments per settlement
+(`settlement_attachments`, migration `0009`; `0008` was the charger-serial
+backfill in `0.3.1`).
+
+**Release 1D is COMPLETE** (`0.5.0`) — settlement corrections (Epic 7:
+US-701/702/703), refunds (US-505), member departure (US-204), and a
+charging-access status with member notifications (US-305, US-1003/1004).
+Work breakdown and decisions: [`release-1d-plan.md`](./release-1d-plan.md).
+Migration `0010` widens `ledger_transactions.txn_type` (`refund`,
+`settlement_correction`) and adds `settlement_corrections`,
+`settlement_correction_members`, `charging_access_events`. Live Zaptec access
+enforcement is deferred to Release 2. 347 pytest tests + 53 Vitest tests green.
 
 | Phase | Scope | State | Commit |
 |---|---|---|---|
@@ -464,14 +478,21 @@ Vitest + Testing Library + MSW. `npm run check` = `tsc --noEmit && eslint .
   `/api/me/consumption`, `MyAccount` dashboard cards, admin `/forecast` page),
   PDF reports via WeasyPrint over the existing HTML report, US-1104 health gains
   low-balance counters. Migration `0007`; new dep `weasyprint`.
-- **1D — Corrections, refunds, departure, access.** Epic 7 (assess/calculate/post
-  correction as adjustment transactions, original preserved, members notified —
-  the `late_session_flags` table and `_unresolved_late` warning from 1B feed
-  this; the automatic re-import detector is still a thin follow-up), US-505
-  refunds (`settlement_reversal` `txn_type` is already reserved in the ledger
-  CHECK), US-204 member departure (end-status + end-assignments + unsettled
-  detection + refund), US-305 charging-access status with real Zaptec
-  enforcement.
+- **1D — Corrections, refunds, departure, access.** ✅ **Done** (`0.5.0`) — built
+  as [`release-1d-plan.md`](./release-1d-plan.md) P1–P8. Epic 7
+  (`assess_correction` / `post_correction` — recompute a posted settlement from
+  current usage against the frozen lines/participation, book the per-member
+  delta as `settlement_correction` ledger rows, resolve the month's
+  `late_session_flags`, notify each adjusted member; original preserved,
+  re-corrections measured against the ledger so they don't double-count),
+  US-505 refunds (a dedicated `refund` `txn_type`, not the reserved
+  `settlement_reversal`; overdraw guard), US-204 member departure
+  (`departure_check` + `process_departure`: end-status + end-assignments +
+  unsettled-month detection + optional full-balance refund, one `member.departed`
+  audit), US-305 charging-access status (`charging_access_events`, warned /
+  disabled / restored, US-1003/1004 emails). Migration `0010`; new
+  `ZaptecConfig.portal_url`. **Live Zaptec access enforcement is deferred to
+  Release 2 ("Direct Zaptec access control") — 1D records status and notifies.**
 
 ---
 

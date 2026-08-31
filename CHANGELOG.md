@@ -2,6 +2,64 @@
 
 Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
+## 2026-08-31 — Release 1D: corrections, refunds, departure, access (`0.5.0`)
+
+The correction and exit workflows. Migration `0010` widens
+`ledger_transactions.txn_type` with `refund` and `settlement_correction` (table
+rebuilt, same pattern as `0005`) and adds `settlement_corrections`,
+`settlement_correction_members`, and `charging_access_events`.
+
+- **Refunds (US-505)** — `POST /api/members/{id}/refunds`
+  `{amount,value_date?,reference?,allow_negative?}` writes an append-only
+  `refund` ledger row (negative `amount_ore`) plus a `ledger.refunded` audit
+  event. Refused with `refund_exceeds_balance` (422) when it would take the
+  balance below zero unless `allow_negative` is set. New `Refusjon` action on the
+  member page; `txnTypeLabel` gains `Refusjon` / `Korrigering`.
+- **Settlement corrections (Epic 7 — US-701/702/703)** —
+  `SettlementRepo.assess_correction` recomputes a *posted* settlement from the
+  month's current imported consumption against its **frozen** invoice lines and
+  **frozen** equal-cost participation; `post_correction` books the per-member
+  delta as one `settlement_correction` ledger row each (positive = a credit back
+  to the member), records a `settlement_corrections` /
+  `settlement_correction_members` trail, resolves the month's outstanding
+  `late_session_flags`, and audits `settlement.corrected`. The delta is measured
+  against what the ledger has already charged for the settlement, so repeated
+  corrections never double-count; the original settlement row and its
+  allocations are untouched. Endpoints `GET`/`POST
+  /api/settlement/{id}/correction` (the `POST` also emails each adjusted member —
+  `NotificationRepo.enqueue_correction_reports`, `template=settlement_correction`).
+  `GET /api/settlement/{id}` now carries `corrections[]` and, for a posted
+  settlement, `correction_pending`. New "Korrigering" panel on the settlement
+  page (assess table → confirm → book).
+- **Member departure (US-204)** — `MemberRepo.departure_check` previews the open
+  charger assignments that would close, any month with the member's consumption
+  not yet in a posted settlement, and the balance a refund would pay back.
+  `process_departure` sets the status inactive from the leaving date, closes
+  every open assignment (re-resolving the affected non-posted months), and —
+  when asked and nothing is unsettled (`unsettled_consumption`, 422, otherwise) —
+  refunds the whole positive balance. Each step keeps its own audit row; one
+  `member.departed` row summarises it. Nothing is deleted. `GET
+  /api/members/{id}/departure-check`, `POST /api/members/{id}/departure`; a new
+  "Utmelding" card on the member page.
+- **Charging-access status (US-305, US-1003/1004)** — `AccessRepo` over
+  `charging_access_events` records a `warned` / `disabled` / `restored` intent
+  per member, each audited (`access.{action}`); `warned` and `restored` also
+  enqueue a Norwegian email carrying the reason and the Zaptec portal link.
+  Admin: `GET`/`POST /api/members/{id}/access`. Portal: `GET /api/me/access` →
+  `{status, portal_url}` drives a banner + link on "Min konto". New
+  `ZaptecConfig.portal_url` (`config.example.yaml`).
+  **This is a status of record and a notification only — 1D does not call Zaptec
+  to pause or authorise a charger. Live enforcement is Release 2 ("Direct Zaptec
+  access control"); an admin acts in the Zaptec portal.**
+- **System health** — `GET /api/system/health` gains
+  `corrections: {settlements_with_pending}` (posted settlements whose current
+  usage no longer matches) and `access: {disabled}` (members whose latest access
+  event is `disabled`). Informational — they do not flip `ok`. Two matching
+  tiles on the Systemhelse page.
+
+Build plan: `spec/release-1d-plan.md`. 347 pytest + 53 Vitest tests green;
+`ruff check` / `ruff format --check` clean; `npm run build` green.
+
 ## 2026-08-30 — User provisioning + movements (`0.4.0`)
 
 Admin can now create and manage login accounts from the UI, see balances at a

@@ -7,20 +7,58 @@ metered kWh. The portal keeps an **append-only financial ledger** and an
 **append-only audit log**, and (from Release 1B) imports consumption from Zaptec,
 runs the settlement, and produces per-member reports. Release 1C adds a member
 portal with a consumption forecast, low-balance warning emails, and PDF reports.
+Release 1D closes the loop: refunds, settlement corrections, member departure,
+and a charging-access status.
 
-## Status — Release 1C (`0.3.1`)
+## Status — Release 1D (`0.5.0`)
 
 Release 1A was the foundation (identity, members, the append-only ledger,
 audit). Release 1B turned a monthly electricity invoice into per-member charges
 (chargers, Zaptec sync, the settlement engine, HTML reports, email). Release 1C
-gives members a forward view and finishes the reporting.
+gave members a forward view (forecast, low-balance warnings, PDF). `0.4.0` was a
+feedback batch: admin user provisioning, a cross-member movements list, and
+multiple invoices per settlement. Release 1D (`0.5.0`) adds the correction and
+exit workflows.
 
-`0.3.1` is a charger bug-fix batch: synced chargers store the hardware serial
+- **Refunds (US-505)** — `POST /api/members/{id}/refunds` records a `refund`
+  ledger row that lowers the balance, with an optional accounting reference.
+  Blocked (`refund_exceeds_balance`) when it would overdraw unless
+  `allow_negative` is set.
+- **Settlement corrections (Epic 7)** — a *posted* settlement can be recomputed
+  from the month's current imported consumption against its frozen invoice lines
+  and frozen equal-cost participation. `GET /api/settlement/{id}/correction`
+  shows the per-member difference; `POST` books it as one
+  `settlement_correction` ledger row per changed member, records a
+  `settlement_corrections` trail, resolves the month's `late_session_flags`, and
+  emails each adjusted member. The original settlement is never mutated; repeated
+  corrections measure against what the ledger already charged, so they never
+  double-count.
+- **Member departure (US-204)** — `GET /api/members/{id}/departure-check`
+  previews the open charger assignments, any month with the member's consumption
+  not yet in a posted settlement, and the balance. `POST
+  /api/members/{id}/departure` sets the status inactive from the leaving date,
+  closes every open assignment, and — when asked and nothing is unsettled —
+  refunds the whole positive balance, under one `member.departed` audit row.
+  Nothing is deleted.
+- **Charging-access status (US-305, US-1003/1004)** — `POST
+  /api/members/{id}/access` records a `warned` / `disabled` / `restored` intent,
+  each audited; `warned` and `restored` email the member with the Zaptec portal
+  link. The member portal shows a banner. **This is a status of record and a
+  notification — it does not call Zaptec to pause or authorise a charger. Live
+  enforcement is a Release 2 item ("Direct Zaptec access control"); an admin
+  acts in the Zaptec portal (`zaptec.portal_url`).**
+- **System health** — `GET /api/system/health` also reports
+  `corrections: {settlements_with_pending}` and `access: {disabled}`.
+
+<details><summary>Release 1C (<code>0.3.x</code>) + feedback batch (<code>0.4.0</code>)</summary>
+
+`0.3.1` was a charger bug-fix batch: synced chargers store the hardware serial
 (`DeviceId`) rather than a name duplicate, admins can edit and delete
 hand-entered chargers, Zaptec sync adopts a matching manual charger instead of
 duplicating it, and usage imported before its charger or assignment existed is
-attributed retroactively (with an unassigned-kWh banner and a "re-run
-allocation" action). See `spec/charger-attribution-fix.md`.
+attributed retroactively. See `spec/charger-attribution-fix.md`. `0.4.0` added
+admin login provisioning (`/api/users`), a cross-member `Bevegelser` list, and
+multiple invoice attachments per settlement (`settlement_attachments`).
 
 - **Forecasting** — a trailing-mean forecast (last 3 posted settlements, no
   seasonality) of each member's next-month kWh and cost, a recommended minimum
@@ -41,6 +79,8 @@ allocation" action). See `spec/charger-attribution-fix.md`.
   ("Prognose neste måned", "Anbefalt innbetaling") is now filled in.
 - **System health** — `GET /api/system/health` also reports
   `low_balance: {warned_total, members_below}`.
+
+</details>
 
 <details><summary>Release 1B (<code>0.2.0</code>)</summary>
 
@@ -75,8 +115,9 @@ into per-member charges.
 
 </details>
 
-**Not in 1C** (planned): corrections / refunds / member departure /
-charging-access workflows (1D).
+**Release 2 candidates** (not in 1D): automatic bank imports, direct Zaptec
+access control, seasonal forecasting, budget-system integration, advanced
+reporting, electronic-identity support.
 
 ## Stack
 
