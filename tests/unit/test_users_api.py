@@ -148,9 +148,7 @@ def test_patch_user_relink_member(
     second = make_member(member_reference="M-42", email="a42@example.com")
     uid = seed_user_sync(email="a41@example.com", role="member", member_id=first)
 
-    out = admin_client.patch(
-        f"/api/users/{uid}", json={"member_id": second}, headers=FETCH
-    )
+    out = admin_client.patch(f"/api/users/{uid}", json={"member_id": second}, headers=FETCH)
     assert out.status_code == 200
     assert out.json()["member_id"] == second
 
@@ -206,9 +204,7 @@ def test_patch_user_demote_to_member_with_link(
     assert body["member_id"] == member_id
 
 
-def test_patch_user_empty_body_422(
-    admin_client: Any, seed_user_sync: Callable[..., int]
-) -> None:
+def test_patch_user_empty_body_422(admin_client: Any, seed_user_sync: Callable[..., int]) -> None:
     uid = seed_user_sync(email="nochange@example.com", role="admin")
     out = admin_client.patch(f"/api/users/{uid}", json={}, headers=FETCH)
     assert out.status_code == 422

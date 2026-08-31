@@ -41,9 +41,7 @@ class SecurityHeadersMiddleware:
         headers = list(_BASE_HEADERS)
         if config.auth.cookie_secure:
             # Only meaningful once the app is actually served over HTTPS.
-            headers.append(
-                (b"strict-transport-security", b"max-age=31536000; includeSubDomains")
-            )
+            headers.append((b"strict-transport-security", b"max-age=31536000; includeSubDomains"))
         self._headers = headers
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:

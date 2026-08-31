@@ -72,9 +72,7 @@ class EmailSender:
         backend = self._cfg.backend
         msg = _build_message(self._cfg, to=to, subject=subject, text=text, html=html)
         if backend == "console":
-            log.info(
-                "[email:console] to=%s subject=%s\n%s", to, subject, _redact_tokens(text)
-            )
+            log.info("[email:console] to=%s subject=%s\n%s", to, subject, _redact_tokens(text))
             return
         if backend == "file":
             await anyio.to_thread.run_sync(self._write_eml, to, msg)

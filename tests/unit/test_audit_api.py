@@ -47,9 +47,9 @@ def test_filter_by_actor_substring(admin_client):
     admin_client.post(
         "/api/auth/login", json={"email": "mallory@evil.test", "password": "nope"}, headers=FETCH
     )
-    events = admin_client.get(
-        "/api/audit-events", params={"actor": "mallory@evil.test"}
-    ).json()["events"]
+    events = admin_client.get("/api/audit-events", params={"actor": "mallory@evil.test"}).json()[
+        "events"
+    ]
     assert events and all("mallory@evil.test" in e["actor_label"] for e in events)
 
 

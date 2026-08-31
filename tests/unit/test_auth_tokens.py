@@ -252,9 +252,7 @@ def test_magic_link_issuance_is_rate_limited(client, db, seed_user_sync):
     assert _count(db, "SELECT COUNT(*) FROM auth_tokens") == tokens
     assert _count(db, "SELECT COUNT(*) FROM email_messages") == emails
     assert (
-        _count(
-            db, "SELECT COUNT(*) FROM audit_events WHERE event_type = 'auth.request_throttled'"
-        )
+        _count(db, "SELECT COUNT(*) FROM audit_events WHERE event_type = 'auth.request_throttled'")
         == 1
     )
 

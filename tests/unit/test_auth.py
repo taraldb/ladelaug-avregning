@@ -87,9 +87,7 @@ def test_rate_limit_lockout_is_audited(client, db, seed_user_sync):
 
 
 def test_failed_magic_link_consume_is_audited(client, db):
-    resp = client.post(
-        "/api/auth/magic-link/consume", json={"token": "bogus"}, headers=FETCH
-    )
+    resp = client.post("/api/auth/magic-link/consume", json={"token": "bogus"}, headers=FETCH)
     assert resp.status_code == 422
     assert _count(db, "auth.magic_link_failed") == 1
 
