@@ -215,6 +215,73 @@ async def test_balance_ore_map(db):
     assert b not in repo.balance_ore_map()
 
 
+# --- refunds (US-505) ------------------------------------------------
+
+
+async def test_refund_lowers_balance_and_audits(db):
+    m = await _member(db)
+    repo = LedgerRepo(db)
+    await repo.record_payment(
+        member_id=m, amount=Decimal("1500.00"), value_date="2026-08-01", reference=None, actor=SYS
+    )
+    row = await repo.refund(
+        member_id=m,
+        amount=Decimal("400.00"),
+        value_date="2026-08-15",
+        reference="bank-out-9",
+        actor=SYS,
+    )
+    assert row["txn_type"] == "refund"
+    assert row["amount_ore"] == -40000
+    assert ore_to_nok(row["amount_ore"]) == Decimal(row["amount_nok"])
+    assert row["reference"] == "bank-out-9"
+    assert repo.balance(m) == Decimal("1100.00")
+    ev = db.connection.execute(
+        "SELECT event_type, entity_id FROM audit_events WHERE event_type = 'ledger.refunded'"
+    ).fetchone()
+    assert ev is not None and ev["entity_id"] == str(row["id"])
+
+
+async def test_refund_exceeding_balance_rejected_unless_allowed(db):
+    m = await _member(db)
+    repo = LedgerRepo(db)
+    await repo.record_payment(
+        member_id=m, amount=Decimal("100.00"), value_date="2026-08-01", reference=None, actor=SYS
+    )
+    with pytest.raises(DomainError) as exc:
+        await repo.refund(
+            member_id=m,
+            amount=Decimal("250.00"),
+            value_date="2026-08-15",
+            reference=None,
+            actor=SYS,
+        )
+    assert exc.value.code == "refund_exceeds_balance"
+
+    row = await repo.refund(
+        member_id=m,
+        amount=Decimal("250.00"),
+        value_date="2026-08-15",
+        reference=None,
+        actor=SYS,
+        allow_negative=True,
+    )
+    assert row["amount_ore"] == -25000
+    assert repo.balance(m) == Decimal("-150.00")
+
+
+async def test_refund_non_positive_rejected(db):
+    m = await _member(db)
+    with pytest.raises(DomainError):
+        await LedgerRepo(db).refund(
+            member_id=m,
+            amount=Decimal(0),
+            value_date="2026-08-15",
+            reference=None,
+            actor=SYS,
+        )
+
+
 def test_ledger_transactions_route(admin_client, make_member):
     a = make_member(member_reference="M-A", email="a@example.com")
     b = make_member(member_reference="M-B", email="b@example.com")

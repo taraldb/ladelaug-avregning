@@ -145,6 +145,63 @@ def test_0009_creates_attachments_table_and_backfill_shape(db: Database):
     assert (att["filename"], att["path"]) == ("faktura.pdf", "attachments/1/faktura.pdf")
 
 
+def test_0010_widens_ledger_txn_type_and_keeps_append_only(db: Database):
+    member_id = _seed_member_and_ledger(db.connection)
+    now = "2026-02-01T00:00:00+00:00"
+    for txn_type, ore in (("refund", -5000), ("settlement_correction", 750)):
+        db.connection.execute(
+            "INSERT INTO ledger_transactions "
+            "(member_id, txn_type, amount_ore, amount_nok, value_date, recorded_at) "
+            "VALUES (?, ?, ?, '0.00', '2026-02-01', ?)",
+            (member_id, txn_type, ore, now),
+        )
+    db.connection.commit()
+    with pytest.raises(sqlite3.IntegrityError):
+        db.connection.execute(
+            "INSERT INTO ledger_transactions "
+            "(member_id, txn_type, amount_ore, amount_nok, value_date, recorded_at) "
+            "VALUES (?, 'bogus', 1, '0.01', '2026-02-01', ?)",
+            (member_id, now),
+        )
+    # the rebuild must have re-created the append-only guards and the reversal index
+    assert "idx_ledger_one_reversal" in _names(db.connection, "index")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.connection.execute("UPDATE ledger_transactions SET amount_ore = 0")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.connection.execute("DELETE FROM ledger_transactions")
+
+
+def test_0010_creates_correction_and_access_tables(db: Database):
+    tables = _names(db.connection, "table")
+    assert {
+        "settlement_corrections",
+        "settlement_correction_members",
+        "charging_access_events",
+    } <= tables
+    indexes = _names(db.connection, "index")
+    assert {"idx_scorr_seq", "idx_scm_correction", "idx_cae_member"} <= indexes
+
+    now = "2026-02-01T00:00:00+00:00"
+    conn = db.connection
+    conn.execute(
+        "INSERT INTO members (member_reference, full_name, join_date, created_at, updated_at) "
+        "VALUES ('A-2', 'Dep', '2026-01-01', ?, ?)",
+        (now, now),
+    )
+    mid = conn.execute("SELECT id FROM members WHERE member_reference = 'A-2'").fetchone()[0]
+    conn.execute(
+        "INSERT INTO charging_access_events (member_id, action, created_at) VALUES (?, 'warned', ?)",
+        (mid, now),
+    )
+    conn.commit()
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO charging_access_events (member_id, action, created_at) "
+            "VALUES (?, 'nope', ?)",
+            (mid, now),
+        )
+
+
 def test_one_open_status_period_per_member(db: Database):
     member_id = _seed_member_and_ledger(db.connection)
     db.connection.execute(

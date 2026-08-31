@@ -2,10 +2,12 @@
 
 A member's prepaid balance is ``SUM(amount_ore)`` over their
 ``ledger_transactions`` rows — never stored. Money moves only by inserting a new
-row: a payment, an equal-and-opposite reversal of a mistaken payment, or a manual
-credit/debit adjustment. Rows are immutable (no repo update/delete + ``BEFORE
-UPDATE/DELETE`` triggers). Each insert writes exactly one paired ``audit_events``
-row in the same transaction (US-1102).
+row: a payment, an equal-and-opposite reversal of a mistaken payment, a manual
+credit/debit adjustment, a refund paying the member back (US-505), or a
+settlement charge / correction written by the settlement engine. Rows are
+immutable (no repo update/delete + ``BEFORE UPDATE/DELETE`` triggers). Each
+insert writes exactly one paired ``audit_events`` row in the same transaction
+(US-1102).
 """
 
 from __future__ import annotations
@@ -252,6 +254,63 @@ class LedgerRepo:
                     "amount_nok": nok,
                     "reason": reason,
                     "reference": reference,
+                },
+            )
+        return self._require(txn_id)
+
+    async def refund(
+        self,
+        *,
+        member_id: int,
+        amount: Decimal,
+        value_date: str,
+        reference: str | None,
+        actor: AuditContext,
+        allow_negative: bool = False,
+    ) -> dict[str, Any]:
+        """Pay a member back (US-505). Lowers the balance by ``amount``. Refused
+        with ``refund_exceeds_balance`` when it would take the balance below zero
+        unless ``allow_negative`` is set (the audited escape hatch for undoing an
+        earlier over-charge). ``reference`` is an optional accounting reference."""
+        if amount <= 0:
+            raise DomainError("bad_amount", "refund amount must be positive")
+        magnitude = nok_to_ore(amount)
+        current = self.balance_ore(member_id)
+        if not allow_negative and magnitude > current:
+            raise DomainError(
+                "refund_exceeds_balance",
+                f"Refund {ore_to_nok(magnitude)} NOK exceeds the balance "
+                f"{ore_to_nok(current)} NOK. Tick 'allow negative balance' to override.",
+            )
+        ore, nok = _ore_nok(-magnitude)
+        async with self._db._write() as cur:
+            self._ensure_member(cur, member_id)
+            txn_id = self._insert_txn(
+                cur,
+                member_id=member_id,
+                txn_type="refund",
+                amount_ore=ore,
+                amount_nok=nok,
+                value_date=value_date,
+                reason=None,
+                reference=reference,
+                reverses_transaction_id=None,
+                created_by=actor.actor_user_id,
+            )
+            write_audit_row(
+                cur,
+                actor,
+                event_type="ledger.refunded",
+                entity_type="ledger_transaction",
+                entity_id=txn_id,
+                summary=f"Refund {nok} NOK for member {member_id}",
+                detail={
+                    "member_id": member_id,
+                    "amount_ore": ore,
+                    "amount_nok": nok,
+                    "value_date": value_date,
+                    "reference": reference,
+                    "balance_before_ore": current,
                 },
             )
         return self._require(txn_id)
