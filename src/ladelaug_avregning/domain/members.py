@@ -314,6 +314,145 @@ class MemberRepo:
         for consumption allocation and `suggested_participants` for equal-cost."""
         return self.active_member_ids(on_date)
 
+    # --- departure (US-204) ------------------------------------------------
+
+    def departure_check(
+        self, member_id: int, *, effective_date: str | None = None
+    ) -> dict[str, Any]:
+        """Everything an admin needs before processing a departure: the open
+        charger assignments that would be closed, any month with the member's
+        consumption not yet in a posted settlement (blocks a refund), and the
+        current balance that a refund would pay back. Pure read."""
+        from ladelaug_avregning.domain.ledger import LedgerRepo
+
+        self._require(member_id)
+        eff = _iso_date(effective_date)
+        conn = self._db.connection
+        open_assignments = [
+            {
+                "charger_id": int(r["charger_id"]),
+                "charger_name": r["name"],
+                "effective_from": r["effective_from"],
+            }
+            for r in conn.execute(
+                "SELECT a.charger_id, a.effective_from, c.name FROM charger_assignments a "
+                "JOIN chargers c ON c.id = a.charger_id "
+                "WHERE a.member_id = ? AND a.effective_to IS NULL "
+                "ORDER BY c.name, a.charger_id",
+                (member_id,),
+            ).fetchall()
+        ]
+        unsettled_months = [
+            r["period_month"]
+            for r in conn.execute(
+                "SELECT DISTINCT period_month FROM charging_sessions "
+                "WHERE member_id = ? AND period_month <= ? "
+                "AND period_month NOT IN (SELECT period_month FROM settlements WHERE status = 'posted') "
+                "ORDER BY period_month",
+                (member_id, eff[:7]),
+            ).fetchall()
+        ]
+        balance_ore = LedgerRepo(self._db).balance_ore(member_id)
+        from ladelaug_avregning.money import ore_to_nok
+
+        return {
+            "member_id": member_id,
+            "effective_date": eff,
+            "current_status": self.current_status(member_id),
+            "open_assignments": open_assignments,
+            "unsettled_months": unsettled_months,
+            "balance_ore": balance_ore,
+            "balance_nok": str(ore_to_nok(balance_ore)),
+            "would_refund_ore": max(balance_ore, 0),
+        }
+
+    async def process_departure(
+        self,
+        member_id: int,
+        *,
+        effective_date: str | None = None,
+        refund: bool = False,
+        refund_reference: str | None = None,
+        actor: AuditContext,
+    ) -> dict[str, Any]:
+        """End the membership (US-204): set the status inactive from
+        ``effective_date``, close every open charger assignment on that date
+        (re-resolving the affected non-posted months), and — if ``refund`` and
+        nothing is unsettled — pay the whole positive balance back. Each step
+        writes its own audit row; one extra ``member.departed`` row summarises
+        the lot. Nothing is deleted."""
+        from ladelaug_avregning.audit import record_audit
+        from ladelaug_avregning.domain.chargers import ChargerRepo
+        from ladelaug_avregning.domain.charging import ChargingRepo
+        from ladelaug_avregning.domain.ledger import LedgerRepo
+        from ladelaug_avregning.money import ore_to_nok
+
+        check = self.departure_check(member_id, effective_date=effective_date)
+        eff = check["effective_date"]
+        if refund and check["unsettled_months"]:
+            raise DomainError(
+                "unsettled_consumption",
+                f"{', '.join(check['unsettled_months'])} still has consumption outside a posted "
+                "settlement — settle or correct those months before refunding.",
+            )
+
+        status_changed = False
+        if check["current_status"] != "inactive":
+            await self.set_status(
+                member_id, "inactive", effective_from=eff, note="Utmelding (US-204)", actor=actor
+            )
+            status_changed = True
+
+        chargers = ChargerRepo(self._db)
+        charging = ChargingRepo(self._db)
+        closed: list[int] = []
+        for a in check["open_assignments"]:
+            await chargers.unassign(a["charger_id"], effective_to=eff, actor=actor)
+            await charging.reresolve_after_assignment(
+                a["charger_id"], since_month=eff[:7], actor=actor
+            )
+            closed.append(a["charger_id"])
+
+        refund_txn_id: int | None = None
+        ledger = LedgerRepo(self._db)
+        balance_ore = ledger.balance_ore(member_id)
+        if refund and balance_ore > 0:
+            txn = await ledger.refund(
+                member_id=member_id,
+                amount=ore_to_nok(balance_ore),
+                value_date=eff,
+                reference=refund_reference or f"Utmelding {eff}",
+                actor=actor,
+            )
+            refund_txn_id = int(txn["id"])
+
+        await record_audit(
+            self._db,
+            actor,
+            event_type="member.departed",
+            entity_type="member",
+            entity_id=member_id,
+            summary=(
+                f"Member {member_id} departed {eff}: {len(closed)} assignment(s) closed, "
+                f"refund {'#' + str(refund_txn_id) if refund_txn_id else 'none'}"
+            ),
+            detail={
+                "effective_date": eff,
+                "status_changed": status_changed,
+                "assignments_closed": closed,
+                "refund_txn_id": refund_txn_id,
+                "refunded_ore": balance_ore if refund_txn_id else 0,
+                "unsettled_months": check["unsettled_months"],
+            },
+        )
+        return {
+            **check,
+            "status_changed": status_changed,
+            "assignments_closed": closed,
+            "refund_txn_id": refund_txn_id,
+            "refunded_ore": balance_ore if refund_txn_id else 0,
+        }
+
     # --- internals -----------------------------------------------------------
 
     def _require(self, member_id: int) -> dict[str, Any]:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.db import Database
@@ -17,6 +17,7 @@ from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.errors import NotFoundError
 from ladelaug_avregning.webapp.deps import get_audit_context, get_db, require_admin, require_fetch
 from ladelaug_avregning.webapp.schemas import (
+    DepartureIn,
     MemberIn,
     MemberOut,
     MemberPatch,
@@ -147,6 +148,31 @@ async def set_participation(
         actor=actor,
     )
     return {"period": ParticipationPeriodOut.from_row(row)}
+
+
+@router.get("/{member_id}/departure-check")
+async def departure_check(
+    member_id: int,
+    effective_date: str | None = Query(default=None),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    return MemberRepo(db).departure_check(member_id, effective_date=effective_date)
+
+
+@router.post("/{member_id}/departure", dependencies=[Depends(require_fetch)])
+async def process_departure(
+    member_id: int,
+    body: DepartureIn,
+    db: Database = Depends(get_db),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, Any]:
+    return await MemberRepo(db).process_departure(
+        member_id,
+        effective_date=body.effective_date,
+        refund=body.refund,
+        refund_reference=body.refund_reference,
+        actor=actor,
+    )
 
 
 @router.get("/{member_id}/participation-history")

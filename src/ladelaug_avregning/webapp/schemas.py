@@ -270,6 +270,20 @@ class StatusChangeIn(BaseModel):
         return None if v is None else _iso_date(v)
 
 
+class DepartureIn(BaseModel):
+    """Process a member departure (US-204). ``refund`` pays the whole remaining
+    positive balance back, refused while any month is still unsettled."""
+
+    effective_date: str
+    refund: bool = False
+    refund_reference: str | None = None
+
+    @field_validator("effective_date")
+    @classmethod
+    def _v_effective_date(cls, v: str) -> str:
+        return _iso_date(v)
+
+
 class StatusPeriodOut(BaseModel):
     id: int
     status: str
