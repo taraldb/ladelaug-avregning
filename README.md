@@ -71,7 +71,8 @@ multiple invoice attachments per settlement (`settlement_attachments`).
 - **Low-balance warnings** — `POST /api/notifications/low-balance-scan` (or the
   `low-balance-scan` CLI) enqueues a warning email for every member below their
   recommended minimum, with cooldown / balance-drop / `low→critical` escalation
-  suppression so cron can run it hourly. A dashboard banner shows the same.
+  suppression so the `low_balance_scan` job can run it hourly. A dashboard banner
+  shows the same.
 - **PDF reports** — WeasyPrint renders the settlement report to PDF:
   `GET /api/settlement/{id}/reports/{member_id}.pdf`, `.../summary.pdf`,
   `GET /api/me/settlements/{id}/report.pdf`; `.pdf` siblings are also written
@@ -112,11 +113,17 @@ into per-member charges.
   under `state/reports/<month>/` and served to admins and to the member.
 - **Email** — a queued sender with retry/backoff (`console` / `file` / `smtp` /
   `gmail` backends). Posting a settlement queues a report email per member;
-  drain the queue with `drain-mail` (cron) or `POST /api/notifications/process`.
+  drain the queue with the `drain_mail` background job, `drain-mail` (cron), or
+  `POST /api/notifications/process`. Re-queue a posted settlement's report emails
+  with `POST /api/settlement/{id}/resend-reports`, or one stuck message with
+  `POST /api/notifications/{id}/requeue` (both enqueue only).
 - **Passwordless sign-in & password reset** — single-use expiring links; the
   request endpoints never disclose whether an account exists.
 - **System health** — `GET /api/system/health`: Zaptec sync state, email queue
-  stats, failed jobs, versions.
+  stats, background-job schedules + last run, failed jobs, versions.
+- **Background jobs** — an optional in-process scheduler runs `drain_mail`,
+  `low_balance_scan`, and `zaptec_sync_sessions` on an admin-tunable cron
+  (`scheduler.enabled`, `/api/system/jobs`). One at a time; missed slots skipped.
 
 </details>
 
@@ -172,9 +179,14 @@ cd frontend && npm run check          # tsc --noEmit + eslint + vitest
 python -m ladelaug_avregning serve            # run the HTTP server (default)
 python -m ladelaug_avregning migrate          # apply DB migrations and exit
 python -m ladelaug_avregning create-admin --email <e> [--password <p>]
-python -m ladelaug_avregning low-balance-scan  # enqueue low-balance warning emails (cron)
-python -m ladelaug_avregning drain-mail        # send queued emails (cron)
+python -m ladelaug_avregning low-balance-scan  # enqueue low-balance warning emails
+python -m ladelaug_avregning drain-mail        # send queued emails
+python -m ladelaug_avregning run-job <name>    # run one scheduler job once
 ```
+
+`run-job` takes `drain_mail`, `low_balance_scan`, or `zaptec_sync_sessions` — the
+same bodies the in-process scheduler runs (see **Background jobs** below). The
+`low-balance-scan` / `drain-mail` commands are kept for existing crontabs.
 
 `create-admin` is idempotent-ish: a second run with an existing email exits
 non-zero with a clear message. Alternatively set `bootstrap_admin.email` /
@@ -202,6 +214,8 @@ supplied via the `LADELAUG_SECRET_KEY` environment variable (or a `.env` file) �
 | `auth.login_max_attempts` / `auth.login_window_seconds` | `5` / `900` | rate limit per (email, IP) |
 | `auth.argon2_time_cost` / `argon2_memory_cost_kib` / `argon2_parallelism` | `3` / `65536` / `2` | tune down for a low-power host |
 | `bootstrap_admin.email` / `bootstrap_admin.password` | — | optional first-run admin |
+| `scheduler.enabled` | `false` | run the recurring jobs in-process — no external crontab |
+| `scheduler.tick_seconds` | `60` | how often the loop checks for due jobs (min 5) |
 | `zaptec.enabled` | `false` | gate for all Zaptec sync endpoints (503 while off) |
 | `zaptec.username` | — | Zaptec login; password via `ZAPTEC_PASSWORD` env |
 | `zaptec.installation_id` | — | optional; blank syncs every visible installation |
@@ -219,6 +233,24 @@ supplied via the `LADELAUG_SECRET_KEY` environment variable (or a `.env` file) �
 and are edited by an admin at `/forecast` (or `PUT /api/forecast/settings`), so
 they change without a restart.
 
+### Background jobs
+
+With `scheduler.enabled: true` the server runs three recurring jobs itself — no
+crontab required:
+
+| job | default cron | what it does |
+|---|---|---|
+| `drain_mail` | `*/10 * * * *` | send everything queued in `email_messages` |
+| `low_balance_scan` | `0 * * * *` | enqueue low-balance warning emails |
+| `zaptec_sync_sessions` | `30 3 * * *` | import the current month's charging (no-op while `zaptec.enabled` is false) |
+
+All three ship **disabled**; per-job on/off and cron (UTC, 5-field) are edited at
+runtime under **System → Bakgrunnsjobber** (`GET`/`PUT /api/system/jobs`), or
+fired once with `POST /api/system/jobs/{name}/run`. One job runs at a time on the
+serving process; missed slots are **not** replayed — the next run recomputes from
+current state. Each row shows its last run, status, and next fire time; a failing
+job flips `GET /api/system/health` `ok` to false.
+
 ### Zaptec + settlement workflow
 
 1. Set `zaptec.*` and `export ZAPTEC_PASSWORD=…` (or put it in `.env`). Verify
@@ -233,14 +265,17 @@ they change without a restart.
 5. **Freeze** (snapshots participation + usage), **Preview** (check the
    warnings and per-member impact), then **Post**. Posting is irreversible and
    writes the ledger charges + HTML reports and queues the report emails.
-6. Drain the email queue: `*/10 * * * * python -m ladelaug_avregning drain-mail`
-   (or `POST /api/notifications/process` with `-H 'X-Requested-With: fetch'` and
-   an admin cookie). A monthly session sync can be scheduled the same way.
-7. Low-balance warnings: `python -m ladelaug_avregning low-balance-scan` (or
+6. Drain the email queue. With `scheduler.enabled: true` the `drain_mail` job
+   does this (enable it under **System → Bakgrunnsjobber**); otherwise wire
+   `*/10 * * * * python -m ladelaug_avregning drain-mail` to cron, or click
+   **Send e-postkø**. A monthly session sync (`zaptec_sync_sessions`) works the
+   same way.
+7. Low-balance warnings: the `low_balance_scan` job (or
+   `python -m ladelaug_avregning low-balance-scan` /
    `POST /api/notifications/low-balance-scan`) enqueues a warning email for each
    member below their recommended minimum balance. Safe to run hourly — the
-   cooldown / balance-drop / severity-escalation rule suppresses repeats. Follow
-   it with the queue drain in step 6.
+   cooldown / balance-drop / severity-escalation rule suppresses repeats. The
+   emails leave on the next queue drain (step 6).
 
 ### Email via Gmail (`backend: gmail`)
 

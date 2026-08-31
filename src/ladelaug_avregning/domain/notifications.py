@@ -15,6 +15,7 @@ from ladelaug_avregning import clock
 from ladelaug_avregning.audit import AuditContext, write_audit_row
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.email.sender import EmailSender
+from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.money import ore_to_nok
 
 # a warning is re-sent inside the cooldown window if the balance drops by at
@@ -23,6 +24,12 @@ _BALANCE_DROP_RESEND_ORE = 100
 
 # minutes to wait before the Nth retry (index = attempts already made)
 _BACKOFF_MINUTES = [1, 5, 15, 60, 240]
+
+# columns returned by recent() / get() — the row shape the admin UI renders
+_MESSAGE_COLUMNS = (
+    "id, to_address, subject, template, related_entity_type, related_entity_id, "
+    "status, attempts, max_attempts, last_error, next_attempt_at, created_at, sent_at"
+)
 
 
 def _backoff(attempts: int) -> timedelta:
@@ -148,12 +155,54 @@ class NotificationRepo:
 
     def recent(self, *, limit: int = 50) -> list[dict[str, Any]]:
         rows = self._db.connection.execute(
-            "SELECT id, to_address, subject, template, related_entity_type, related_entity_id, "
-            "status, attempts, max_attempts, last_error, next_attempt_at, created_at, sent_at "
-            "FROM email_messages ORDER BY id DESC LIMIT ?",
+            f"SELECT {_MESSAGE_COLUMNS} FROM email_messages ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def get(self, message_id: int) -> dict[str, Any] | None:
+        row = self._db.connection.execute(
+            f"SELECT {_MESSAGE_COLUMNS} FROM email_messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    async def requeue(self, message_id: int, *, actor: AuditContext) -> dict[str, Any]:
+        """Put a single ``failed`` or ``sent`` message back on the queue: reset
+        its attempt counter and make it due now. Writes one
+        ``notifications.email_requeued`` audit row in the same transaction. A
+        message that is already ``queued`` raises ``not_requeueable``."""
+        current = self.get(message_id)
+        if current is None:
+            raise NotFoundError(f"email message {message_id} not found")
+        if current["status"] not in ("failed", "sent"):
+            raise DomainError(
+                "not_requeueable",
+                "Only a failed or sent email can be put back on the queue.",
+            )
+        now = clock.now_utc().isoformat()
+        async with self._db._write() as cur:
+            cur.execute(
+                "UPDATE email_messages SET status = 'queued', attempts = 0, last_error = NULL, "
+                "sent_at = NULL, next_attempt_at = ? WHERE id = ?",
+                (now, message_id),
+            )
+            write_audit_row(
+                cur,
+                actor,
+                event_type="notifications.email_requeued",
+                entity_type="email_message",
+                entity_id=message_id,
+                summary=(f"Email {message_id} to {current['to_address']} put back on the queue"),
+                detail={
+                    "previous_status": current["status"],
+                    "to_address": current["to_address"],
+                    "template": current["template"],
+                },
+            )
+        refreshed = self.get(message_id)
+        assert refreshed is not None
+        return refreshed
 
     async def enqueue_settlement_reports(
         self, *, settlement_id: int, result: dict[str, Any], base_url: str

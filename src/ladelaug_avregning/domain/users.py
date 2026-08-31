@@ -17,6 +17,8 @@ from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain import sessions
 from ladelaug_avregning.errors import DomainError, NotFoundError
 
+_UNSET: Any = object()
+
 Argon2Params = tuple[int, int, int]  # (time_cost, memory_cost_kib, parallelism)
 
 _DEFAULT_ARGON2: Argon2Params = (
@@ -99,6 +101,65 @@ class UserRepo:
                 detail={"role": role, "member_id": member_id},
             )
             return user_id
+
+    async def update(
+        self,
+        user_id: int,
+        *,
+        email: Any = _UNSET,
+        role: Any = _UNSET,
+        member_id: Any = _UNSET,
+        actor: AuditContext,
+    ) -> None:
+        """Patch a login's ``email`` / ``role`` / ``member_id``. Cross-field
+        consistency (a member login needs a ``member_id``, an admin login must
+        not have one) and the last-admin guard live in the route."""
+        if role is not _UNSET and role not in ("admin", "member"):
+            raise DomainError("bad_role", f"role must be 'admin' or 'member', not {role!r}")
+        incoming: dict[str, Any] = {"email": email, "role": role, "member_id": member_id}
+        fields = {k: v for k, v in incoming.items() if v is not _UNSET}
+        if "email" in fields:
+            fields["email"] = str(fields["email"]).strip()
+        if not fields:
+            raise DomainError("no_changes", "No fields to update.")
+        now = clock.now_utc().isoformat()
+        async with self._db._write() as cur:
+            row = cur.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if row is None:
+                raise NotFoundError(f"user {user_id} not found")
+            before = dict(row)
+            changed = {k: v for k, v in fields.items() if v != before[k]}
+            if not changed:
+                return
+            to_write = dict(changed)
+            if "email" in changed:
+                to_write["email_normalized"] = changed["email"].lower()
+            assignments = ", ".join(f"{k} = ?" for k in to_write)
+            try:
+                cur.execute(
+                    f"UPDATE users SET {assignments}, updated_at = ? WHERE id = ?",
+                    (*to_write.values(), now, user_id),
+                )
+            except sqlite3.IntegrityError as exc:
+                if "email_normalized" in str(exc):
+                    raise DomainError(
+                        "email_taken", "An account with that email already exists."
+                    ) from exc
+                if "member_id" in str(exc):
+                    raise DomainError("member_linked", "That member already has a login.") from exc
+                raise
+            write_audit_row(
+                cur,
+                actor,
+                event_type="user.updated",
+                entity_type="user",
+                entity_id=user_id,
+                summary=f"User {user_id} updated: {', '.join(sorted(changed))}",
+                detail={
+                    "before": {k: before[k] for k in changed},
+                    "after": dict(changed),
+                },
+            )
 
     def get_by_email(self, email: str) -> dict[str, Any] | None:
         row = self._db.connection.execute(

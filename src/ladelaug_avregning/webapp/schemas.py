@@ -156,6 +156,33 @@ class UserCreateIn(BaseModel):
         return self
 
 
+class UserUpdateIn(BaseModel):
+    """Partial edit of a login. Any subset of ``email`` / ``role`` /
+    ``member_id`` may be given. Passing ``member_id`` explicitly (even ``null``)
+    re-links or unlinks the member; leaving it out keeps the current link.
+    Role/member consistency and the last-admin guard are enforced in the route."""
+
+    email: str | None = None
+    role: Literal["admin", "member"] | None = None
+    member_id: int | None = None
+
+    @field_validator("email")
+    @classmethod
+    def _v_email(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = _required(v, "email")
+        if not _EMAIL_RE.match(v):
+            raise ValueError("not a valid email address")
+        return v
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> UserUpdateIn:
+        if not self.model_fields_set:
+            raise ValueError("provide at least one field to update")
+        return self
+
+
 class UserSetPasswordIn(BaseModel):
     password: str
 
@@ -785,3 +812,51 @@ class MemberConsumptionOut(BaseModel):
     month: str
     consumption_kwh: str
     session_count: int
+
+
+# --- background jobs (in-process scheduler) ----------------------
+
+
+class JobScheduleIn(BaseModel):
+    """Partial update of one ``job_schedules`` row. Send ``enabled`` and/or
+    ``cron``; an empty body is rejected."""
+
+    enabled: bool | None = None
+    cron: str | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> JobScheduleIn:
+        if not self.model_fields_set:
+            raise ValueError("provide 'enabled' and/or 'cron'")
+        return self
+
+    def to_update_kwargs(self) -> dict[str, Any]:
+        return {name: getattr(self, name) for name in self.model_fields_set}
+
+
+class JobScheduleOut(BaseModel):
+    name: str
+    enabled: bool
+    cron: str
+    last_run_at: str | None
+    last_status: str | None
+    last_error: str | None
+    last_duration_ms: int | None
+    next_run_at: str | None
+    updated_at: str | None
+    updated_by_user_id: int | None
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> JobScheduleOut:
+        return cls(
+            name=row["name"],
+            enabled=bool(row["enabled"]),
+            cron=row["cron"],
+            last_run_at=row["last_run_at"],
+            last_status=row["last_status"],
+            last_error=row["last_error"],
+            last_duration_ms=row["last_duration_ms"],
+            next_run_at=row["next_run_at"],
+            updated_at=row["updated_at"],
+            updated_by_user_id=row["updated_by_user_id"],
+        )

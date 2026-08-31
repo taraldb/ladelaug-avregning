@@ -5,6 +5,7 @@ python -m ladelaug_avregning migrate          # apply migrations and exit
 python -m ladelaug_avregning create-admin     # create an administrator account
 python -m ladelaug_avregning low-balance-scan # enqueue low-balance warning emails
 python -m ladelaug_avregning drain-mail       # send queued emails (cron)
+python -m ladelaug_avregning run-job <name>   # run one scheduler job once
 """
 
 from __future__ import annotations
@@ -200,6 +201,27 @@ def _cmd_drain_mail(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_run_job(args: argparse.Namespace) -> int:
+    import asyncio
+
+    from ladelaug_avregning.db import Database
+    from ladelaug_avregning.scheduler.jobs import JOBS
+
+    if args.name not in JOBS:
+        print(f"Unknown job {args.name!r}. Choose from: {', '.join(sorted(JOBS))}", file=sys.stderr)
+        raise SystemExit(1)
+
+    config = _load_config_or_exit(args.config)
+    configure_logging(config.logging.level)
+    db = Database(config.database.path)
+    try:
+        result = asyncio.run(JOBS[args.name](db, config))
+    finally:
+        db.close()
+    print(f"Job {args.name}: {result}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ladelaug_avregning")
     parser.add_argument("--config", type=Path, default=_DEFAULT_CONFIG, help="path to config.yaml")
@@ -215,6 +237,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("low-balance-scan", help="enqueue low-balance warning emails")
     sub.add_parser("drain-mail", help="send queued emails (wire to cron)")
 
+    rj = sub.add_parser("run-job", help="run one in-process scheduler job once")
+    rj.add_argument("name", help="drain_mail | low_balance_scan | zaptec_sync_sessions")
+
     return parser
 
 
@@ -228,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
         "create-admin": _cmd_create_admin,
         "low-balance-scan": _cmd_low_balance_scan,
         "drain-mail": _cmd_drain_mail,
+        "run-job": _cmd_run_job,
     }[command]
     return handler(args)
 

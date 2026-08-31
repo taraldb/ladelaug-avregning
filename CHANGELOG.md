@@ -4,6 +4,36 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Re-send settlement report emails** — `POST /api/settlement/{id}/resend-reports`
+  (admin, `X-Requested-With`, posted settlements only — `422 not_posted`
+  otherwise) recomputes the settlement from its frozen snapshot and queues a
+  fresh batch of per-member report emails (audited `settlement.reports_resent`).
+  Alongside it, `POST /api/notifications/{id}/requeue` puts a single `failed` /
+  `sent` message back on the queue — resets its attempt counter, makes it due now
+  (audited `notifications.email_requeued`, `422 not_requeueable` for a message
+  that is already queued). Both enqueue only; the `drain_mail` job /
+  `POST /api/notifications/process` still does the sending. In the UI: a **Send
+  rapport-e-post på nytt** button on a posted settlement and a **Legg i kø igjen**
+  button per failed row on **System → Systemhelse**.
+- **In-process job scheduler** — with `scheduler.enabled: true` the server runs
+  the recurring jobs itself: `drain_mail` (`*/10 * * * *`), `low_balance_scan`
+  (`0 * * * *`), `zaptec_sync_sessions` (`30 3 * * *`) — no external crontab. One
+  job runs at a time on the serving process; missed slots are not replayed (the
+  next run recomputes from current state). Per-job on/off and cron live in the
+  new `job_schedules` DB table (migration 0011), edited at runtime under
+  **System → Bakgrunnsjobber** — `GET /api/system/jobs`, `PUT /api/system/jobs/{name}`
+  (audited `system.job_schedule_updated`, `bad_cron` on a bad expression),
+  `POST /api/system/jobs/{name}/run` to fire one now. `GET /api/system/health`
+  gains `scheduler:{enabled,jobs}` and a failed job flips `ok`. All three jobs
+  ship disabled. New `python -m ladelaug_avregning run-job <name>` CLI; the
+  existing `drain-mail` / `low-balance-scan` commands stay for current crontabs.
+- **Edit user logins** — `PATCH /api/users/{id}` (admin, `X-Requested-With`)
+  patches a login's `email`, `role`, and `member_id` (partial body, `422
+  validation_error` on an empty one). Promoting a member login to `admin`
+  auto-drops the member link; demoting to `member` requires a `member_id`.
+  Guards: `email_taken`, `member_linked`, `cannot_demote_self`, `last_admin`.
+  The admin *Brukere* page gets an **Endre** button per row opening an edit
+  modal alongside the existing "Nytt passord" / activate-toggle actions.
 - **Gmail email backend** — `email.backend: gmail` sends through the Gmail REST
   API with an OAuth2 refresh token (scope `gmail.send`), no SMTP or app
   password. Secrets via `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` /

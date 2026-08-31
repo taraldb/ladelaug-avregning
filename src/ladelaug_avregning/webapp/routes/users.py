@@ -19,7 +19,12 @@ from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.users import UserRepo
 from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.webapp.deps import get_audit_context, get_db, require_admin, require_fetch
-from ladelaug_avregning.webapp.schemas import UserCreateIn, UserOut, UserSetPasswordIn
+from ladelaug_avregning.webapp.schemas import (
+    UserCreateIn,
+    UserOut,
+    UserSetPasswordIn,
+    UserUpdateIn,
+)
 
 router = APIRouter(prefix="/api/users", dependencies=[Depends(require_admin)], tags=["users"])
 
@@ -52,6 +57,52 @@ async def create_user(
         member_id=body.member_id,
         actor=actor,
     )
+    return UserOut.from_row(_require_user(repo, user_id))
+
+
+@router.patch("/{user_id}", dependencies=[Depends(require_fetch)])
+async def update_user(
+    user_id: int,
+    body: UserUpdateIn,
+    db: Database = Depends(get_db),
+    actor: AuditContext = Depends(get_audit_context),
+) -> UserOut:
+    repo = UserRepo(db)
+    row = _require_user(repo, user_id)
+    fields = body.model_dump(exclude_unset=True)
+
+    new_role = fields.get("role", row["role"])
+    if "member_id" in fields:
+        new_member_id = fields["member_id"]
+    elif "role" in fields and fields["role"] == "admin":
+        # Promoting to admin drops the member link automatically.
+        new_member_id = None
+        fields["member_id"] = None
+    else:
+        new_member_id = row["member_id"]
+
+    if row["role"] == "admin" and new_role != "admin":
+        if user_id == actor.actor_user_id:
+            raise DomainError(
+                "cannot_demote_self", "You cannot remove your own administrator role."
+            )
+        if not row["disabled"]:
+            other_admins = [
+                u
+                for u in repo.list()
+                if u["role"] == "admin" and not u["disabled"] and u["id"] != user_id
+            ]
+            if not other_admins:
+                raise DomainError("last_admin", "Cannot demote the last active administrator.")
+
+    if new_role == "member" and new_member_id is None:
+        raise DomainError("validation_error", "a member login requires member_id")
+    if new_role == "admin" and new_member_id is not None:
+        raise DomainError("validation_error", "an admin login must not set member_id")
+    if new_member_id is not None and MemberRepo(db).get(new_member_id) is None:
+        raise NotFoundError(f"member {new_member_id} not found")
+
+    await repo.update(user_id, actor=actor, **fields)
     return UserOut.from_row(_require_user(repo, user_id))
 
 

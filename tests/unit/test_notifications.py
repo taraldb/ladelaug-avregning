@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import pytest
+
 from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.config import EmailConfig
 from ladelaug_avregning.domain.notifications import NotificationRepo
 from ladelaug_avregning.domain.users import UserRepo
 from ladelaug_avregning.email.sender import EmailSender
+from ladelaug_avregning.errors import DomainError, NotFoundError
 
 FETCH = {"X-Requested-With": "fetch"}
 
@@ -135,6 +138,51 @@ async def test_enqueue_settlement_reports_targets_linked_users(db, config):
     assert row["template"] == "settlement_report" and row["related_entity_id"] == "1"
 
 
+# --- requeue a single message ----------------------------------------
+
+
+async def test_requeue_failed_message_resets_and_audits(db):
+    repo = NotificationRepo(db)
+    mid = await repo.enqueue(
+        to_address="a@example.com",
+        subject="s",
+        body_text="t",
+        template="settlement_report",
+        max_attempts=1,
+    )
+    await repo.process_queue(FakeSender(fail=True))
+    assert repo.get(mid)["status"] == "failed"
+
+    row = await repo.requeue(mid, actor=AuditContext.system())
+    assert row["status"] == "queued"
+    assert row["attempts"] == 0
+    assert row["last_error"] is None
+    assert row["sent_at"] is None
+
+    # the row is due again on the next drain
+    sender = FakeSender()
+    out = await repo.process_queue(sender)
+    assert out["sent"] == 1 and sender.sent == ["a@example.com"]
+
+    n = db.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE event_type = 'notifications.email_requeued'"
+    ).fetchone()[0]
+    assert n == 1
+
+
+async def test_requeue_rejects_a_queued_message(db):
+    repo = NotificationRepo(db)
+    mid = await repo.enqueue(to_address="a@example.com", subject="s", body_text="t")
+    with pytest.raises(DomainError) as exc:
+        await repo.requeue(mid, actor=AuditContext.system())
+    assert exc.value.code == "not_requeueable"
+
+
+async def test_requeue_unknown_message(db):
+    with pytest.raises(NotFoundError):
+        await NotificationRepo(db).requeue(999, actor=AuditContext.system())
+
+
 # --- routes ------------------------------------------------------------
 
 
@@ -156,6 +204,29 @@ def test_notifications_process_and_list(admin_client):
     out = admin_client.post("/api/notifications/process", headers=FETCH).json()
     assert out["sent"] == 1
     assert admin_client.get("/api/notifications").json()["stats"]["sent"] == 1
+
+
+def test_notifications_requeue_route(admin_client):
+    conn = admin_client.app.state.db.connection
+    conn.execute(
+        "INSERT INTO email_messages (to_address, subject, body_text, status, attempts, "
+        "max_attempts, last_error, next_attempt_at, created_at) VALUES "
+        "('x@example.com','s','t','failed',5,5,'boom','2000-01-01T00:00:00+00:00',"
+        "'2000-01-01T00:00:00+00:00')"
+    )
+    conn.commit()
+    mid = conn.execute("SELECT id FROM email_messages").fetchone()[0]
+
+    assert admin_client.post(f"/api/notifications/{mid}/requeue").status_code == 403
+
+    r = admin_client.post(f"/api/notifications/{mid}/requeue", headers=FETCH)
+    assert r.status_code == 200
+    assert r.json()["message"]["status"] == "queued"
+
+    r2 = admin_client.post(f"/api/notifications/{mid}/requeue", headers=FETCH)
+    assert r2.status_code == 422 and r2.json()["detail"]["code"] == "not_requeueable"
+
+    assert admin_client.post("/api/notifications/999/requeue", headers=FETCH).status_code == 404
 
 
 def test_system_and_notifications_require_admin(member_client):

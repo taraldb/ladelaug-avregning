@@ -35,6 +35,17 @@ async def list_messages(limit: int = 50, db: Database = Depends(get_db)) -> dict
     return {"stats": repo.stats(), "messages": repo.recent(limit=min(limit, 200))}
 
 
+@router.post("/{message_id}/requeue", dependencies=[Depends(require_fetch)])
+async def requeue_message(
+    message_id: int,
+    db: Database = Depends(get_db),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, Any]:
+    """Put one ``failed``/``sent`` message back on the queue (US-1002). Enqueue
+    only — drain with ``/process``. 404 unknown id, 422 ``not_requeueable``."""
+    return {"message": await NotificationRepo(db).requeue(message_id, actor=actor)}
+
+
 @router.post("/process", dependencies=[Depends(require_fetch)])
 async def process_queue(
     limit: int = 50,

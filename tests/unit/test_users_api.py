@@ -119,6 +119,101 @@ def test_disable_and_enable_member_login_revokes_sessions(
     assert body["disabled"] is False
 
 
+def test_patch_user_email_and_role(
+    admin_client: Any,
+    make_member: Callable[..., int],
+    seed_user_sync: Callable[..., int],
+) -> None:
+    member_id = make_member(member_reference="M-40", email="forty@example.com")
+    uid = seed_user_sync(email="forty@example.com", role="member", member_id=member_id)
+
+    out = admin_client.patch(
+        f"/api/users/{uid}",
+        json={"email": "forty-new@example.com", "role": "admin"},
+        headers=FETCH,
+    )
+    assert out.status_code == 200
+    body = out.json()
+    assert body["email"] == "forty-new@example.com"
+    assert body["role"] == "admin"
+    assert body["member_id"] is None
+
+
+def test_patch_user_relink_member(
+    admin_client: Any,
+    make_member: Callable[..., int],
+    seed_user_sync: Callable[..., int],
+) -> None:
+    first = make_member(member_reference="M-41", email="a41@example.com")
+    second = make_member(member_reference="M-42", email="a42@example.com")
+    uid = seed_user_sync(email="a41@example.com", role="member", member_id=first)
+
+    out = admin_client.patch(
+        f"/api/users/{uid}", json={"member_id": second}, headers=FETCH
+    )
+    assert out.status_code == 200
+    assert out.json()["member_id"] == second
+
+
+def test_patch_user_rejects_duplicate_email(
+    admin_client: Any, seed_user_sync: Callable[..., int]
+) -> None:
+    seed_user_sync(email="taken@example.com", role="admin")
+    uid = seed_user_sync(email="other@example.com", role="admin")
+
+    out = admin_client.patch(
+        f"/api/users/{uid}", json={"email": "TAKEN@example.com"}, headers=FETCH
+    )
+    assert out.status_code == 422
+    assert out.json()["detail"]["code"] == "email_taken"
+
+
+def test_patch_user_member_role_requires_member_id(
+    admin_client: Any, seed_user_sync: Callable[..., int]
+) -> None:
+    uid = seed_user_sync(email="solo-admin@example.com", role="admin")
+    # another admin so the last-admin guard is not what trips
+    seed_user_sync(email="keeper@example.com", role="admin")
+
+    out = admin_client.patch(f"/api/users/{uid}", json={"role": "member"}, headers=FETCH)
+    assert out.status_code == 422
+    assert out.json()["detail"]["code"] == "validation_error"
+
+
+def test_patch_user_cannot_demote_self(admin_client: Any) -> None:
+    uid = admin_client.get("/api/auth/me").json()["id"]
+    out = admin_client.patch(f"/api/users/{uid}", json={"role": "member"}, headers=FETCH)
+    assert out.status_code == 422
+    assert out.json()["detail"]["code"] == "cannot_demote_self"
+
+
+def test_patch_user_demote_to_member_with_link(
+    admin_client: Any,
+    make_member: Callable[..., int],
+    seed_user_sync: Callable[..., int],
+) -> None:
+    member_id = make_member(member_reference="M-43", email="a43@example.com")
+    uid = seed_user_sync(email="demote-me@example.com", role="admin")
+
+    out = admin_client.patch(
+        f"/api/users/{uid}",
+        json={"role": "member", "member_id": member_id},
+        headers=FETCH,
+    )
+    assert out.status_code == 200
+    body = out.json()
+    assert body["role"] == "member"
+    assert body["member_id"] == member_id
+
+
+def test_patch_user_empty_body_422(
+    admin_client: Any, seed_user_sync: Callable[..., int]
+) -> None:
+    uid = seed_user_sync(email="nochange@example.com", role="admin")
+    out = admin_client.patch(f"/api/users/{uid}", json={}, headers=FETCH)
+    assert out.status_code == 422
+
+
 def test_set_password(
     admin_client: Any,
     make_member: Callable[..., int],

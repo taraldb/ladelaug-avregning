@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from ladelaug_avregning import clock
-from ladelaug_avregning.audit import AuditContext
+from ladelaug_avregning.audit import AuditContext, record_audit
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.forecast import ForecastRepo
@@ -252,6 +252,43 @@ async def post_settlement(
         settlement_id=settlement_id, result=result, base_url=config.email.base_url
     )
     return {**result, "emails_queued": queued}
+
+
+@router.post("/{settlement_id}/resend-reports", dependencies=[Depends(require_fetch)])
+async def resend_reports(
+    settlement_id: int,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, Any]:
+    """Re-queue the per-member settlement report emails for a posted settlement
+    (US-1001). Recomputes from the frozen snapshot and enqueues a fresh batch of
+    ``email_messages`` rows — enqueue only, drained by ``/api/notifications/process``.
+    422 ``not_posted`` for a draft."""
+    repo = _repo(db, config)
+    row = repo.get(settlement_id)
+    if row is None:
+        raise NotFoundError(f"settlement {settlement_id} not found")
+    if row["status"] != "posted":
+        raise DomainError("not_posted", "Only a posted settlement can re-send its reports.")
+    result = repo.compute(settlement_id)
+    queued = await NotificationRepo(db).enqueue_settlement_reports(
+        settlement_id=settlement_id, result=result, base_url=config.email.base_url
+    )
+    await record_audit(
+        db,
+        actor,
+        event_type="settlement.reports_resent",
+        entity_type="settlement",
+        entity_id=settlement_id,
+        summary=f"Re-queued {queued} settlement report emails for {result['period_month']}",
+        detail={"emails_queued": queued},
+    )
+    return {
+        "settlement_id": settlement_id,
+        "period_month": result["period_month"],
+        "emails_queued": queued,
+    }
 
 
 @router.get("/{settlement_id}/correction")

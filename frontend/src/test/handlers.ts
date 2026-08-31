@@ -68,6 +68,39 @@ let state: MockState = freshState();
 
 let accessStatus: "warned" | "disabled" | "restored" | null = null;
 
+interface JobScheduleRow {
+  name: string;
+  enabled: boolean;
+  cron: string;
+  last_run_at: string | null;
+  last_status: "ok" | "error" | "running" | null;
+  last_error: string | null;
+  last_duration_ms: number | null;
+  next_run_at: string | null;
+  updated_at: string | null;
+  updated_by_user_id: number | null;
+}
+
+const freshJobs = (): JobScheduleRow[] =>
+  [
+    ["drain_mail", "*/10 * * * *"],
+    ["low_balance_scan", "0 * * * *"],
+    ["zaptec_sync_sessions", "30 3 * * *"],
+  ].map(([name, cron]) => ({
+    name,
+    enabled: false,
+    cron,
+    last_run_at: null,
+    last_status: null,
+    last_error: null,
+    last_duration_ms: null,
+    next_run_at: null,
+    updated_at: null,
+    updated_by_user_id: null,
+  }));
+
+let jobSchedules: JobScheduleRow[] = freshJobs();
+
 /** Seed the charging-access status returned by GET /api/me/access and
  *  GET /api/members/:id/access. */
 export function seedAccessStatus(
@@ -81,6 +114,7 @@ export function resetMockState(): void {
   mock1b = freshMock1b();
   forecast = freshForecast();
   accessStatus = null;
+  jobSchedules = freshJobs();
 }
 
 export function setSession(user: AuthUser | null): void {
@@ -765,6 +799,102 @@ export const handlers = [
     return HttpResponse.json({ ok: true });
   }),
 
+  http.patch("/api/users/:id", async ({ params, request }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const user = state.users.find((u) => u.id === Number(params.id));
+    if (!user) {
+      return HttpResponse.json(errorBody("not_found", "user not found"), { status: 404 });
+    }
+    const body = (await request.json()) as {
+      email?: string;
+      role?: "admin" | "member";
+      member_id?: number | null;
+    };
+    if (Object.keys(body).length === 0) {
+      return HttpResponse.json(
+        errorBody("validation_error", "provide at least one field to update"),
+        { status: 422 },
+      );
+    }
+    if (body.email != null && (!body.email.trim() || !EMAIL_RE.test(body.email.trim()))) {
+      return HttpResponse.json(
+        errorBody("validation_error", "email: not a valid email address"),
+        { status: 422 },
+      );
+    }
+
+    const newRole = body.role ?? user.role;
+    let newMemberId: number | null;
+    if ("member_id" in body) {
+      newMemberId = body.member_id ?? null;
+    } else if (body.role === "admin") {
+      newMemberId = null;
+    } else {
+      newMemberId = user.member_id;
+    }
+
+    if (user.role === "admin" && newRole !== "admin") {
+      if (user.id === state.session?.id) {
+        return HttpResponse.json(
+          errorBody("cannot_demote_self", "You cannot remove your own administrator role."),
+          { status: 422 },
+        );
+      }
+      if (
+        !user.disabled &&
+        !state.users.some((u) => u.role === "admin" && !u.disabled && u.id !== user.id)
+      ) {
+        return HttpResponse.json(
+          errorBody("last_admin", "Cannot demote the last active administrator."),
+          { status: 422 },
+        );
+      }
+    }
+
+    if (newRole === "member" && newMemberId == null) {
+      return HttpResponse.json(
+        errorBody("validation_error", "a member login requires member_id"),
+        { status: 422 },
+      );
+    }
+    if (newRole === "admin" && newMemberId != null) {
+      return HttpResponse.json(
+        errorBody("validation_error", "an admin login must not set member_id"),
+        { status: 422 },
+      );
+    }
+
+    if (
+      body.email != null &&
+      state.users.some(
+        (u) =>
+          u.id !== user.id &&
+          u.email.toLowerCase() === body.email!.trim().toLowerCase(),
+      )
+    ) {
+      return HttpResponse.json(
+        errorBody("email_taken", "An account with that email already exists."),
+        { status: 422 },
+      );
+    }
+    if (
+      newMemberId != null &&
+      state.users.some((u) => u.id !== user.id && u.member_id === newMemberId)
+    ) {
+      return HttpResponse.json(
+        errorBody("member_linked", "That member already has a login."),
+        { status: 422 },
+      );
+    }
+
+    if (body.email != null) user.email = body.email.trim();
+    user.role = newRole;
+    user.member_id = newMemberId;
+    recordAudit("user.updated", "user", String(user.id), `User ${user.id} updated`);
+    return HttpResponse.json(user);
+  }),
+
   // --- ledger (admin) ---------------------------------------
   http.get("/api/ledger-transactions", ({ request }) => {
     const denied = requireAdmin();
@@ -1331,11 +1461,23 @@ export const handlers = [
       ],
     }),
   ),
+  http.post("/api/settlement/:id/resend-reports", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    if (d && d.settlement.status !== "posted") {
+      return HttpResponse.json(errorBody("not_posted", "not posted"), { status: 422 });
+    }
+    return HttpResponse.json({
+      settlement_id: Number(params.id),
+      period_month: "2026-07",
+      emails_queued: 2,
+    });
+  }),
 
   http.get("/api/system/health", () =>
     HttpResponse.json({
       version: "0.2.0",
       schema_version: 6,
+      scheduler: { enabled: false, jobs: jobSchedules },
       zaptec: { enabled: false, installation_id: null, last: {}, failed_runs: 0 },
       email: { queued: 0, sent: 2, failed: 0, next_attempt_at: null },
       corrections: { settlements_with_pending: 0 },
@@ -1344,6 +1486,69 @@ export const handlers = [
       ok: true,
     }),
   ),
+
+  http.get("/api/system/jobs", () => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    return HttpResponse.json({ jobs: jobSchedules });
+  }),
+
+  http.put("/api/system/jobs/:name", async ({ params, request }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const row = jobSchedules.find((j) => j.name === params.name);
+    if (!row) {
+      return HttpResponse.json(errorBody("unknown_job", "unknown job"), {
+        status: 422,
+      });
+    }
+    const body = (await request.json()) as { enabled?: boolean; cron?: string };
+    if (body.enabled === undefined && body.cron === undefined) {
+      return HttpResponse.json(
+        errorBody("validation_error", "provide 'enabled' and/or 'cron'"),
+        { status: 422 },
+      );
+    }
+    if (body.cron !== undefined && body.cron.trim().split(/\s+/).length !== 5) {
+      return HttpResponse.json(errorBody("bad_cron", "invalid cron expression"), {
+        status: 422,
+      });
+    }
+    if (body.enabled !== undefined) row.enabled = body.enabled;
+    if (body.cron !== undefined) row.cron = body.cron;
+    row.next_run_at = row.enabled ? "2026-09-01T00:00:00+00:00" : null;
+    row.updated_at = new Date().toISOString();
+    row.updated_by_user_id = state.session?.id ?? null;
+    recordAudit(
+      "system.job_schedule_updated",
+      "job_schedules",
+      row.name,
+      `Job schedule updated: ${row.name}`,
+    );
+    return HttpResponse.json(row);
+  }),
+
+  http.post("/api/system/jobs/:name/run", ({ params }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const row = jobSchedules.find((j) => j.name === params.name);
+    if (!row) {
+      return HttpResponse.json(errorBody("unknown_job", "unknown job"), {
+        status: 422,
+      });
+    }
+    row.last_run_at = new Date().toISOString();
+    row.last_status = "ok";
+    row.last_error = null;
+    row.last_duration_ms = 5;
+    return HttpResponse.json({
+      name: row.name,
+      status: "ok",
+      error: null,
+      duration_ms: 5,
+      summary: {},
+    });
+  }),
 
   // --- Release 1D: refunds, corrections, departure, access --------
 
@@ -1518,6 +1723,23 @@ export const handlers = [
   ),
   http.post("/api/notifications/process", () =>
     HttpResponse.json({ due: 0, sent: 0, failed: 0, retried: 0 }),
+  ),
+  http.post("/api/notifications/:id/requeue", ({ params }) =>
+    HttpResponse.json({
+      message: {
+        id: Number(params.id),
+        to_address: "member@example.test",
+        subject: "Avregning 2026-07",
+        template: "settlement_report",
+        status: "queued",
+        attempts: 0,
+        max_attempts: 5,
+        last_error: null,
+        next_attempt_at: "2026-08-31T00:00:00+00:00",
+        created_at: "2026-08-01T00:00:00+00:00",
+        sent_at: null,
+      },
+    }),
   ),
 
   // --- Release 1C: forecast + low-balance --------------------------

@@ -82,6 +82,74 @@ async def test_set_disabled_revokes_sessions_and_audits(db):
     assert len(_audit(db, "user.disabled")) == 1
 
 
+async def test_update_patches_fields_and_audits(db):
+    repo = UserRepo(db)
+    uid = await repo.create(
+        email="old@example.com",
+        password=None,
+        role="admin",
+        actor=AuditContext.system(),
+        argon2=FAST_ARGON2,
+    )
+
+    await repo.update(uid, email="New@Example.com", actor=AuditContext.system())
+
+    row = repo.get(uid)
+    assert row["email"] == "New@Example.com"
+    assert row["email_normalized"] == "new@example.com"
+    events = _audit(db, "user.updated")
+    assert len(events) == 1
+    assert events[0]["entity_id"] == str(uid)
+
+
+async def test_update_no_fields_raises(db):
+    repo = UserRepo(db)
+    uid = await repo.create(
+        email="x@example.com",
+        password=None,
+        role="admin",
+        actor=AuditContext.system(),
+        argon2=FAST_ARGON2,
+    )
+    with pytest.raises(DomainError) as excinfo:
+        await repo.update(uid, actor=AuditContext.system())
+    assert excinfo.value.code == "no_changes"
+
+
+async def test_update_duplicate_email_rejected(db):
+    repo = UserRepo(db)
+    await repo.create(
+        email="taken@example.com",
+        password=None,
+        role="admin",
+        actor=AuditContext.system(),
+        argon2=FAST_ARGON2,
+    )
+    uid = await repo.create(
+        email="other@example.com",
+        password=None,
+        role="admin",
+        actor=AuditContext.system(),
+        argon2=FAST_ARGON2,
+    )
+    with pytest.raises(DomainError) as excinfo:
+        await repo.update(uid, email="TAKEN@example.com", actor=AuditContext.system())
+    assert excinfo.value.code == "email_taken"
+
+
+async def test_update_noop_when_value_unchanged_writes_no_audit(db):
+    repo = UserRepo(db)
+    uid = await repo.create(
+        email="same@example.com",
+        password=None,
+        role="admin",
+        actor=AuditContext.system(),
+        argon2=FAST_ARGON2,
+    )
+    await repo.update(uid, email="same@example.com", actor=AuditContext.system())
+    assert _audit(db, "user.updated") == []
+
+
 def test_bootstrap_admin_runs_once(config):
     config.bootstrap_admin.email = "boot@example.com"
     config.bootstrap_admin.password = "changeme123"

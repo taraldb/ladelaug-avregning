@@ -198,6 +198,12 @@ export interface UserCreate {
   member_id?: number | null;
 }
 
+export type UserPatch = Partial<{
+  email: string;
+  role: Role;
+  member_id: number | null;
+}>;
+
 export interface MemberCreate {
   member_reference: string;
   full_name: string;
@@ -449,6 +455,10 @@ export function listUsers(): Promise<{ users: User[] }> {
 
 export function createUser(body: UserCreate): Promise<User> {
   return post<User>("/api/users", body);
+}
+
+export function updateUser(id: number, body: UserPatch): Promise<User> {
+  return patch<User>(`/api/users/${id}`, body);
 }
 
 export function setUserDisabled(id: number, disabled: boolean): Promise<User> {
@@ -1007,6 +1017,18 @@ export function settlementReports(id: number): Promise<SettlementReportList> {
   return get<SettlementReportList>(`/api/settlement/${id}/reports`);
 }
 
+export interface ResendReportsResult {
+  settlement_id: number;
+  period_month: string;
+  emails_queued: number;
+}
+
+/** Re-queue the per-member report emails for a posted settlement. Enqueue only —
+ * they send when the email queue is next drained. */
+export function resendSettlementReports(id: number): Promise<ResendReportsResult> {
+  return post<ResendReportsResult>(`/api/settlement/${id}/resend-reports`);
+}
+
 // --- notifications + system (admin) ---------------------------
 
 export interface EmailMessage {
@@ -1036,9 +1058,31 @@ export function processNotifications(): Promise<Record<string, number>> {
   return post<Record<string, number>>("/api/notifications/process");
 }
 
+/** Put one failed/sent email back on the queue. Enqueue only — it sends when the
+ * queue is next drained. */
+export function requeueNotification(id: number): Promise<{ message: EmailMessage }> {
+  return post<{ message: EmailMessage }>(`/api/notifications/${id}/requeue`);
+}
+
+/** One row of the in-process job scheduler (`job_schedules`). Mirrors
+ * `JobScheduleOut` on the backend. */
+export interface JobSchedule {
+  name: string;
+  enabled: boolean;
+  cron: string;
+  last_run_at: string | null;
+  last_status: "ok" | "error" | "running" | null;
+  last_error: string | null;
+  last_duration_ms: number | null;
+  next_run_at: string | null;
+  updated_at: string | null;
+  updated_by_user_id: number | null;
+}
+
 export interface SystemHealth {
   version: string;
   schema_version: number;
+  scheduler: { enabled: boolean; jobs: JobSchedule[] };
   zaptec: {
     enabled: boolean;
     installation_id: string | null;
@@ -1055,6 +1099,27 @@ export interface SystemHealth {
 
 export function systemHealth(): Promise<SystemHealth> {
   return get<SystemHealth>("/api/system/health");
+}
+
+export function listJobs(): Promise<{ jobs: JobSchedule[] }> {
+  return get<{ jobs: JobSchedule[] }>("/api/system/jobs");
+}
+
+export function updateJob(
+  name: string,
+  body: { enabled?: boolean; cron?: string },
+): Promise<JobSchedule> {
+  return put<JobSchedule>(`/api/system/jobs/${name}`, body);
+}
+
+export function runJob(name: string): Promise<{
+  name: string;
+  status: string;
+  error: string | null;
+  duration_ms: number;
+  summary: Record<string, unknown>;
+}> {
+  return post(`/api/system/jobs/${name}/run`);
 }
 
 // --- member: settlement history (US-904) ---------------------

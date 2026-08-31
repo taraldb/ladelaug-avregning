@@ -24,6 +24,13 @@
   `UserRepo`. `POST` accepts `password=None` (activation-only account, NULL hash).
   `disable` re-checks `cannot_disable_self` / `last_admin` in the route before calling
   `UserRepo.set_disabled` (which revokes the user's sessions in-transaction).
+  `PATCH /api/users/{id}` -> `UserRepo.update` (partial `email`/`role`/`member_id`,
+  diff-then-`UPDATE`, `user.updated` audit). The route resolves the effective
+  role/member_id against the current row, auto-nulls `member_id` on promotion to
+  admin, and enforces `cannot_demote_self` / `last_admin` / the member-link
+  consistency rules before the repo call; `email` changes also rewrite
+  `email_normalized`. Role is read fresh per request (`deps.get_current_user`), so
+  a demotion takes effect on the next request without a session revoke.
 
 - **Ledger.** `LedgerRepo.list_all` is the cross-member movements read
   (`GET /api/ledger-transactions`, admin); `balance_ore_map` feeds the `balance_ore` /
@@ -46,6 +53,19 @@
   `/api/forecast/members`. Money in `MemberForecastOut` is canonical integer øre; the object
   is always fully populated (`available: false` → zeros + a `reason`).
 
+- **Background jobs.** A `scheduler.SchedulerRunner` task is started from the `create_app`
+  lifespan only when `config.scheduler.enabled`; it reuses `app.state.db` (same event loop
+  → same write `asyncio.Lock`). It reads the `job_schedules` table (migration 0011) each
+  tick and runs each enabled job whose `next_run_at` passed — sequentially, and `next_run_at`
+  is always recomputed forward (no catch-up). Job bodies live in `scheduler/jobs.py` and only
+  wrap existing coroutines (`NotificationRepo.process_queue` / `.scan_low_balances`,
+  `ZaptecSync.sync_sessions`). Admin surface on the `system` router: `GET /api/system/jobs`,
+  `PUT /api/system/jobs/{name}` (`+require_fetch`, `JobScheduleRepo.update` — audited
+  `system.job_schedule_updated`, `bad_cron` on an invalid expr), `POST /api/system/jobs/{name}/run`.
+  `mark_started` / `mark_finished` are deliberately **unaudited**. `GET /api/system/health`
+  carries `scheduler: {enabled, jobs}` and folds a job in `last_status='error'` into
+  `failed_jobs` / `ok`.
+
 - **PDF (1C).** `reports.pdf.PDF_AVAILABLE` is set by a guarded `import weasyprint` (its
   native libs may be absent). `html_to_pdf` raises `DomainError("pdf_unavailable", status=503)`
   when unavailable; the `.pdf` report routes let that propagate. Never import `weasyprint` at
@@ -66,6 +86,18 @@
   `settlement.corrected`. Routes `GET`/`POST /api/settlement/{id}/correction`; the `POST`
   calls `NotificationRepo.enqueue_correction_reports`. `_detail()` adds `corrections` and
   `correction_pending`.
+
+- **Re-send / re-queue emails.** `POST /api/settlement/{id}/resend-reports`
+  (`+require_fetch`, posted only → 422 `not_posted`) reuses `SettlementRepo.compute`
+  + `NotificationRepo.enqueue_settlement_reports` to append a fresh batch of `queued`
+  `settlement_report` rows (no dedup — a repeat call adds another batch), then a
+  stand-alone `record_audit("settlement.reports_resent")`. `POST
+  /api/notifications/{id}/requeue` (`+require_fetch`) → `NotificationRepo.requeue`:
+  a `failed`/`sent` row goes back to `status='queued'`, `attempts=0`,
+  `last_error=NULL`, `sent_at=NULL`, `next_attempt_at=now`, with an in-transaction
+  `notifications.email_requeued` audit row; an already-`queued` row is 422
+  `not_requeueable`, unknown id 404. Both endpoints only enqueue — `process_queue`
+  still does the sending.
 
 - **Member departure (1D, US-204).** `MemberRepo.departure_check` /
   `process_departure` orchestrate `set_status('inactive')` + `ChargerRepo.unassign` per open

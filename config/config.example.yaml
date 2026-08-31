@@ -34,6 +34,15 @@ bootstrap_admin:
   email: ""
   password: ""
 
+scheduler:
+  # In-process job scheduler. When enabled, the server runs the recurring jobs
+  # itself (drain the mail queue, low-balance scan, monthly Zaptec sync) — no
+  # external crontab needed. Per-job on/off and cron are edited at runtime under
+  # Admin -> System -> Bakgrunnsjobber (or PUT /api/system/jobs/{name}); all
+  # three ship disabled.
+  enabled: false
+  tick_seconds: 60 # how often the loop checks for due jobs (min 5)
+
 zaptec:
   # Zaptec Public API (https://api.zaptec.com). While disabled the sync
   # endpoints return 503. Leave the password blank here and pass it via the

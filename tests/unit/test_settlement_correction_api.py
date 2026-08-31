@@ -109,3 +109,47 @@ def test_correction_needs_csrf_header_and_auth(admin_client, client, make_member
     assert admin_client.post(f"/api/settlement/{sid}/correction").status_code == 403
     client.cookies.clear()
     assert client.get(f"/api/settlement/{sid}/correction").status_code == 401
+
+
+# --- resend report emails (US-1001) ---------------------------------
+
+
+def test_resend_reports_requeues_for_posted_settlement(admin_client, make_member, seed_user_sync):
+    sid, _m1, _m2 = _post_settlement(admin_client, make_member, seed_user_sync)
+
+    def report_rows() -> int:
+        msgs = admin_client.get("/api/notifications").json()["messages"]
+        return sum(
+            1
+            for m in msgs
+            if m["template"] == "settlement_report" and m["related_entity_id"] == str(sid)
+        )
+
+    before = report_rows()
+
+    r = admin_client.post(f"/api/settlement/{sid}/resend-reports", headers=FETCH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["emails_queued"] == 2
+    assert body["period_month"] == MONTH
+
+    # a fresh batch of rows was appended (regenerate + enqueue)
+    assert report_rows() == before + 2
+
+    n = admin_client.app.state.db.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE event_type = 'settlement.reports_resent'"
+    ).fetchone()[0]
+    assert n == 1
+
+
+def test_resend_reports_rejects_a_draft(admin_client):
+    sid = admin_client.post(
+        "/api/settlement/drafts", json={"period_month": "2026-09"}, headers=FETCH
+    ).json()["settlement"]["id"]
+    r = admin_client.post(f"/api/settlement/{sid}/resend-reports", headers=FETCH)
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "not_posted"
+
+
+def test_resend_reports_needs_csrf_header(admin_client):
+    assert admin_client.post("/api/settlement/1/resend-reports").status_code == 403

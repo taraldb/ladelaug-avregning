@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +13,7 @@ from starlette.responses import Response
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.errors import register_exception_handlers
+from ladelaug_avregning.scheduler import runner as scheduler_runner
 from ladelaug_avregning.webapp.routes import (
     access,
     audit,
@@ -49,7 +52,19 @@ class SPAStaticFiles(StaticFiles):
 
 
 def create_app(config: AppConfig, db: Database) -> FastAPI:
-    app = FastAPI(title="ladelaug-avregning")
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # The job scheduler runs on the serving event loop and reuses this
+        # Database, so its writes go through the same asyncio.Lock as the HTTP
+        # handlers. Started only when config.scheduler.enabled — the test suite
+        # never does, so TestClient's lifespan is a no-op there.
+        task = await scheduler_runner.start(db, config)
+        try:
+            yield
+        finally:
+            await scheduler_runner.stop(task)
+
+    app = FastAPI(title="ladelaug-avregning", lifespan=lifespan)
     app.state.config = config
     app.state.db = db
 

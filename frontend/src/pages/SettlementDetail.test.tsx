@@ -166,6 +166,36 @@ describe("Settlement flow (admin)", () => {
     expect(screen.getByRole("link", { name: "faktura-2.pdf" })).toBeInTheDocument();
   });
 
+  it("re-queues the report emails from a posted settlement", async () => {
+    setSession(ADMIN_USER);
+    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+    await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
+    await screen.findByRole("heading", { name: /Avregning 20/ });
+
+    await user.type(screen.getByLabelText(/Beskrivelse/), "Fastledd");
+    await user.type(screen.getByLabelText(/Beløp/), "500");
+    await user.click(screen.getByRole("button", { name: "Legg til" }));
+    await user.type(screen.getByLabelText(/Fakturert kWh/), "10");
+    await user.click(screen.getByRole("button", { name: "Lagre" }));
+    const file = new File([new Uint8Array([1, 2, 3])], "faktura.pdf", {
+      type: "application/pdf",
+    });
+    await user.upload(screen.getByLabelText("Fakturavedlegg"), file);
+    await user.click(screen.getByRole("button", { name: "Last opp" }));
+    await screen.findByRole("link", { name: "faktura-1.pdf" });
+    await user.click(screen.getByRole("button", { name: "Frys forbruk" }));
+    await user.click(await screen.findByRole("button", { name: "Bokfør" }));
+    await screen.findByRole("heading", { name: "Rapporter" });
+
+    await user.click(
+      screen.getByRole("button", { name: "Send rapport-e-post på nytt" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Legg i kø" }));
+
+    expect(await screen.findByText(/2 e-poster lagt i kø/)).toBeInTheDocument();
+  });
+
   it("shows a live month-consumption panel on a draft", async () => {
     setSession(ADMIN_USER);
     const month = new Date().toISOString().slice(0, 7);

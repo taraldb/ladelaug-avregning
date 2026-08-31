@@ -57,6 +57,16 @@ class BootstrapAdminConfig(BaseModel):
     password: str = ""
 
 
+class SchedulerConfig(BaseModel):
+    """In-process job scheduler. ``enabled`` is the master switch — the FastAPI
+    lifespan only starts the loop when it is true (so the test suite, which runs
+    the lifespan via ``TestClient``, never spins up a real scheduler). Per-job
+    on/off and cron live in the ``job_schedules`` table, editable at runtime."""
+
+    enabled: bool = False
+    tick_seconds: int = 60
+
+
 class ZaptecConfig(BaseModel):
     """Zaptec Public API (https://api.zaptec.com). ``enabled`` gates every sync
     endpoint. The password is normally left blank here and supplied via the
@@ -118,6 +128,7 @@ class AppConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     bootstrap_admin: BootstrapAdminConfig = Field(default_factory=BootstrapAdminConfig)
+    scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     zaptec: ZaptecConfig = Field(default_factory=ZaptecConfig)
     email: EmailConfig = Field(default_factory=EmailConfig)
 
@@ -180,6 +191,9 @@ class AppConfig(BaseModel):
             problems.append(
                 f"logging.level {self.logging.level!r} is not one of {sorted(_VALID_LOG_LEVELS)}"
             )
+
+        if self.scheduler.tick_seconds < 5:
+            problems.append("scheduler.tick_seconds must be >= 5")
 
         a = self.auth
         if a.argon2_time_cost < 1:

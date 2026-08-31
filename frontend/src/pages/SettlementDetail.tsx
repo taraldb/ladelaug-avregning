@@ -17,6 +17,7 @@ import {
   previewSettlement,
   deleteSettlementAttachment,
   reresolveCharging,
+  resendSettlementReports,
   setSettlementInvoice,
   settlementReports,
   uploadSettlementAttachments,
@@ -48,6 +49,8 @@ export default function SettlementDetail() {
   const { data, error, isLoading, mutate } = useSWR(key, () => getSettlement(sid));
   const [preview, setPreview] = useState<SettlementPreview | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [resendConfirm, setResendConfirm] = useState(false);
+  const [resending, setResending] = useState(false);
   const reports = useSWR(
     data?.settlement.usage_frozen_at ? `${key}/reports` : null,
     () => settlementReports(sid),
@@ -81,6 +84,24 @@ export default function SettlementDetail() {
       setPreview(await previewSettlement(sid));
     } catch (err) {
       setBanner(err instanceof ApiError ? err.message : "Forhåndsvisning feilet.");
+    }
+  }
+
+  async function doResend() {
+    setResendConfirm(false);
+    setBanner(null);
+    setResending(true);
+    try {
+      const res = await resendSettlementReports(sid);
+      setBanner(
+        `${res.emails_queued} e-poster lagt i kø. De sendes når e-postkøen kjøres.`,
+      );
+    } catch (err) {
+      setBanner(
+        err instanceof ApiError ? err.message : "Kunne ikke legge e-postene i kø.",
+      );
+    } finally {
+      setResending(false);
     }
   }
 
@@ -183,9 +204,21 @@ export default function SettlementDetail() {
 
       {s.usage_frozen_at && reports.data && (
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold text-slate-200">
-            {isDraft ? "Rapporter (forhåndsvisning)" : "Rapporter"}
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-200">
+              {isDraft ? "Rapporter (forhåndsvisning)" : "Rapporter"}
+            </h2>
+            {!isDraft && (
+              <button
+                type="button"
+                disabled={resending}
+                onClick={() => setResendConfirm(true)}
+                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+              >
+                Send rapport-e-post på nytt
+              </button>
+            )}
+          </div>
           {isDraft && (
             <p className="text-xs text-slate-500">
               Bygget fra det fryste øyeblikksbildet. Endres hvis du fryser på nytt, og
@@ -243,6 +276,17 @@ export default function SettlementDetail() {
       {!isDraft && (
         <CorrectionPanel detail={data} onChange={() => void mutate()} />
       )}
+
+      <ConfirmModal
+        open={resendConfirm}
+        title="Send rapport-e-post på nytt?"
+        message="Legger én e-post i kø per medlem med aktiv portalkonto og e-postadresse. De sendes når e-postkøen kjøres neste gang (Systemhelse → «Send e-postkø»)."
+        confirmLabel="Legg i kø"
+        tone="normal"
+        busy={resending}
+        onConfirm={() => void doResend()}
+        onClose={() => setResendConfirm(false)}
+      />
     </section>
   );
 }

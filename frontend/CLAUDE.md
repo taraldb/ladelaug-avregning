@@ -46,6 +46,7 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 
 - `GET /api/users` -> `{users:[User]}`.
 - `POST /api/users` (201) `{email,password?:string|null,role:"admin"|"member",member_id?:number}` -> `User`. `password` omitted/`null` => activation-only account. 422 `email_taken` | `member_linked` | `validation_error` (member login needs `member_id`; admin login must not set it).
+- `PATCH /api/users/{id}` (admin, `X-Requested-With`) partial `{email?,role?,member_id?}` -> `User`. Empty body 422 `validation_error`. Promoting to `admin` auto-nulls `member_id`; `role:"member"` needs a `member_id`. 422 `email_taken` | `member_linked` | `validation_error` | `cannot_demote_self` | `last_admin`; 404 `not_found` (unknown user or `member_id`).
 - `POST /api/users/{id}/disable` / `POST /api/users/{id}/enable` (admin, `X-Requested-With`) -> `User`. Disable revokes the user's sessions; 422 `cannot_disable_self` | `last_admin`.
 - `POST /api/users/{id}/password` (admin, `X-Requested-With`) `{password:string(>=10)}` -> `{ok:true}`; 422 `validation_error`.
 - `User = {id,email,role:"admin"|"member",member_id:number|null,disabled:boolean}`.
@@ -55,6 +56,7 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `GET /api/settlement/{id}` (admin) -> `SettlementDetail` incl. an `attachments:[SettlementAttachment]` list.
 - `POST /api/settlement/{id}/lines` (201) `{description,allocation_method:"equal"|"consumption",amount,category?}` -> `{line}` (draft only). `amount` may be **negative** (a credit line) but not zero. `PATCH /api/settlement/{id}/lines/{lineId}` (admin, `X-Requested-With`, draft only) partial `{description?,allocation_method?,amount?,category?}` -> `SettlementDetail`; 422 `no_changes` (empty body) | `bad_amount` (zero) | `bad_method` | `description_required` | `not_draft`, 404 `not_found`. `DELETE /api/settlement/{id}/lines/{lineId}` -> `SettlementDetail`. All re-sync `invoice_total_nok`.
 - `POST /api/settlement/{id}/attachments` (admin, multipart `files`, `X-Requested-With`) -> `SettlementDetail`; allowed in any status. `GET /api/settlement/{id}/attachments/{aid}` -> the file. `DELETE /api/settlement/{id}/attachments/{aid}` (admin, `X-Requested-With`) -> `SettlementDetail`; allowed in any status. 404 `not_found` for an unknown attachment.
+- `POST /api/settlement/{id}/resend-reports` (admin, `X-Requested-With`) -> `{settlement_id,period_month,emails_queued:number}`. Posted settlements only (422 `not_posted`; 404 `not_found`). Recomputes from the frozen snapshot and appends a fresh batch of `queued` report emails — enqueue only, sent on the next queue drain. Audited `settlement.reports_resent`. Drives the **Send rapport-e-post på nytt** button on `SettlementDetail`.
 
 ### Chargers (Release 1B, Epic 3 — admin)
 
@@ -81,6 +83,7 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `PUT /api/forecast/settings` (admin, `X-Requested-With`) partial body `ForecastSettingsUpdate` -> `ForecastSettings`. An explicit `rate_override_ore_per_kwh:null` clears the override; 422 on non-positive rate / `buffer_months<=0` / negative cooldown / `lookback_settlements<1`.
 - `GET /api/forecast/members` (admin) -> `{members:[MemberForecast]}` (one row per member; carries only `member_id`, join names from `GET /api/members`).
 - `POST /api/notifications/low-balance-scan` (admin, `X-Requested-With`) -> `{scanned,below,queued,suppressed}` (`LowBalanceScanResult`). Enqueues warning emails; drain with `POST /api/notifications/process`.
+- `POST /api/notifications/{id}/requeue` (admin, `X-Requested-With`) -> `{message:EmailMessage}` with `status:"queued"`. Puts one `failed`/`sent` message back on the queue (`attempts` reset, due now). 422 `not_requeueable` if it is already `queued`; 404 `not_found`. Enqueue only. Drives the per-row **Legg i kø igjen** button on `SystemHealth`.
 
 ### Release 1D — refunds, corrections, departure, charging access
 
@@ -93,8 +96,15 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `GET /api/members/{id}/access` (admin) -> `{member_id,status:"warned"|"disabled"|"restored"|null,history:AccessEvent[]}`.
 - `POST /api/members/{id}/access` (admin, `X-Requested-With`) `{action:"warned"|"disabled"|"restored",reason?,note?}` -> `{member_id,status,event:AccessEvent,history:AccessEvent[]}`. `warned`/`restored` also enqueue a member email; `disabled` does not. **No live Zaptec enforcement — status of record only.**
 - `GET /api/me/access` (member) -> `{status:AccessAction|null,portal_url:string}` — drives the portal banner + Zaptec link.
-- `GET /api/system/health` gains `corrections:{settlements_with_pending:number}` and `access:{disabled:number}` (informational; do not flip `ok`).
+- `GET /api/system/health` gains `corrections:{settlements_with_pending:number}` and `access:{disabled:number}` (informational; do not flip `ok`), plus `scheduler:{enabled:boolean,jobs:JobSchedule[]}` (a job in `last_status:"error"` **does** flip `ok`).
 - `AccessEvent = {id,member_id,action,reason:string|null,note:string|null,created_at,created_by_user_id:number|null,email_message_id:number|null}`.
+
+### Background jobs (in-process scheduler, admin)
+
+- `GET /api/system/jobs` -> `{jobs:JobSchedule[]}` (the three seeded rows).
+- `PUT /api/system/jobs/{name}` (admin, `X-Requested-With`) partial `{enabled?:boolean,cron?:string}` -> `JobSchedule`. Empty body 422 `validation_error`; unknown `name` 422 `unknown_job`; invalid 5-field cron 422 `bad_cron`. Disabling clears `next_run_at`.
+- `POST /api/system/jobs/{name}/run` (admin, `X-Requested-With`) -> `{name,status:"ok"|"error",error:string|null,duration_ms:number,summary:object}`; runs the job now with the same bookkeeping. 422 `unknown_job`.
+- `JobSchedule = {name:"drain_mail"|"low_balance_scan"|"zaptec_sync_sessions",enabled:boolean,cron:string,last_run_at:string|null,last_status:"ok"|"error"|"running"|null,last_error:string|null,last_duration_ms:number|null,next_run_at:string|null,updated_at:string|null,updated_by_user_id:number|null}`. `cron` is UTC. Missed slots are not replayed.
 
 ### Types
 

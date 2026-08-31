@@ -40,6 +40,43 @@ describe("Users (admin)", () => {
     expect(await within(row).findByText("Deaktivert")).toBeInTheDocument();
   });
 
+  it("edits a login's email and promotes it to admin", async () => {
+    setSession(ADMIN_USER);
+    const m = seedMember({ member_reference: "M-88", full_name: "Per Hansen" });
+    seedUser({ role: "member", member_id: m.id, email: "per@example.com" });
+    const { user } = renderApp(<AppRouter />, { route: "/users" });
+
+    const row = (await screen.findByText("per@example.com")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Endre" }));
+
+    const email = await screen.findByLabelText("E-post");
+    await user.clear(email);
+    await user.type(email, "per.hansen@example.com");
+    await user.selectOptions(screen.getByLabelText("Rolle"), "admin");
+    await user.click(screen.getByRole("button", { name: "Lagre" }));
+
+    const updated = (await screen.findByText("per.hansen@example.com")).closest("tr")!;
+    expect(within(updated).getByText("Administrator")).toBeInTheDocument();
+    expect(within(updated).getByText("–")).toBeInTheDocument();
+  });
+
+  it("surfaces the email_taken 422 when editing to a used address", async () => {
+    setSession(ADMIN_USER);
+    seedUser({ role: "admin", email: "one@example.com" });
+    seedUser({ role: "admin", email: "two@example.com" });
+    const { user } = renderApp(<AppRouter />, { route: "/users" });
+
+    const row = (await screen.findByText("two@example.com")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Endre" }));
+
+    const email = await screen.findByLabelText("E-post");
+    await user.clear(email);
+    await user.type(email, "one@example.com");
+    await user.click(screen.getByRole("button", { name: "Lagre" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/already exists/i);
+  });
+
   it("surfaces the member_linked 422 when the member already has a login", async () => {
     setSession(ADMIN_USER);
     const m = seedMember({ member_reference: "M-77" });
