@@ -5,6 +5,11 @@ server:
   port: 8080
   # Directory of the built frontend. Served at / by the app when it exists.
   static_dir: "frontend/dist"
+  # Client addresses uvicorn trusts X-Forwarded-* headers from — set this to the
+  # reverse proxy's IP/CIDR. NEVER "*" in production: a wildcard lets any client
+  # spoof its IP, defeating the login rate limiter and forging audit-log IPs.
+  # Comma-separated. Also settable via LADELAUG_TRUSTED_PROXIES.
+  trusted_proxies: "127.0.0.1"
 
 database:
   path: "state/ladelaug.db"
@@ -24,13 +29,20 @@ auth:
   cookie_name: "ladelaug_session"
   login_max_attempts: 5
   login_window_seconds: 900 # 15 minutes
+  # Throttle for magic-link / password-reset issuance. Over the cap the endpoint
+  # still returns {"ok": true} but sends nothing (and records an audit event).
+  request_max_per_email: 5
+  request_max_per_ip: 20
+  request_window_seconds: 3600 # 1 hour
   argon2_time_cost: 3
   argon2_memory_cost_kib: 65536 # 64 MiB
   argon2_parallelism: 2
 
 bootstrap_admin:
   # Optional. If both are set and the users table is empty, an admin account is
-  # created on startup. Otherwise use: python -m ladelaug_avregning create-admin
+  # created on startup. The password must be >= 10 chars and not a known-weak
+  # value, or startup logs a warning and skips it. Clear this block once the
+  # admin exists. Otherwise use: python -m ladelaug_avregning create-admin
   email: ""
   password: ""
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import useSWR from "swr";
+import { ROUTES } from "../routes";
 import {
   ApiError,
   listJobs,
@@ -247,13 +248,13 @@ export default function SystemHealth() {
         <h2 className="mb-2 text-sm font-semibold text-slate-200">Konfigurasjon</h2>
         <div className="flex flex-wrap gap-2 text-sm">
           <Link
-            to="/users"
+            to={ROUTES.users}
             className="rounded-md border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-800"
           >
             Brukerkontoer
           </Link>
           <Link
-            to="/chargers"
+            to={ROUTES.chargers}
             className="rounded-md border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-800"
           >
             Ladere

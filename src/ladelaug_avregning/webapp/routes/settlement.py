@@ -197,12 +197,22 @@ async def download_attachment(
     attachment_id: int,
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
 ) -> FileResponse:
     repo = _repo(db, config)
     row = repo.attachment(settlement_id, attachment_id)
     path = repo.attachment_file(settlement_id, attachment_id)
     if row is None or path is None:
         raise NotFoundError(f"attachment {attachment_id} not found")
+    await record_audit(
+        db,
+        actor,
+        event_type="settlement.attachment_downloaded",
+        entity_type="settlement",
+        entity_id=settlement_id,
+        summary=f"Attachment {row['filename']!r} downloaded from settlement {settlement_id}",
+        detail={"attachment_id": attachment_id, "filename": row["filename"]},
+    )
     return FileResponse(path, media_type="application/pdf", filename=row["filename"])
 
 

@@ -31,7 +31,7 @@ describe("ForecastSettings (admin)", () => {
       }),
     );
 
-    const { user } = renderApp(<AppRouter />, { route: "/forecast" });
+    const { user } = renderApp(<AppRouter />, { route: "/prognose" });
 
     const buffer = await screen.findByLabelText("Buffermåneder");
     await user.clear(buffer);
@@ -55,7 +55,7 @@ describe("ForecastSettings (admin)", () => {
     seedMember({ id: 8, full_name: "Member Eight", member_reference: "M-8" });
     seedLowBalanceForecast(8, "low");
 
-    const { user } = renderApp(<AppRouter />, { route: "/forecast" });
+    const { user } = renderApp(<AppRouter />, { route: "/prognose" });
 
     await user.click(
       await screen.findByRole("button", { name: "Kjør lavsaldo-varsling nå" }),
@@ -68,11 +68,11 @@ describe("ForecastSettings (admin)", () => {
     ).toBeInTheDocument();
   });
 
-  it("redirects a member session away from /forecast", async () => {
+  it("redirects a member session away from /prognose", async () => {
     setSession(MEMBER_USER);
     seedMember({ id: MEMBER_USER.member_id ?? 7 });
 
-    renderApp(<AppRouter />, { route: "/forecast" });
+    renderApp(<AppRouter />, { route: "/prognose" });
 
     expect(
       await screen.findByRole("link", { name: /min konto/i }),

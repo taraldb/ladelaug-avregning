@@ -12,7 +12,7 @@ import { renderApp } from "../test/utils";
 describe("Settlement flow (admin)", () => {
   it("creates a draft, adds a line, freezes, previews and posts", async () => {
     setSession(ADMIN_USER);
-    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+    const { user } = renderApp(<AppRouter />, { route: "/avregninger" });
 
     await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
 
@@ -61,7 +61,7 @@ describe("Settlement flow (admin)", () => {
 
   it("defaults to Forbruk, adds a line, then edits it to a negative Likt line", async () => {
     setSession(ADMIN_USER);
-    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+    const { user } = renderApp(<AppRouter />, { route: "/avregninger" });
     await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
     await screen.findByRole("heading", { name: /Avregning 20/ });
 
@@ -102,7 +102,7 @@ describe("Settlement flow (admin)", () => {
 
   it("assesses and books a correction on a posted settlement", async () => {
     setSession(ADMIN_USER);
-    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+    const { user } = renderApp(<AppRouter />, { route: "/avregninger" });
     await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
     await screen.findByRole("heading", { name: /Avregning 20/ });
 
@@ -135,7 +135,7 @@ describe("Settlement flow (admin)", () => {
 
   it("uploads several invoices and deletes one after confirming", async () => {
     setSession(ADMIN_USER);
-    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+    const { user } = renderApp(<AppRouter />, { route: "/avregninger" });
     await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
     await screen.findByRole("heading", { name: /Avregning 20/ });
 
@@ -168,7 +168,7 @@ describe("Settlement flow (admin)", () => {
 
   it("re-queues the report emails from a posted settlement", async () => {
     setSession(ADMIN_USER);
-    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+    const { user } = renderApp(<AppRouter />, { route: "/avregninger" });
     await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
     await screen.findByRole("heading", { name: /Avregning 20/ });
 
@@ -205,7 +205,7 @@ describe("Settlement flow (admin)", () => {
       unassigned_kwh: "3.500",
       by_member: [{ member_id: kari.id, energy_kwh: "38.500" }],
     });
-    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+    const { user } = renderApp(<AppRouter />, { route: "/avregninger" });
 
     await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
     await screen.findByRole("heading", { name: /Avregning 20/ });

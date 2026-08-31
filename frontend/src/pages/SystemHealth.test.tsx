@@ -92,16 +92,16 @@ describe("SystemHealth (admin)", () => {
     renderApp(<AppRouter />, { route: "/system" });
 
     const users = await screen.findByRole("link", { name: "Brukerkontoer" });
-    expect(users).toHaveAttribute("href", "/users");
+    expect(users).toHaveAttribute("href", "/brukere");
     expect(screen.getByRole("link", { name: "Ladere" })).toHaveAttribute(
       "href",
-      "/chargers",
+      "/ladere",
     );
   });
 
   it("keeps the System nav tab active on the config pages", async () => {
     setSession(ADMIN_USER);
-    renderApp(<AppRouter />, { route: "/users" });
+    renderApp(<AppRouter />, { route: "/brukere" });
 
     const systemTab = await screen.findByRole("link", { name: "System" });
     expect(systemTab.className).toMatch(/bg-slate-100/);

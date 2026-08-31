@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 from ladelaug_avregning import clock
-from ladelaug_avregning.audit import AuditContext
+from ladelaug_avregning.audit import AuditContext, write_audit_row
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.chargers import ChargerRepo
@@ -50,7 +50,7 @@ class ZaptecSync:
         seen = created = updated = 0
         try:
             installations = await client.list_installations()
-            await self._upsert_installations(installations)
+            await self._upsert_installations(installations, actor=actor)
             target = self._config.zaptec.installation_id or None
             devices = await client.list_chargers(target)
             for dev in devices:
@@ -159,8 +159,11 @@ class ZaptecSync:
             )
         return result
 
-    async def _upsert_installations(self, installations: list[dict[str, Any]]) -> None:
+    async def _upsert_installations(
+        self, installations: list[dict[str, Any]], *, actor: AuditContext
+    ) -> None:
         now = clock.now_utc().isoformat()
+        created = updated = 0
         async with self._db._write() as cur:
             for inst in installations:
                 zid = str(inst.get("Id") or "")
@@ -177,9 +180,21 @@ class ZaptecSync:
                         "VALUES (?, ?, ?, ?, ?)",
                         (zid, inst.get("Name"), payload, now, now),
                     )
+                    created += 1
                 else:
                     cur.execute(
                         "UPDATE zaptec_installations SET name = ?, raw_json = ?, updated_at = ? "
                         "WHERE id = ?",
                         (inst.get("Name"), payload, now, existing["id"]),
                     )
+                    updated += 1
+            if created or updated:
+                write_audit_row(
+                    cur,
+                    actor,
+                    event_type="zaptec.installation_synced",
+                    entity_type="zaptec_installation",
+                    entity_id=None,
+                    summary=f"Zaptec installations synced: {created} added, {updated} updated",
+                    detail={"created": created, "updated": updated},
+                )

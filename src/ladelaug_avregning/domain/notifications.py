@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ladelaug_avregning import clock
-from ladelaug_avregning.audit import AuditContext, write_audit_row
+from ladelaug_avregning.audit import AuditContext, record_audit, write_audit_row
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.email.sender import EmailSender
 from ladelaug_avregning.errors import DomainError, NotFoundError
@@ -75,7 +75,13 @@ class NotificationRepo:
             )
             return int(cur.lastrowid or 0)
 
-    async def process_queue(self, sender: EmailSender, *, limit: int = 50) -> dict[str, int]:
+    async def process_queue(
+        self, sender: EmailSender, *, limit: int = 50, actor: AuditContext | None = None
+    ) -> dict[str, int]:
+        """Drain due messages. When ``actor`` is given (the admin endpoint, the
+        ``drain_mail`` scheduler job, the CLI), a ``notifications.queue_processed``
+        summary row is written when anything moved, and each permanently failed
+        message gets a ``notifications.email_failed`` row."""
         now = clock.now_utc()
         due = self._db.connection.execute(
             "SELECT * FROM email_messages WHERE status = 'queued' AND next_attempt_at <= ? "
@@ -85,10 +91,32 @@ class NotificationRepo:
 
         tally = {"sent": 0, "failed": 0, "retried": 0}
         for row in due:
-            tally[await self._attempt(dict(row), sender, now)] += 1
-        return {"due": len(due), **tally}
+            tally[await self._attempt(dict(row), sender, now, actor=actor)] += 1
 
-    async def _attempt(self, msg: dict[str, Any], sender: EmailSender, now: datetime) -> str:
+        result = {"due": len(due), **tally}
+        if actor is not None and (tally["sent"] or tally["failed"] or tally["retried"]):
+            await record_audit(
+                self._db,
+                actor,
+                event_type="notifications.queue_processed",
+                entity_type="email_queue",
+                entity_id=None,
+                summary=(
+                    f"Email queue drained: {tally['sent']} sent, {tally['failed']} failed, "
+                    f"{tally['retried']} retried"
+                ),
+                detail=result,
+            )
+        return result
+
+    async def _attempt(
+        self,
+        msg: dict[str, Any],
+        sender: EmailSender,
+        now: datetime,
+        *,
+        actor: AuditContext | None = None,
+    ) -> str:
         """Try to deliver one row and record the outcome. Returns ``"sent"``,
         ``"failed"`` (gave up after ``max_attempts``), or ``"retried"`` (queued
         again with backoff). A send failure never propagates."""
@@ -103,6 +131,24 @@ class NotificationRepo:
             attempts = int(msg["attempts"]) + 1
             if attempts >= int(msg["max_attempts"]):
                 await self._mark(msg["id"], status="failed", attempts=attempts, error=str(exc))
+                if actor is not None:
+                    await record_audit(
+                        self._db,
+                        actor,
+                        event_type="notifications.email_failed",
+                        entity_type="email_message",
+                        entity_id=int(msg["id"]),
+                        summary=(
+                            f"Email {msg['id']} to {msg['to_address']} gave up after "
+                            f"{attempts} attempts"
+                        ),
+                        detail={
+                            "to_address": msg["to_address"],
+                            "template": msg["template"],
+                            "attempts": attempts,
+                            "last_error": str(exc)[:500],
+                        },
+                    )
                 return "failed"
             nxt = (now + _backoff(attempts)).isoformat()
             await self._mark(
@@ -234,11 +280,11 @@ class NotificationRepo:
             user = users.get_by_member_id(m["member_id"])
             if not user or user["disabled"] or not user["email"]:
                 continue
-            link = f"{base_url.rstrip('/')}/my-account"
+            link = f"{base_url.rstrip('/')}/"
             text = (
                 f"Hei {m['full_name']},\n\n"
-                f"Avregningen for {month} er klar. Din andel er {m['charge_nok']} kr, "
-                f"og saldo etter avregning er {m['balance_after_nok']} kr.\n\n"
+                f"Avregningen for {month} er klar. Din andel er kr {m['charge_nok']}, "
+                f"og saldo etter avregning er kr {m['balance_after_nok']}.\n\n"
                 f"Se detaljene i portalen: {link}\n"
             )
             await self.enqueue(
@@ -265,7 +311,7 @@ class NotificationRepo:
         ledger = LedgerRepo(self._db)
         month = correction["period_month"]
         seq = correction["sequence"]
-        link = f"{base_url.rstrip('/')}/my-account"
+        link = f"{base_url.rstrip('/')}/"
         queued = 0
         for m in correction["members"]:
             if int(m["delta_ore"]) == 0:

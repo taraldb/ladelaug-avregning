@@ -19,6 +19,10 @@
 - **Audit.** Every mutation writes exactly one `audit_events` row. Inside a repo that already
   holds `db._write()`, use `audit.write_audit_row(cur, ...)` (lock-free); for a stand-alone
   event use `await audit.record_audit(db, ...)`. `asyncio.Lock` is not reentrant.
+  `audit.py` is the only writer — `AuditRepo` is read-only. `AuditContext` also carries
+  `ip` / `user_agent` / `actor_role`, filled by `deps.get_audit_context` from the request +
+  session. The table is append-only (triggers) and retained **indefinitely** — there is no
+  purge job by design; add a windowed archive if storage ever matters.
 
 - **Users.** `routes/users.py` (`/api/users`, `require_admin`) provisions logins via
   `UserRepo`. `POST` accepts `password=None` (activation-only account, NULL hash).

@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import Depends, Request
 
-from ladelaug_avregning.audit import AuditContext
+from ladelaug_avregning.audit import AuditContext, record_audit
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.sessions import SessionRepo
@@ -50,6 +50,23 @@ async def get_current_user(request: Request) -> dict[str, Any]:
     user = UserRepo(db).get(int(session["user_id"]))
     if user is None or user["disabled"]:
         await sessions.revoke(token)
+        if user is not None:
+            # Fires once per live session (the token is now gone), so a disabled
+            # account leaves a trail without spamming the log.
+            await record_audit(
+                db,
+                AuditContext(
+                    actor_user_id=int(user["id"]),
+                    actor_label=user["email"],
+                    ip=request.client.host if request.client else None,
+                    user_agent=request.headers.get("user-agent"),
+                    actor_role=user["role"],
+                ),
+                event_type="user.session_revoked_disabled",
+                entity_type="user",
+                entity_id=int(user["id"]),
+                summary=f"Session revoked mid-request: {user['email']} is disabled",
+            )
         raise AuthError("Not authenticated", status=401)
 
     await sessions.touch(token, ttl_hours=config.auth.session_ttl_hours)
@@ -63,6 +80,8 @@ def get_audit_context(
         actor_user_id=int(user["id"]),
         actor_label=user["email"],
         ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        actor_role=user["role"],
     )
 
 

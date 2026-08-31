@@ -14,7 +14,7 @@ import { renderApp } from "../test/utils";
 describe("Chargers (admin)", () => {
   it("creates a charger and lists it", async () => {
     setSession(ADMIN_USER);
-    const { user } = renderApp(<AppRouter />, { route: "/chargers" });
+    const { user } = renderApp(<AppRouter />, { route: "/ladere" });
 
     await user.click(await screen.findByRole("button", { name: "Ny lader" }));
     await user.type(screen.getByLabelText(/^Navn$/), "Garasje 1");
@@ -28,7 +28,7 @@ describe("Chargers (admin)", () => {
   it("edits a charger row", async () => {
     setSession(ADMIN_USER);
     seedCharger({ name: "Gammelt navn", serial_no: "S-1" });
-    const { user } = renderApp(<AppRouter />, { route: "/chargers" });
+    const { user } = renderApp(<AppRouter />, { route: "/ladere" });
 
     await user.click(await screen.findByRole("button", { name: "Rediger" }));
     const nameField = screen.getByLabelText(/^Navn$/);
@@ -44,7 +44,7 @@ describe("Chargers (admin)", () => {
     setSession(ADMIN_USER);
     vi.spyOn(window, "confirm").mockReturnValue(true);
     seedCharger({ name: "Duplikat" });
-    const { user } = renderApp(<AppRouter />, { route: "/chargers" });
+    const { user } = renderApp(<AppRouter />, { route: "/ladere" });
 
     await user.click(await screen.findByRole("button", { name: "Slett" }));
     expect(await screen.findByText("Ingen ladere ennå")).toBeInTheDocument();
@@ -53,7 +53,7 @@ describe("Chargers (admin)", () => {
   it("shows no Slett button for a Zaptec charger", async () => {
     setSession(ADMIN_USER);
     seedCharger({ name: "Zap", zaptec_id: "z-1" });
-    renderApp(<AppRouter />, { route: "/chargers" });
+    renderApp(<AppRouter />, { route: "/ladere" });
 
     expect(await screen.findByText("Zap")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Slett" })).not.toBeInTheDocument();
@@ -62,7 +62,7 @@ describe("Chargers (admin)", () => {
   it("shows no Slett button when the charger has usage", async () => {
     setSession(ADMIN_USER);
     seedCharger({ name: "Brukt", has_usage: true });
-    renderApp(<AppRouter />, { route: "/chargers" });
+    renderApp(<AppRouter />, { route: "/ladere" });
 
     expect(await screen.findByText("Brukt")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Slett" })).not.toBeInTheDocument();
@@ -81,7 +81,7 @@ describe("Chargers (admin)", () => {
         energy_kwh: "12.500",
       },
     ]);
-    const { user } = renderApp(<AppRouter />, { route: "/chargers" });
+    const { user } = renderApp(<AppRouter />, { route: "/ladere" });
 
     expect(
       await screen.findByText(/12\.500 kWh i .* er ikke fordelt/),
@@ -96,7 +96,7 @@ describe("Chargers (admin)", () => {
   it("is not reachable for a member session", async () => {
     setSession(MEMBER_USER);
     seedMember({ id: MEMBER_USER.member_id ?? 7 });
-    renderApp(<AppRouter />, { route: "/chargers" });
+    renderApp(<AppRouter />, { route: "/ladere" });
     expect(
       await screen.findByRole("link", { name: /min konto/i }),
     ).toBeInTheDocument();

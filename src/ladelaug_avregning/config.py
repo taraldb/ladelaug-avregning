@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, model_validator
 
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 _SECRET_KEY_ENV = "LADELAUG_SECRET_KEY"
+_TRUSTED_PROXIES_ENV = "LADELAUG_TRUSTED_PROXIES"
 _ZAPTEC_PASSWORD_ENV = "ZAPTEC_PASSWORD"
 _ZAPTEC_CAPTURE_DIR_ENV = "ZAPTEC_CAPTURE_DIR"
 _GMAIL_CLIENT_ID_ENV = "GMAIL_CLIENT_ID"
@@ -30,6 +31,12 @@ class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8080
     static_dir: str = "frontend/dist"
+    # Which client addresses uvicorn will trust X-Forwarded-* headers from. This
+    # must be the reverse proxy's address (or CIDR), never "*": a wildcard lets
+    # any client spoof its IP, which defeats the login rate limiter and forges
+    # audit-log IPs. Comma-separated list. Also settable via
+    # LADELAUG_TRUSTED_PROXIES.
+    trusted_proxies: str = "127.0.0.1"
 
 
 class DatabaseConfig(BaseModel):
@@ -47,6 +54,12 @@ class AuthConfig(BaseModel):
     cookie_name: str = "ladelaug_session"
     login_max_attempts: int = 5
     login_window_seconds: int = 900
+    # Throttle for the passwordless flows (magic-link, password reset): caps per
+    # normalised email and per client IP within a rolling window. Over the cap
+    # the endpoint still returns {"ok": true} but sends nothing.
+    request_max_per_email: int = 5
+    request_max_per_ip: int = 20
+    request_window_seconds: int = 3600
     argon2_time_cost: int = 3
     argon2_memory_cost_kib: int = 65536
     argon2_parallelism: int = 2
@@ -141,6 +154,20 @@ class AppConfig(BaseModel):
         env_secret = os.environ.get(_SECRET_KEY_ENV, "").strip()
         if env_secret:
             self.auth.secret_key = env_secret
+
+        env_trusted = os.environ.get(_TRUSTED_PROXIES_ENV, "").strip()
+        if env_trusted:
+            self.server.trusted_proxies = env_trusted
+        if not self.server.trusted_proxies.strip():
+            problems.append(
+                "server.trusted_proxies is empty — set it to the reverse-proxy address/CIDR "
+                f"in config.yaml or the {_TRUSTED_PROXIES_ENV} environment variable"
+            )
+        elif self.server.trusted_proxies.strip() == "*":
+            problems.append(
+                "server.trusted_proxies is '*' — a wildcard lets any client spoof its IP; "
+                "set it to the reverse-proxy address/CIDR"
+            )
         if not self.auth.secret_key.strip():
             problems.append(
                 f"auth.secret_key is empty — set it in config.yaml or the {_SECRET_KEY_ENV} "
@@ -208,6 +235,12 @@ class AppConfig(BaseModel):
             problems.append("auth.login_max_attempts must be >= 1")
         if a.login_window_seconds < 1:
             problems.append("auth.login_window_seconds must be >= 1")
+        if a.request_max_per_email < 1:
+            problems.append("auth.request_max_per_email must be >= 1")
+        if a.request_max_per_ip < 1:
+            problems.append("auth.request_max_per_ip must be >= 1")
+        if a.request_window_seconds < 1:
+            problems.append("auth.request_window_seconds must be >= 1")
 
         if problems:
             raise ValueError("Invalid configuration:\n  - " + "\n  - ".join(problems))

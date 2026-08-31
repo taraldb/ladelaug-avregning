@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from ladelaug_avregning import security
 
 FETCH = {"X-Requested-With": "fetch"}
@@ -74,6 +76,51 @@ def test_rate_limit_returns_429_before_argon2(client, seed_user_sync, monkeypatc
     assert blocked.status_code == 429
     assert "retry-after" in {k.lower() for k in blocked.headers}
     assert calls["n"] == calls_after_five  # argon2 not touched on the blocked attempt
+
+
+def test_rate_limit_lockout_is_audited(client, db, seed_user_sync):
+    seed_user_sync(email="admin@example.com", password="changeme123")
+    for _ in range(5):
+        _login(client, "admin@example.com", "wrong-password")
+    assert _login(client, "admin@example.com", "wrong-password").status_code == 429
+    assert _count(db, "user.sign_in_blocked") == 1
+
+
+def test_failed_magic_link_consume_is_audited(client, db):
+    resp = client.post(
+        "/api/auth/magic-link/consume", json={"token": "bogus"}, headers=FETCH
+    )
+    assert resp.status_code == 422
+    assert _count(db, "auth.magic_link_failed") == 1
+
+
+def test_failed_password_reset_consume_is_audited(client, db):
+    resp = client.post(
+        "/api/auth/password-reset/consume",
+        json={"token": "bogus", "password": "longenough1"},
+        headers=FETCH,
+    )
+    assert resp.status_code == 422
+    assert _count(db, "auth.password_reset_failed") == 1
+
+
+def test_disabled_mid_session_is_audited(client, db, seed_user_sync, make_session, config):
+    uid = seed_user_sync(email="kari@example.com", role="admin")
+    client.cookies.set(config.auth.cookie_name, make_session(uid))
+    assert client.get("/api/auth/me").status_code == 200
+
+    raw = sqlite3.connect(config.database.path)
+    try:
+        raw.execute("UPDATE users SET disabled = 1 WHERE id = ?", (uid,))
+        raw.commit()
+    finally:
+        raw.close()
+
+    assert client.get("/api/auth/me").status_code == 401
+    assert _count(db, "user.session_revoked_disabled") == 1
+    # session is gone now — a further request does not write another row
+    assert client.get("/api/auth/me").status_code == 401
+    assert _count(db, "user.session_revoked_disabled") == 1
 
 
 def test_logout_revokes_the_session(client, seed_user_sync):

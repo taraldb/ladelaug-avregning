@@ -41,3 +41,32 @@ def test_unknown_event_id_is_404(admin_client):
 
 def test_invalid_sort_by_is_422(admin_client):
     assert admin_client.get("/api/audit-events", params={"sort_by": "ip"}).status_code == 422
+
+
+def test_filter_by_actor_substring(admin_client):
+    admin_client.post(
+        "/api/auth/login", json={"email": "mallory@evil.test", "password": "nope"}, headers=FETCH
+    )
+    events = admin_client.get(
+        "/api/audit-events", params={"actor": "mallory@evil.test"}
+    ).json()["events"]
+    assert events and all("mallory@evil.test" in e["actor_label"] for e in events)
+
+
+def test_csv_export_member_forbidden(member_client):
+    assert member_client.get("/api/audit-events/export.csv").status_code == 403
+
+
+def test_csv_export_admin_streams_rows(admin_client):
+    admin_client.post(
+        "/api/members",
+        json={"member_reference": "M-9", "full_name": "Ola", "join_date": "2026-01-01"},
+        headers=FETCH,
+    )
+    resp = admin_client.get("/api/audit-events/export.csv")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    assert "revisjonslogg.csv" in resp.headers["content-disposition"]
+    lines = resp.text.strip().splitlines()
+    assert lines[0].startswith("id,occurred_at,actor_label,actor_role")
+    assert any("member.created" in ln for ln in lines[1:])

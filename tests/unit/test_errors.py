@@ -3,7 +3,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-import ladelaug_avregning
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.errors import (
@@ -95,5 +94,6 @@ def test_health_endpoint(tmp_path, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["version"] == ladelaug_avregning.__version__
+    # The unauthenticated probe must not leak the version.
+    assert "version" not in body
     db.close()

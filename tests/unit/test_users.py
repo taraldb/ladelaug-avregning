@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 import yaml
 
@@ -165,6 +167,23 @@ def test_bootstrap_admin_runs_once(config):
         sep.close()
     assert count == 1
     assert role == "admin"
+
+
+@pytest.mark.parametrize("password", ["short", "change-me-pls", "CHANGE-ME-PLS", "password"])
+def test_bootstrap_admin_refuses_weak_password(config, caplog, password):
+    config.bootstrap_admin.email = "boot@example.com"
+    config.bootstrap_admin.password = password
+
+    with caplog.at_level(logging.WARNING):
+        _bootstrap_admin(config)
+
+    sep = Database(config.database.path, migrations_dir=MIGRATIONS_DIR)
+    try:
+        count = sep.connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    finally:
+        sep.close()
+    assert count == 0
+    assert "known-weak" in caplog.text
 
 
 @pytest.fixture

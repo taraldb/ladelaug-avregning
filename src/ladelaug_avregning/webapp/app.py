@@ -14,6 +14,7 @@ from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.errors import register_exception_handlers
 from ladelaug_avregning.scheduler import runner as scheduler_runner
+from ladelaug_avregning.webapp.middleware import SecurityHeadersMiddleware
 from ladelaug_avregning.webapp.routes import (
     access,
     audit,
@@ -68,6 +69,7 @@ def create_app(config: AppConfig, db: Database) -> FastAPI:
     app.state.config = config
     app.state.db = db
 
+    app.add_middleware(SecurityHeadersMiddleware, config=config)
     register_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(auth.router)

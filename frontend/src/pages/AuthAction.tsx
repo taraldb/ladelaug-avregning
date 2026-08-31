@@ -4,13 +4,35 @@ import { ApiError, consumeMagicLink, consumePasswordReset } from "../api/client"
 import { useAuth } from "../auth/AuthContext";
 
 /** Handles the two token-in-URL flows:
- *  - `/auth/magic-link?token=…`  → consume, then land signed in
- *  - `/auth/reset?token=…`       → show a new-password form
+ *  - `/auth/magic-link#token=…`  → consume, then land signed in
+ *  - `/auth/reset#token=…`       → show a new-password form
+ *
+ * The token rides in the URL *fragment*, not the query string, so it is never
+ * sent to the server, a proxy, or in a `Referer` header. Links mailed before
+ * this change used `?token=…`; that form is still accepted as a fallback. The
+ * fragment is wiped from the address bar as soon as it is read.
  */
+function readToken(search: URLSearchParams): string {
+  const rawHash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : "";
+  return new URLSearchParams(rawHash).get("token") ?? search.get("token") ?? "";
+}
+
 export default function AuthAction({ mode }: { mode: "magic-link" | "reset" }) {
   const [params] = useSearchParams();
-  const token = params.get("token") ?? "";
+  const [token] = useState(() => readToken(params));
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (window.location.hash.includes("token=")) {
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
+    }
+  }, []);
   const { user, refresh } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState("");

@@ -60,3 +60,55 @@ class LoginRateLimiter:
                 "DELETE FROM login_attempts WHERE occurred_at < ?",
                 ((now - _SWEEP_AGE).isoformat(),),
             )
+
+
+class RequestRateLimiter:
+    """Throttle for the passwordless flows (magic-link sign-in, password reset).
+
+    Unlike ``LoginRateLimiter`` it does not weigh success vs failure — every
+    issuance request counts — and it is meant to be checked *before* the account
+    lookup, so being throttled never reveals whether an email is registered.
+    Two independent caps: per normalised email and per client IP.
+    """
+
+    def __init__(
+        self, db: Database, *, max_per_email: int, max_per_ip: int, window_seconds: int
+    ) -> None:
+        self._db = db
+        self._max_per_email = max_per_email
+        self._max_per_ip = max_per_ip
+        self._window = timedelta(seconds=window_seconds)
+
+    def over_limit(
+        self, scope: str, email_key: str, ip: str, *, now: datetime | None = None
+    ) -> bool:
+        now = now or clock.now_utc()
+        window_start = (now - self._window).isoformat()
+        by_email = self._db.connection.execute(
+            "SELECT COUNT(*) FROM auth_request_attempts "
+            "WHERE scope = ? AND email_key = ? AND occurred_at >= ?",
+            (scope, email_key, window_start),
+        ).fetchone()[0]
+        if by_email >= self._max_per_email:
+            return True
+        by_ip = self._db.connection.execute(
+            "SELECT COUNT(*) FROM auth_request_attempts "
+            "WHERE scope = ? AND ip = ? AND occurred_at >= ?",
+            (scope, ip, window_start),
+        ).fetchone()[0]
+        return bool(by_ip >= self._max_per_ip)
+
+    async def record(
+        self, scope: str, email_key: str, ip: str, *, now: datetime | None = None
+    ) -> None:
+        now = now or clock.now_utc()
+        async with self._db._write() as cur:
+            cur.execute(
+                "INSERT INTO auth_request_attempts (scope, email_key, ip, occurred_at) "
+                "VALUES (?, ?, ?, ?)",
+                (scope, email_key, ip, now.isoformat()),
+            )
+            cur.execute(
+                "DELETE FROM auth_request_attempts WHERE occurred_at < ?",
+                ((now - _SWEEP_AGE).isoformat(),),
+            )

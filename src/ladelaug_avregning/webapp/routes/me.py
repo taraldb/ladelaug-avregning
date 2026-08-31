@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
+from ladelaug_avregning.audit import AuditContext, record_audit
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain import periods
@@ -24,7 +25,12 @@ from ladelaug_avregning.domain.settlement import SettlementRepo
 from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.money import nok_to_ore
 from ladelaug_avregning.reports import html_to_pdf, render_member_report
-from ladelaug_avregning.webapp.deps import get_config, get_current_member, get_db
+from ladelaug_avregning.webapp.deps import (
+    get_audit_context,
+    get_config,
+    get_current_member,
+    get_db,
+)
 from ladelaug_avregning.webapp.schemas import (
     LedgerTxnOut,
     MemberConsumptionOut,
@@ -191,6 +197,7 @@ async def my_settlement_invoice(
     member_id: int = Depends(get_current_member),
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
 ) -> FileResponse:
     repo = SettlementRepo(db, tz=config.timezone)
     _my_settlement_or_403(repo, settlement_id, member_id)
@@ -198,6 +205,15 @@ async def my_settlement_invoice(
     path = repo.attachment_file(settlement_id, attachment_id)
     if row is None or path is None:
         raise NotFoundError(f"attachment {attachment_id} not found")
+    await record_audit(
+        db,
+        actor,
+        event_type="settlement.invoice_downloaded",
+        entity_type="settlement",
+        entity_id=settlement_id,
+        summary=f"Member downloaded invoice {row['filename']!r} for settlement {settlement_id}",
+        detail={"member_id": member_id, "attachment_id": attachment_id},
+    )
     return FileResponse(path, media_type="application/pdf", filename=row["filename"])
 
 
@@ -217,8 +233,18 @@ async def my_settlement_report_pdf(
     member_id: int = Depends(get_current_member),
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
 ) -> Response:
     html = _my_report_html(settlement_id, member_id, db, config)
+    await record_audit(
+        db,
+        actor,
+        event_type="settlement.report_downloaded",
+        entity_type="settlement",
+        entity_id=settlement_id,
+        summary=f"Member downloaded the PDF report for settlement {settlement_id}",
+        detail={"member_id": member_id},
+    )
     return Response(
         content=html_to_pdf(html),
         media_type="application/pdf",

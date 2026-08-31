@@ -64,7 +64,7 @@ multiple invoice attachments per settlement (`settlement_attachments`).
   seasonality) of each member's next-month kWh and cost, a recommended minimum
   balance (`cost × buffer_months`, default 2), and a recommended top-up.
   Tunables (`rate_override_ore_per_kwh`, `buffer_months`, `notify_cooldown_days`,
-  `lookback_settlements`) live in a DB row an admin edits at `/forecast` — no
+  `lookback_settlements`) live in a DB row an admin edits at `/prognose` — no
   redeploy. `GET /api/me/forecast`, `GET /api/forecast/settings|members`.
 - **Current-month consumption** — `GET /api/me/consumption?month=` shows metered
   kWh + session count for the running month, before any settlement exists.
@@ -232,7 +232,7 @@ supplied via the `LADELAUG_SECRET_KEY` environment variable (or a `.env` file) �
 **Forecast tunables are not in `config.yaml`** — `rate_override_ore_per_kwh`
 (blank = derive from history), `buffer_months` (`2.0`), `notify_cooldown_days`
 (`14`), and `lookback_settlements` (`3`) live in the `forecast_settings` DB row
-and are edited by an admin at `/forecast` (or `PUT /api/forecast/settings`), so
+and are edited by an admin at `/prognose` (or `PUT /api/forecast/settings`), so
 they change without a restart.
 
 ### Background jobs

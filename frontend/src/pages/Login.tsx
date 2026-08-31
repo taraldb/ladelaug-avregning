@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { ApiError, requestMagicLink, requestPasswordReset } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { ROUTES } from "../routes";
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -31,7 +32,8 @@ export default function Login() {
   }
 
   if (user) {
-    return <Navigate to={user.role === "admin" ? "/" : "/my-account"} replace />;
+    // The site root decides where each role lands.
+    return <Navigate to={ROUTES.home} replace />;
   }
 
   async function onSubmit(e: FormEvent) {
@@ -39,8 +41,8 @@ export default function Login() {
     setError(null);
     setSubmitting(true);
     try {
-      const me = await login(email.trim(), password);
-      navigate(me.role === "admin" ? "/" : "/my-account", { replace: true });
+      await login(email.trim(), password);
+      navigate(ROUTES.home, { replace: true });
     } catch (err) {
       setError(
         err instanceof ApiError

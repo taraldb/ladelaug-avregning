@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import useSWR from "swr";
+import { ROUTES } from "../routes";
 import {
   ApiError,
   createSettlementDraft,
@@ -49,7 +50,7 @@ export default function Settlements() {
     try {
       const { settlement } = await createSettlementDraft(month);
       await mutate();
-      navigate(`/settlements/${settlement.id}`);
+      navigate(ROUTES.settlementDetail(settlement.id));
     } catch (err) {
       setFormError(
         err instanceof ApiError ? err.message : "Kunne ikke opprette avregning.",
@@ -99,7 +100,7 @@ export default function Settlements() {
           columns={columns}
           rows={data?.settlements ?? []}
           rowKey={(s) => s.id}
-          onRowClick={(s) => navigate(`/settlements/${s.id}`)}
+          onRowClick={(s) => navigate(ROUTES.settlementDetail(s.id))}
           empty="Ingen avregninger ennå"
         />
       )}

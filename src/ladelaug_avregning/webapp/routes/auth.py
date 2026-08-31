@@ -19,11 +19,11 @@ from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.auth_tokens import AuthTokenRepo
 from ladelaug_avregning.domain.notifications import NotificationRepo
-from ladelaug_avregning.domain.rate_limit import LoginRateLimiter
+from ladelaug_avregning.domain.rate_limit import LoginRateLimiter, RequestRateLimiter
 from ladelaug_avregning.domain.sessions import SessionRepo
 from ladelaug_avregning.domain.users import UserRepo
 from ladelaug_avregning.email.sender import build_sender
-from ladelaug_avregning.errors import AuthError
+from ladelaug_avregning.errors import AuthError, DomainError, RateLimitError
 from ladelaug_avregning.webapp.deps import get_config, get_current_user, get_db, require_fetch
 from ladelaug_avregning.webapp.schemas import (
     EmailRequest,
@@ -51,6 +51,39 @@ async def _deliver_now(db: Database, config: AppConfig, message_id: int) -> None
         await NotificationRepo(db).send_now(sender, message_id=message_id)
     except Exception:  # delivery must never break the sign-in request
         log.warning("immediate email delivery failed for message %s", message_id, exc_info=True)
+
+
+async def _passwordless_request_throttled(
+    db: Database, config: AppConfig, request: Request, *, scope: str, email: str
+) -> bool:
+    """Shared gate for the magic-link / password-reset issuance endpoints.
+
+    Checked before the account lookup so a throttled caller cannot tell whether
+    the address is registered. Returns True when the request should be dropped
+    (the caller still replies ``{"ok": true}``); otherwise records the attempt.
+    """
+    auth = config.auth
+    ip = _client_ip(request)
+    email_key = email.strip().lower()
+    limiter = RequestRateLimiter(
+        db,
+        max_per_email=auth.request_max_per_email,
+        max_per_ip=auth.request_max_per_ip,
+        window_seconds=auth.request_window_seconds,
+    )
+    if limiter.over_limit(scope, email_key, ip):
+        await record_audit(
+            db,
+            AuditContext(actor_user_id=None, actor_label=email, ip=ip),
+            event_type="auth.request_throttled",
+            entity_type="user",
+            entity_id=None,
+            summary=f"{scope} request throttled for {email}",
+            detail={"scope": scope},
+        )
+        return True
+    await limiter.record(scope, email_key, ip)
+    return False
 
 
 async def _start_session(
@@ -90,9 +123,25 @@ async def login(
     limiter = LoginRateLimiter(
         db, max_attempts=auth.login_max_attempts, window_seconds=auth.login_window_seconds
     )
-    limiter.check(email_normalized, ip)  # -> 429 (before any argon2 work)
-
     users = UserRepo(db)
+    try:
+        limiter.check(email_normalized, ip)  # -> 429 (before any argon2 work)
+    except RateLimitError:
+        blocked = users.get_by_email(email_normalized)
+        await record_audit(
+            db,
+            AuditContext(
+                actor_user_id=blocked["id"] if blocked else None,
+                actor_label=body.email,
+                ip=ip,
+            ),
+            event_type="user.sign_in_blocked",
+            entity_type="user",
+            entity_id=blocked["id"] if blocked else None,
+            summary=f"Sign-in blocked by rate limit for {body.email}",
+        )
+        raise
+
     user = users.get_by_email(email_normalized)
     ctx = AuditContext(actor_user_id=user["id"] if user else None, actor_label=body.email, ip=ip)
 
@@ -196,6 +245,10 @@ async def request_magic_link(
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
 ) -> dict[str, Any]:
+    if await _passwordless_request_throttled(
+        db, config, request, scope="magic_link", email=body.email
+    ):
+        return {"ok": True}
     user = UserRepo(db).get_by_email(body.email)
     if user and not user["disabled"] and user["email"]:
         token = await AuthTokenRepo(db).issue(
@@ -204,7 +257,9 @@ async def request_magic_link(
             ttl_minutes=config.email.magic_link_ttl_minutes,
             ip=_client_ip(request),
         )
-        link = f"{config.email.base_url.rstrip('/')}/auth/magic-link?token={token}"
+        # Token in the URL fragment, not the query string: it is never sent to
+        # the server, a proxy, or in a Referer header.
+        link = f"{config.email.base_url.rstrip('/')}/auth/magic-link#token={token}"
         message_id = await NotificationRepo(db).enqueue(
             to_address=user["email"],
             subject="Innloggingslenke – ladelaug",
@@ -239,9 +294,35 @@ async def consume_magic_link(
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
 ) -> dict[str, Any]:
-    user_id = await AuthTokenRepo(db).consume(token=body.token, kind="magic_link")
+    ip = _client_ip(request)
+    try:
+        user_id = await AuthTokenRepo(db).consume(token=body.token, kind="magic_link")
+    except DomainError as exc:
+        await record_audit(
+            db,
+            AuditContext(actor_user_id=None, actor_label="unknown", ip=ip),
+            event_type="auth.magic_link_failed",
+            entity_type="user",
+            entity_id=None,
+            summary=f"Magic-link consume failed ({exc.code})",
+            detail={"reason": exc.code},
+        )
+        raise
     user = UserRepo(db).get(user_id)
     if user is None or user["disabled"]:
+        await record_audit(
+            db,
+            AuditContext(
+                actor_user_id=user_id,
+                actor_label=user["email"] if user else "unknown",
+                ip=ip,
+            ),
+            event_type="auth.magic_link_failed",
+            entity_type="user",
+            entity_id=user_id,
+            summary="Magic-link consume rejected: account missing or disabled",
+            detail={"reason": "disabled_or_missing"},
+        )
         raise AuthError("This link is no longer valid", status=401)
     await _start_session(db, config, request, response, user_id)
     ctx = AuditContext(actor_user_id=user_id, actor_label=user["email"], ip=_client_ip(request))
@@ -271,6 +352,10 @@ async def request_password_reset(
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
 ) -> dict[str, Any]:
+    if await _passwordless_request_throttled(
+        db, config, request, scope="password_reset", email=body.email
+    ):
+        return {"ok": True}
     user = UserRepo(db).get_by_email(body.email)
     if user and not user["disabled"] and user["email"]:
         token = await AuthTokenRepo(db).issue(
@@ -279,7 +364,7 @@ async def request_password_reset(
             ttl_minutes=config.email.password_reset_ttl_minutes,
             ip=_client_ip(request),
         )
-        link = f"{config.email.base_url.rstrip('/')}/auth/reset?token={token}"
+        link = f"{config.email.base_url.rstrip('/')}/auth/reset#token={token}"
         message_id = await NotificationRepo(db).enqueue(
             to_address=user["email"],
             subject="Tilbakestill passord – ladelaug",
@@ -315,11 +400,37 @@ async def consume_password_reset(
 ) -> dict[str, Any]:
     auth = config.auth
     argon2 = (auth.argon2_time_cost, auth.argon2_memory_cost_kib, auth.argon2_parallelism)
-    user_id = await AuthTokenRepo(db).consume(token=body.token, kind="password_reset")
+    ip = _client_ip(request)
+    try:
+        user_id = await AuthTokenRepo(db).consume(token=body.token, kind="password_reset")
+    except DomainError as exc:
+        await record_audit(
+            db,
+            AuditContext(actor_user_id=None, actor_label="unknown", ip=ip),
+            event_type="auth.password_reset_failed",
+            entity_type="user",
+            entity_id=None,
+            summary=f"Password-reset consume failed ({exc.code})",
+            detail={"reason": exc.code},
+        )
+        raise
     user = UserRepo(db).get(user_id)
     if user is None or user["disabled"]:
+        await record_audit(
+            db,
+            AuditContext(
+                actor_user_id=user_id,
+                actor_label=user["email"] if user else "unknown",
+                ip=ip,
+            ),
+            event_type="auth.password_reset_failed",
+            entity_type="user",
+            entity_id=user_id,
+            summary="Password-reset consume rejected: account missing or disabled",
+            detail={"reason": "disabled_or_missing"},
+        )
         raise AuthError("This link is no longer valid", status=401)
-    ctx = AuditContext(actor_user_id=user_id, actor_label=user["email"], ip=_client_ip(request))
+    ctx = AuditContext(actor_user_id=user_id, actor_label=user["email"], ip=ip)
     await UserRepo(db).set_password(user_id, body.password, actor=ctx, argon2=argon2)
     await SessionRepo(db).revoke_all_for_user(user_id)
     await record_audit(

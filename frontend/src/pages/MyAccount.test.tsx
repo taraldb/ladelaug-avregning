@@ -26,7 +26,7 @@ describe("MyAccount (member portal)", () => {
       amount_nok: "1500.00",
     });
 
-    renderApp(<AppRouter />, { route: "/my-account" });
+    renderApp(<AppRouter />, { route: "/" });
 
     expect(await screen.findByText(/1\s?500,00\s?kr/)).toBeInTheDocument();
     expect(screen.getByText("Innbetaling")).toBeInTheDocument();
@@ -39,7 +39,7 @@ describe("MyAccount (member portal)", () => {
     seedMember({ id: memberId });
     const s = seedMySettlement({ period_month: "2026-07" });
 
-    renderApp(<AppRouter />, { route: "/my-account" });
+    renderApp(<AppRouter />, { route: "/" });
 
     expect(await screen.findByText(/2026-07/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Rapport" })).toHaveAttribute(
@@ -67,7 +67,7 @@ describe("MyAccount (member portal)", () => {
       session_count: 6,
     });
 
-    renderApp(<AppRouter />, { route: "/my-account" });
+    renderApp(<AppRouter />, { route: "/" });
 
     expect(
       await screen.findByRole("heading", { name: "Prognose neste måned" }),
@@ -87,7 +87,7 @@ describe("MyAccount (member portal)", () => {
     seedMember({ id: memberId });
     seedLowBalanceForecast(memberId, "critical");
 
-    renderApp(<AppRouter />, { route: "/my-account" });
+    renderApp(<AppRouter />, { route: "/" });
 
     const banner = await screen.findByRole("alert");
     expect(banner).toHaveTextContent("Lav saldo");
@@ -100,7 +100,7 @@ describe("MyAccount (member portal)", () => {
     const memberId = MEMBER_USER.member_id ?? 7;
     seedMember({ id: memberId });
 
-    renderApp(<AppRouter />, { route: "/my-account" });
+    renderApp(<AppRouter />, { route: "/" });
 
     expect(
       await screen.findByText(/Ikke nok historikk til å lage en prognose ennå\./),
@@ -113,7 +113,7 @@ describe("MyAccount (member portal)", () => {
     seedMember({ id: memberId });
     seedAccessStatus("disabled");
 
-    renderApp(<AppRouter />, { route: "/my-account" });
+    renderApp(<AppRouter />, { route: "/" });
 
     const alert = await screen.findByText("Ladetilgang stengt");
     expect(alert).toBeInTheDocument();
@@ -122,19 +122,22 @@ describe("MyAccount (member portal)", () => {
     ).toHaveAttribute("href", "https://portal.zaptec.com");
   });
 
-  it("shows an empty state for an admin with no linked member", async () => {
+  it("sends an admin who lands on the root to the members list", async () => {
     setSession(ADMIN_USER);
-    renderApp(<AppRouter />, { route: "/my-account" });
+    renderApp(<AppRouter />, { route: "/" });
 
     expect(
-      await screen.findByText(/ikke knyttet til et medlem/i),
+      await screen.findByRole("heading", { name: /medlemmer/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /min konto/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not show a My-account nav link for an admin", async () => {
     setSession(ADMIN_USER);
     seedMember({ id: 1 });
-    renderApp(<AppRouter />, { route: "/members" });
+    renderApp(<AppRouter />, { route: "/medlemmer" });
 
     await screen.findByRole("heading", { name: /medlemmer/i });
     expect(

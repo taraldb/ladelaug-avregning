@@ -8,7 +8,7 @@ describe("MemberDetail (admin)", () => {
   it("records a status change and renders the new timeline entry", async () => {
     setSession(ADMIN_USER);
     seedMember({ id: 42, member_reference: "M-42", status: "active" });
-    const { user } = renderApp(<AppRouter />, { route: "/members/42" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer/42" });
 
     await screen.findByRole("heading", { name: "Status" });
 
@@ -22,7 +22,7 @@ describe("MemberDetail (admin)", () => {
   it("surfaces a 422 status_unchanged message", async () => {
     setSession(ADMIN_USER);
     seedMember({ id: 44, status: "active" });
-    const { user } = renderApp(<AppRouter />, { route: "/members/44" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer/44" });
 
     await screen.findByRole("heading", { name: "Status" });
     await user.selectOptions(screen.getByLabelText("Ny status"), "active");
@@ -36,7 +36,7 @@ describe("MemberDetail (admin)", () => {
   it("creates a login for a member that has none", async () => {
     setSession(ADMIN_USER);
     seedMember({ id: 60, member_reference: "M-60", full_name: "Radia Perlman" });
-    const { user } = renderApp(<AppRouter />, { route: "/members/60" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer/60" });
 
     const card = (
       await screen.findByRole("heading", { name: "Pålogging" })
@@ -61,7 +61,7 @@ describe("MemberDetail (admin)", () => {
       amount_ore: 100000,
       amount_nok: "1000.00",
     });
-    const { user } = renderApp(<AppRouter />, { route: "/members/70" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer/70" });
 
     await user.click(await screen.findByRole("button", { name: "Refusjon" }));
     // comma decimal separator is accepted (normalised before the API call)
@@ -75,7 +75,7 @@ describe("MemberDetail (admin)", () => {
   it("records a charging-access warning", async () => {
     setSession(ADMIN_USER);
     seedMember({ id: 71, member_reference: "M-71" });
-    const { user } = renderApp(<AppRouter />, { route: "/members/71" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer/71" });
 
     const heading = await screen.findByRole("heading", { name: "Ladetilgang" });
     const card = heading.closest("div")!;
@@ -89,7 +89,7 @@ describe("MemberDetail (admin)", () => {
   it("runs a departure check and processes the departure", async () => {
     setSession(ADMIN_USER);
     seedMember({ id: 72, member_reference: "M-72" });
-    const { user } = renderApp(<AppRouter />, { route: "/members/72" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer/72" });
 
     const heading = await screen.findByRole("heading", { name: "Utmelding" });
     const card = heading.closest("div")!;
@@ -102,7 +102,7 @@ describe("MemberDetail (admin)", () => {
   it("persists a participation change in the re-rendered history", async () => {
     setSession(ADMIN_USER);
     seedMember({ id: 43, participates: true });
-    const { user } = renderApp(<AppRouter />, { route: "/members/43" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer/43" });
 
     await screen.findByRole("heading", { name: "Deltakelse i avregning" });
 

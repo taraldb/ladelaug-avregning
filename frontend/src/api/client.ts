@@ -289,12 +289,14 @@ export interface AuditEvent {
   occurred_at: string;
   actor_user_id: number | null;
   actor_label: string;
+  actor_role: string | null;
   event_type: string;
   entity_type: string;
   entity_id: string | null;
   summary: string;
   detail: Record<string, unknown> | null;
   ip: string | null;
+  user_agent: string | null;
 }
 
 export type AuditSortColumn = "occurred_at" | "id" | "event_type";
@@ -541,24 +543,49 @@ export function listLedgerTransactions(
 
 // --- audit log (admin) -------------------------------------------
 
-export function listAuditEvents(params: {
+export interface AuditFilter {
   eventType?: string | null;
   entityType?: string | null;
   entityId?: string | null;
-  sortBy?: AuditSortColumn;
-  sortDir?: SortDir;
-  limit?: number;
-  offset?: number;
-}): Promise<AuditEventsResponse> {
+  actor?: string | null;
+  occurredFrom?: string | null;
+  occurredTo?: string | null;
+}
+
+function auditFilterParams(params: AuditFilter): URLSearchParams {
   const qs = new URLSearchParams();
   if (params.eventType) qs.set("event_type", params.eventType);
   if (params.entityType) qs.set("entity_type", params.entityType);
   if (params.entityId) qs.set("entity_id", params.entityId);
+  if (params.actor) qs.set("actor", params.actor);
+  if (params.occurredFrom) qs.set("occurred_from", params.occurredFrom);
+  if (params.occurredTo) qs.set("occurred_to", params.occurredTo);
+  return qs;
+}
+
+export function listAuditEvents(
+  params: AuditFilter & {
+    sortBy?: AuditSortColumn;
+    sortDir?: SortDir;
+    limit?: number;
+    offset?: number;
+  },
+): Promise<AuditEventsResponse> {
+  const qs = auditFilterParams(params);
   if (params.sortBy) qs.set("sort_by", params.sortBy);
   if (params.sortDir) qs.set("sort_dir", params.sortDir);
   qs.set("limit", String(params.limit ?? 50));
   qs.set("offset", String(params.offset ?? 0));
   return get<AuditEventsResponse>(`/api/audit-events?${qs.toString()}`);
+}
+
+export function getAuditEvent(id: number): Promise<{ event: AuditEvent }> {
+  return get<{ event: AuditEvent }>(`/api/audit-events/${id}`);
+}
+
+export function auditEventsCsvUrl(params: AuditFilter): string {
+  const qs = auditFilterParams(params).toString();
+  return `/api/audit-events/export.csv${qs ? `?${qs}` : ""}`;
 }
 
 // --- member self-service -----------------------------------------

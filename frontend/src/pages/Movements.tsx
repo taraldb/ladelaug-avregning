@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import useSWR from "swr";
+import { ROUTES } from "../routes";
 import {
   listLedgerTransactions,
   listMembers,
@@ -29,7 +30,7 @@ const columns: Column<LedgerTxnRow>[] = [
     header: "Medlem",
     render: (t) => (
       <Link
-        to={`/members/${t.member_id}`}
+        to={ROUTES.memberDetail(t.member_id)}
         className="text-emerald-400 hover:underline"
         onClick={(e) => e.stopPropagation()}
       >

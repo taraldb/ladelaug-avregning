@@ -228,3 +228,59 @@ def test_reset_consume_rejects_short_password(client, db, seed_user_sync):
 
 def test_auth_token_routes_need_fetch_header(client):
     assert client.post("/api/auth/magic-link", json={"email": "a@example.com"}).status_code == 403
+
+
+def _count(db, sql, *params):
+    return db.connection.execute(sql, params).fetchone()[0]
+
+
+def test_magic_link_issuance_is_rate_limited(client, db, seed_user_sync):
+    seed_user_sync(email="kari@example.com", role="member")
+    for _ in range(5):  # auth.request_max_per_email default
+        assert (
+            client.post(
+                "/api/auth/magic-link", json={"email": "kari@example.com"}, headers=FETCH
+            ).status_code
+            == 200
+        )
+    tokens = _count(db, "SELECT COUNT(*) FROM auth_tokens")
+    emails = _count(db, "SELECT COUNT(*) FROM email_messages")
+
+    resp = client.post("/api/auth/magic-link", json={"email": "kari@example.com"}, headers=FETCH)
+    assert resp.status_code == 200 and resp.json() == {"ok": True}
+    # nothing new issued or sent once over the cap
+    assert _count(db, "SELECT COUNT(*) FROM auth_tokens") == tokens
+    assert _count(db, "SELECT COUNT(*) FROM email_messages") == emails
+    assert (
+        _count(
+            db, "SELECT COUNT(*) FROM audit_events WHERE event_type = 'auth.request_throttled'"
+        )
+        == 1
+    )
+
+
+def test_reset_issuance_rate_limit_is_independent_of_magic_link(client, db, seed_user_sync):
+    seed_user_sync(email="kari@example.com", role="member", password="oldpassword12")
+    for _ in range(5):
+        client.post("/api/auth/magic-link", json={"email": "kari@example.com"}, headers=FETCH)
+    # magic-link scope is now exhausted; password-reset scope is untouched
+    resp = client.post(
+        "/api/auth/password-reset/request", json={"email": "kari@example.com"}, headers=FETCH
+    )
+    assert resp.status_code == 200
+    assert _last_email(db, "password_reset")["status"] == "sent"
+
+
+def test_issuance_throttle_does_not_enumerate(client, db):
+    # An unknown address that trips the cap behaves exactly like a known one:
+    # always {"ok": true}, and a throttle audit row with no actor_user_id.
+    for _ in range(6):
+        resp = client.post(
+            "/api/auth/magic-link", json={"email": "ghost@example.com"}, headers=FETCH
+        )
+        assert resp.status_code == 200 and resp.json() == {"ok": True}
+    row = db.connection.execute(
+        "SELECT actor_user_id, actor_label FROM audit_events "
+        "WHERE event_type = 'auth.request_throttled' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert row["actor_user_id"] is None and row["actor_label"] == "ghost@example.com"

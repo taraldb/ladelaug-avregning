@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 import smtplib
 import ssl
 from datetime import datetime, timedelta
@@ -27,6 +28,14 @@ log = logging.getLogger(__name__)
 
 _GMAIL_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+
+_TOKEN_IN_URL = re.compile(r"([?#]token=)[A-Za-z0-9_-]+")
+
+
+def _redact_tokens(text: str) -> str:
+    """Blank out `?token=…` / `#token=…` so a live sign-in link is not left in
+    the logs by the console backend."""
+    return _TOKEN_IN_URL.sub(r"\1<redacted>", text)
 
 
 def _build_message(
@@ -63,7 +72,9 @@ class EmailSender:
         backend = self._cfg.backend
         msg = _build_message(self._cfg, to=to, subject=subject, text=text, html=html)
         if backend == "console":
-            log.info("[email:console] to=%s subject=%s\n%s", to, subject, text)
+            log.info(
+                "[email:console] to=%s subject=%s\n%s", to, subject, _redact_tokens(text)
+            )
             return
         if backend == "file":
             await anyio.to_thread.run_sync(self._write_eml, to, msg)

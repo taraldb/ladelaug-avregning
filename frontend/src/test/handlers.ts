@@ -242,12 +242,14 @@ export function seedAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent 
     occurred_at: overrides.occurred_at ?? `2024-03-01T10:00:${String(id % 60).padStart(2, "0")}Z`,
     actor_user_id: overrides.actor_user_id ?? 1,
     actor_label: overrides.actor_label ?? "admin@example.com",
+    actor_role: overrides.actor_role ?? "admin",
     event_type: overrides.event_type ?? "member.created",
     entity_type: overrides.entity_type ?? "member",
     entity_id: overrides.entity_id ?? "1",
     summary: overrides.summary ?? "Something happened",
     detail: overrides.detail ?? null,
     ip: overrides.ip ?? null,
+    user_agent: overrides.user_agent ?? null,
   };
   state.audit.push(event);
   return event;
@@ -1122,6 +1124,27 @@ export const handlers = [
       total: events.length,
       counts,
     });
+  }),
+
+  http.get("/api/audit-events/export.csv", () => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const header = "id,occurred_at,actor_label,event_type,summary";
+    const body = state.audit
+      .map((e) => `${e.id},${e.occurred_at},${e.actor_label},${e.event_type},${e.summary}`)
+      .join("\n");
+    return new HttpResponse(`${header}\n${body}\n`, {
+      headers: { "content-type": "text/csv" },
+    });
+  }),
+
+  http.get("/api/audit-events/:id", ({ params }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const event = state.audit.find((e) => e.id === Number(params.id));
+    return event
+      ? HttpResponse.json({ event })
+      : HttpResponse.json(errorBody("not_found", "audit event not found"), { status: 404 });
   }),
 
   // --- member self-service --------------------------------

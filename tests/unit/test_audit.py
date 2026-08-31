@@ -98,3 +98,20 @@ async def test_events_are_immutable(db: Database):
     await _seed(db)
     with pytest.raises(sqlite3.IntegrityError):
         db.connection.execute("UPDATE audit_events SET summary = 'tampered'")
+
+
+async def test_context_captures_ip_user_agent_and_role(db: Database):
+    ctx = AuditContext(
+        actor_user_id=None,
+        actor_label="admin@example.com",
+        ip="10.1.2.3",
+        user_agent="Mozilla/5.0 (pytest)",
+        actor_role="admin",
+    )
+    await record_audit(
+        db, ctx, event_type="member.created", entity_type="member", entity_id=1, summary="x"
+    )
+    row = AuditRepo(db).get_audit_event(1)
+    assert row["ip"] == "10.1.2.3"
+    assert row["user_agent"] == "Mozilla/5.0 (pytest)"
+    assert row["actor_role"] == "admin"

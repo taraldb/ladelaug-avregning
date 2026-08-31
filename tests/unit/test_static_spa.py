@@ -34,7 +34,7 @@ def test_asset_is_served(spa_client):
 
 
 def test_client_side_route_falls_back_to_index(spa_client):
-    resp = spa_client.get("/members/42")
+    resp = spa_client.get("/medlemmer/42")
     assert resp.status_code == 200
     assert "id=root" in resp.text
 

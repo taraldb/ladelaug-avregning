@@ -50,9 +50,10 @@ async def process_queue(
     limit: int = 50,
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
 ) -> dict[str, Any]:
     sender = build_sender(config.email, state_dir=config.state_dir)
-    return await NotificationRepo(db).process_queue(sender, limit=min(limit, 200))
+    return await NotificationRepo(db).process_queue(sender, limit=min(limit, 200), actor=actor)
 
 
 @router.post("/low-balance-scan", dependencies=[Depends(require_fetch)])

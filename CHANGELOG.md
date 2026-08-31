@@ -4,6 +4,38 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Security review pass** — pinned `forwarded_allow_ips` to
+  `server.trusted_proxies` (default `127.0.0.1`; `*` is now rejected) so
+  `X-Forwarded-For` can no longer be spoofed to defeat the login rate limiter;
+  added `SecurityHeadersMiddleware` (CSP with `frame-ancestors 'none'`,
+  `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, and HSTS
+  when `cookie_secure`); rate-limited magic-link / password-reset **issuance**
+  (`auth.request_max_per_email` / `_per_ip` / `_window_seconds`, migration 0012,
+  audited `auth.request_throttled`, still returns `{"ok": true}`); moved the
+  magic-link / reset token from the URL query into the URL **fragment** (`#token=`,
+  never sent to the server or in `Referer`; `?token=` still accepted as a
+  fallback); `_bootstrap_admin` now refuses a short or known-weak password;
+  `GET /api/health` no longer returns the version; the `console` mail backend
+  redacts tokens in its log line. See `SECURITY-REVIEW.md`.
+- **Audit-logging gaps closed** — new events `user.sign_in_blocked`,
+  `auth.magic_link_failed`, `auth.password_reset_failed`,
+  `user.session_revoked_disabled`, `system.job_triggered`,
+  `notifications.queue_processed` / `notifications.email_failed`,
+  `zaptec.installation_synced`, and `settlement.report_downloaded` /
+  `invoice_downloaded` / `attachment_downloaded`. `audit_events` now also stores
+  `user_agent` and `actor_role` (migration 0013). The admin **Revisjonslogg** page
+  gained an expandable per-row detail view (before/after `detail`, `ip`,
+  `user_agent`, `actor_role`), actor + date-range filters, and a CSV export
+  (`GET /api/audit-events/export.csv`). Removed the unused
+  `AuditRepo.insert_audit_event` writer. Retention is deliberately indefinite (no
+  purge job).
+- **Norwegian URL paths** — client routes are now Norwegian and centralised in
+  `frontend/src/routes.ts`: `/medlemmer`, `/brukere`, `/ladere`, `/avregninger`,
+  `/bevegelser`, `/revisjonslogg`, `/prognose` (`/system` unchanged). The member
+  "min side" is the site **root** `/` with no suffix; an admin landing on `/` is
+  redirected to `/medlemmer`. `/login` and `/auth/*` stay English. Settlement
+  report-notification emails now link to `/` instead of `/my-account`. No legacy
+  redirects — old bookmarks resolve to the root.
 - **Sign-in links send immediately** — the magic-link and password-reset request
   endpoints now deliver their email on the request itself via
   `NotificationRepo.send_now`, instead of leaving the user to wait up to a

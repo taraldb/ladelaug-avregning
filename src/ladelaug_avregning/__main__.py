@@ -19,6 +19,7 @@ from ladelaug_avregning.logging_setup import configure_logging
 
 _DEFAULT_CONFIG = Path("config/config.yaml")
 _MIN_PASSWORD_LEN = 10
+_WEAK_PASSWORDS = {"change-me-pls", "changeme", "change-me", "password", "admin", "secret"}
 
 
 def _load_config_or_exit(path: Path) -> AppConfig:
@@ -49,6 +50,17 @@ def _bootstrap_admin(config: AppConfig) -> None:
     from ladelaug_avregning.errors import DomainError
 
     log = logging.getLogger(__name__)
+
+    if len(ba.password) < _MIN_PASSWORD_LEN or ba.password.lower() in _WEAK_PASSWORDS:
+        log.warning(
+            "bootstrap_admin: password for %s is too short or a known-weak value — "
+            "not creating the account. Set a strong bootstrap_admin.password (>= %d chars) "
+            "or run: python -m ladelaug_avregning create-admin",
+            ba.email,
+            _MIN_PASSWORD_LEN,
+        )
+        return
+
     db = Database(config.database.path)
     try:
         if db.connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]:
@@ -87,7 +99,9 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         host=config.server.host,
         port=config.server.port,
         proxy_headers=True,
-        forwarded_allow_ips="*",
+        # Only trust X-Forwarded-* from the configured reverse proxy — a wildcard
+        # would let any client spoof its IP and defeat the login rate limiter.
+        forwarded_allow_ips=config.server.trusted_proxies,
     )
     return 0
 
@@ -178,6 +192,7 @@ def _cmd_low_balance_scan(args: argparse.Namespace) -> int:
 def _cmd_drain_mail(args: argparse.Namespace) -> int:
     import asyncio
 
+    from ladelaug_avregning.audit import AuditContext
     from ladelaug_avregning.db import Database
     from ladelaug_avregning.domain.notifications import NotificationRepo
     from ladelaug_avregning.email.sender import build_sender
@@ -187,7 +202,9 @@ def _cmd_drain_mail(args: argparse.Namespace) -> int:
     db = Database(config.database.path)
     try:
         sender = build_sender(config.email, state_dir=config.state_dir)
-        result = asyncio.run(NotificationRepo(db).process_queue(sender))
+        result = asyncio.run(
+            NotificationRepo(db).process_queue(sender, actor=AuditContext.system())
+        )
     finally:
         db.close()
     print(

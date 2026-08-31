@@ -13,7 +13,7 @@ import { renderApp } from "../test/utils";
 describe("Members (admin)", () => {
   it("creates a member and shows it in the list", async () => {
     setSession(ADMIN_USER);
-    const { user } = renderApp(<AppRouter />, { route: "/members" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer" });
 
     await screen.findByRole("button", { name: "Nytt medlem" });
     await user.click(screen.getByRole("button", { name: "Nytt medlem" }));
@@ -33,7 +33,7 @@ describe("Members (admin)", () => {
 
   it("surfaces the 422 validation message inline for an invalid email", async () => {
     setSession(ADMIN_USER);
-    const { user } = renderApp(<AppRouter />, { route: "/members" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer" });
 
     await screen.findByRole("button", { name: "Nytt medlem" });
     await user.click(screen.getByRole("button", { name: "Nytt medlem" }));
@@ -52,7 +52,7 @@ describe("Members (admin)", () => {
     setSession(ADMIN_USER);
     const m = seedMember({ member_reference: "M-200", full_name: "Grace Hopper" });
     seedLedgerTxn(m.id, { txn_type: "payment", amount_ore: 120000 });
-    const { user } = renderApp(<AppRouter />, { route: "/members" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer" });
 
     const row = (await screen.findByText("Grace Hopper")).closest("tr")!;
     expect(within(row).getByText("1 200,00 kr")).toBeInTheDocument();
@@ -68,10 +68,10 @@ describe("Members (admin)", () => {
     expect(await within(row).findByText("1 500,00 kr")).toBeInTheDocument();
   });
 
-  it("redirects a member session away from /members", async () => {
+  it("redirects a member session away from /medlemmer", async () => {
     setSession(MEMBER_USER);
     seedMember({ id: MEMBER_USER.member_id ?? 7 });
-    renderApp(<AppRouter />, { route: "/members" });
+    renderApp(<AppRouter />, { route: "/medlemmer" });
 
     expect(
       await screen.findByRole("link", { name: /min konto/i }),

@@ -15,11 +15,32 @@ def _write(tmp_path: Path, text: str) -> Path:
 
 def test_loads_example_with_secret_env(tmp_path, monkeypatch):
     monkeypatch.setenv("LADELAUG_SECRET_KEY", "s3cr3t")
+    monkeypatch.delenv("LADELAUG_TRUSTED_PROXIES", raising=False)
     monkeypatch.chdir(tmp_path)  # so the stray .env reader finds nothing
     cfg = load_config(Path(__file__).resolve().parents[2] / EXAMPLE)
     assert cfg.auth.secret_key == "s3cr3t"
     assert cfg.timezone == "Europe/Oslo"
     assert cfg.server.port == 8080
+    assert cfg.server.trusted_proxies == "127.0.0.1"
+
+
+def test_trusted_proxies_wildcard_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("LADELAUG_SECRET_KEY", "x")
+    monkeypatch.delenv("LADELAUG_TRUSTED_PROXIES", raising=False)
+    monkeypatch.chdir(tmp_path)
+    path = _write(tmp_path, "server:\n  trusted_proxies: '*'\n")
+    with pytest.raises(ValueError) as exc:
+        load_config(path)
+    assert "trusted_proxies" in str(exc.value)
+
+
+def test_trusted_proxies_from_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("LADELAUG_SECRET_KEY", "x")
+    monkeypatch.setenv("LADELAUG_TRUSTED_PROXIES", "10.0.0.0/8")
+    monkeypatch.chdir(tmp_path)
+    path = _write(tmp_path, "server:\n  trusted_proxies: '*'\n")
+    cfg = load_config(path)
+    assert cfg.server.trusted_proxies == "10.0.0.0/8"
 
 
 def test_missing_file_hint(tmp_path):

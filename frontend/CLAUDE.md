@@ -18,7 +18,12 @@ Tests: Vitest + Testing Library + MSW (jsdom).
   the API call, so both `"123,45"` and `"123.45"` mean 123.45 (mirrors
   `money.normalise_decimal_input` on the backend, which is the authority).
 - Auth state comes from `useAuth()` (SWR on `GET /api/auth/me`). `<RequireAuth>` sends
-  unauthenticated users to `/login`; `<RequireAdmin>` sends `role=member` to `/my-account`.
+  unauthenticated users to `/login`; `<RequireAdmin>` sends `role=member` to `/` (the site
+  root). Route paths are Norwegian and centralised in `src/routes.ts` (`ROUTES`):
+  `/medlemmer`, `/brukere`, `/ladere`, `/avregninger`, `/bevegelser`, `/revisjonslogg`,
+  `/prognose`, `/system`. The member "min side" IS the root `/` (no suffix); an admin hitting
+  `/` is redirected to `/medlemmer`. `/login` and `/auth/*` stay English (the latter is in
+  already-sent email links).
 
 ## API response shapes the MSW handlers assert against (contract-drift guard)
 
@@ -50,7 +55,9 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `POST /api/users/{id}/disable` / `POST /api/users/{id}/enable` (admin, `X-Requested-With`) -> `User`. Disable revokes the user's sessions; 422 `cannot_disable_self` | `last_admin`.
 - `POST /api/users/{id}/password` (admin, `X-Requested-With`) `{password:string(>=10)}` -> `{ok:true}`; 422 `validation_error`.
 - `User = {id,email,role:"admin"|"member",member_id:number|null,disabled:boolean}`.
-- `GET /api/audit-events?event_type=&entity_type=&entity_id=&limit=&offset=&sort_by=&sort_dir=` -> `{events:[AuditEvent],total,counts:{[event_type]:number}}`. `sort_by ∈ occurred_at|id|event_type`, `sort_dir ∈ asc|desc`.
+- `GET /api/audit-events?event_type=&entity_type=&entity_id=&actor=&occurred_from=&occurred_to=&limit=&offset=&sort_by=&sort_dir=` -> `{events:[AuditEvent],total,counts:{[event_type]:number}}`. `actor` is an `actor_label` substring match; `occurred_from`/`occurred_to` bound `occurred_at` (ISO strings). `sort_by ∈ occurred_at|id|event_type`, `sort_dir ∈ asc|desc`.
+- `GET /api/audit-events/{id}` -> `{event:AuditEvent}`; 404 `not_found`.
+- `GET /api/audit-events/export.csv?<same filters>` -> `text/csv` attachment `revisjonslogg.csv` (admin), newest first, capped at 10000 rows.
 - `GET /api/me` -> Member. `GET /api/me/balance` -> Balance. `GET /api/me/ledger?limit=&offset=` -> ledger page. `GET /api/me/status` -> `{status,participates,history:[StatusPeriod]}`.
 - `GET /api/me/settlements` -> `{settlements:[MySettlement]}`; `report_url` is `/api/me/settlements/{id}/report` (PDF: same URL + `.pdf`). The report page links each supplier invoice as `invoices/{aid}` -> `GET /api/me/settlements/{id}/invoices/{aid}` (streams one PDF, member-scoped); invoices are **not** surfaced in the settlement list itself.
 - `GET /api/settlement/{id}` (admin) -> `SettlementDetail` incl. an `attachments:[SettlementAttachment]` list.
@@ -113,7 +120,7 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `ParticipationPeriod = {id,participates:boolean,effective_from,effective_to:string|null,reason:string|null,created_at}`
 - `Txn = {id,member_id,txn_type:"payment"|"payment_reversal"|"adjustment_credit"|"adjustment_debit",amount_ore:number,amount_nok:string,currency,value_date,reason:string|null,reference:string|null,reverses_transaction_id:number|null,created_by_user_id,recorded_at}`
 - `LedgerTxnRow = Txn & {member_name:string,member_reference:string}` — rows from `GET /api/ledger-transactions`. `txn_type` there may also be `"settlement_charge"`/`"settlement_reversal"`.
-- `AuditEvent = {id,occurred_at,actor_user_id:number|null,actor_label,event_type,entity_type,entity_id:string|null,summary,detail:object|null,ip:string|null}`
+- `AuditEvent = {id,occurred_at,actor_user_id:number|null,actor_label,actor_role:string|null,event_type,entity_type,entity_id:string|null,summary,detail:object|null,ip:string|null,user_agent:string|null}`
 - `MySettlement = {settlement_id,period_month,posted_at:string|null,consumption_kwh:string,charge_nok:string,balance_after_nok:string,report_url:string}`
 - `SettlementAttachment = {id:number,filename:string,bytes:number,uploaded_at:string}`; `SettlementDetail` gains `attachments:SettlementAttachment[]`.
 - `MemberForecast = {member_id,available:boolean,forecast_kwh:string,rate_ore_per_kwh:string,rate_source:"derived"|"override"|null,equal_share_ore:number,forecast_monthly_cost_ore:number,recommended_minimum_ore:number,balance_ore:number,recommended_topup_ore:number,low_balance:boolean,severity:"low"|"critical"|null,reason:string|null}` — money fields are canonical integer øre (format with `formatOre`), `forecast_kwh`/`rate_ore_per_kwh` are Decimal strings.

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import useSWR from "swr";
+import { ROUTES } from "../routes";
 import {
   ApiError,
   changeParticipation,
@@ -778,7 +779,7 @@ function AdjustmentModal({
 
 function BackLink() {
   return (
-    <Link to="/members" className="text-xs text-emerald-400 hover:underline">
+    <Link to={ROUTES.members} className="text-xs text-emerald-400 hover:underline">
       ← Tilbake til medlemmer
     </Link>
   );

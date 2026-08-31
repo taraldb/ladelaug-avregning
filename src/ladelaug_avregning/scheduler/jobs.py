@@ -24,7 +24,7 @@ JobFn = Callable[[Database, AppConfig], Awaitable[dict[str, Any]]]
 
 async def drain_mail(db: Database, config: AppConfig) -> dict[str, Any]:
     sender = build_sender(config.email, state_dir=config.state_dir)
-    return await NotificationRepo(db).process_queue(sender)
+    return await NotificationRepo(db).process_queue(sender, actor=AuditContext.system())
 
 
 async def low_balance_scan(db: Database, config: AppConfig) -> dict[str, Any]:

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import useSWR from "swr";
+import { ROUTES } from "../routes";
 import {
   ApiError,
   createMember,
@@ -96,7 +97,7 @@ export default function Members() {
           columns={columns}
           rows={data?.members ?? []}
           rowKey={(m) => m.id}
-          onRowClick={(m) => navigate(`/members/${m.id}`)}
+          onRowClick={(m) => navigate(ROUTES.memberDetail(m.id))}
           empty="Ingen medlemmer ennå"
         />
       )}

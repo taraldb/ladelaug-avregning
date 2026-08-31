@@ -13,7 +13,7 @@ describe("Users (admin)", () => {
   it("creates a member login and shows it in the list", async () => {
     setSession(ADMIN_USER);
     seedMember({ id: 55, member_reference: "M-55", full_name: "Kari Nordmann" });
-    const { user } = renderApp(<AppRouter />, { route: "/users" });
+    const { user } = renderApp(<AppRouter />, { route: "/brukere" });
 
     await user.click(await screen.findByRole("button", { name: "Ny bruker" }));
 
@@ -30,7 +30,7 @@ describe("Users (admin)", () => {
     setSession(ADMIN_USER);
     const m = seedMember({ full_name: "Ola Nordmann" });
     seedUser({ role: "member", member_id: m.id, email: "ola@example.com" });
-    const { user } = renderApp(<AppRouter />, { route: "/users" });
+    const { user } = renderApp(<AppRouter />, { route: "/brukere" });
 
     const row = (await screen.findByText("ola@example.com")).closest("tr")!;
     expect(within(row).getByText("Aktiv")).toBeInTheDocument();
@@ -44,7 +44,7 @@ describe("Users (admin)", () => {
     setSession(ADMIN_USER);
     const m = seedMember({ member_reference: "M-88", full_name: "Per Hansen" });
     seedUser({ role: "member", member_id: m.id, email: "per@example.com" });
-    const { user } = renderApp(<AppRouter />, { route: "/users" });
+    const { user } = renderApp(<AppRouter />, { route: "/brukere" });
 
     const row = (await screen.findByText("per@example.com")).closest("tr")!;
     await user.click(within(row).getByRole("button", { name: "Endre" }));
@@ -64,7 +64,7 @@ describe("Users (admin)", () => {
     setSession(ADMIN_USER);
     seedUser({ role: "admin", email: "one@example.com" });
     seedUser({ role: "admin", email: "two@example.com" });
-    const { user } = renderApp(<AppRouter />, { route: "/users" });
+    const { user } = renderApp(<AppRouter />, { route: "/brukere" });
 
     const row = (await screen.findByText("two@example.com")).closest("tr")!;
     await user.click(within(row).getByRole("button", { name: "Endre" }));
@@ -81,7 +81,7 @@ describe("Users (admin)", () => {
     setSession(ADMIN_USER);
     const m = seedMember({ member_reference: "M-77" });
     seedUser({ role: "member", member_id: m.id, email: "taken@example.com" });
-    const { user } = renderApp(<AppRouter />, { route: "/users" });
+    const { user } = renderApp(<AppRouter />, { route: "/brukere" });
 
     await user.click(await screen.findByRole("button", { name: "Ny bruker" }));
     // The member picker hides members that already have a login, so create an

@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from ladelaug_avregning import __version__
-from ladelaug_avregning.audit import AuditContext
+from ladelaug_avregning.audit import AuditContext, record_audit
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.access import AccessRepo
@@ -107,7 +107,22 @@ async def run_job_now(
     name: str,
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
 ) -> dict[str, Any]:
     if JobScheduleRepo(db).get(name) is None:
         raise DomainError("unknown_job", f"unknown job {name!r}")
-    return await run_job_once(db, config, name)
+    outcome = await run_job_once(db, config, name)
+    await record_audit(
+        db,
+        actor,
+        event_type="system.job_triggered",
+        entity_type="job_schedule",
+        entity_id=name,
+        summary=f"Admin ran job {name!r} manually ({outcome['status']})",
+        detail={
+            "status": outcome["status"],
+            "error": outcome["error"],
+            "duration_ms": outcome["duration_ms"],
+        },
+    )
+    return outcome

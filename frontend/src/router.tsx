@@ -13,6 +13,7 @@ import SettlementDetail from "./pages/SettlementDetail";
 import Settlements from "./pages/Settlements";
 import SystemHealth from "./pages/SystemHealth";
 import Users from "./pages/Users";
+import { ROUTES, SYSTEM_TAB_PATHS } from "./routes";
 
 function FullPageMessage({ children }: { children: React.ReactNode }) {
   return (
@@ -30,7 +31,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     return <FullPageMessage>Laster …</FullPageMessage>;
   }
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return <Navigate to={ROUTES.login} replace state={{ from: location.pathname }} />;
   }
   return <>{children}</>;
 }
@@ -38,7 +39,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 export function RequireAdmin() {
   const { user } = useAuth();
   if (user && user.role !== "admin") {
-    return <Navigate to="/my-account" replace />;
+    return <Navigate to={ROUTES.home} replace />;
   }
   return <Outlet />;
 }
@@ -56,8 +57,8 @@ function Layout() {
   const isAdmin = user?.role === "admin";
   const hasPortal = user?.role === "member" || user?.member_id != null;
 
-  // /users and /chargers live under System (configuration) — keep that tab lit.
-  const systemActive = ["/system", "/users", "/chargers"].some(
+  // /brukere and /ladere live under System (configuration) — keep that tab lit.
+  const systemActive = SYSTEM_TAB_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
 
@@ -72,23 +73,23 @@ function Layout() {
             <nav className="flex gap-1 rounded-lg bg-slate-800/60 p-1">
               {isAdmin && (
                 <>
-                  <NavLink to="/members" className={navLinkClass}>
+                  <NavLink to={ROUTES.members} className={navLinkClass}>
                     Medlemmer
                   </NavLink>
-                  <NavLink to="/settlements" className={navLinkClass}>
+                  <NavLink to={ROUTES.settlements} className={navLinkClass}>
                     Avregninger
                   </NavLink>
-                  <NavLink to="/movements" className={navLinkClass}>
+                  <NavLink to={ROUTES.movements} className={navLinkClass}>
                     Bevegelser
                   </NavLink>
-                  <NavLink to="/audit" className={navLinkClass}>
+                  <NavLink to={ROUTES.audit} className={navLinkClass}>
                     Revisjonslogg
                   </NavLink>
-                  <NavLink to="/forecast" className={navLinkClass}>
+                  <NavLink to={ROUTES.forecast} className={navLinkClass}>
                     Prognose
                   </NavLink>
                   <NavLink
-                    to="/system"
+                    to={ROUTES.system}
                     className={() => navLinkClass({ isActive: systemActive })}
                   >
                     System
@@ -96,7 +97,7 @@ function Layout() {
                 </>
               )}
               {!isAdmin && hasPortal && (
-                <NavLink to="/my-account" className={navLinkClass}>
+                <NavLink to={ROUTES.home} end className={navLinkClass}>
                   Min konto
                 </NavLink>
               )}
@@ -121,15 +122,19 @@ function Layout() {
   );
 }
 
-function HomeRedirect() {
+/** The site root: a member's "min side", an admin's members list. */
+function HomeOrAccount() {
   const { user } = useAuth();
-  return <Navigate to={user?.role === "admin" ? "/members" : "/my-account"} replace />;
+  if (user?.role === "admin") {
+    return <Navigate to={ROUTES.members} replace />;
+  }
+  return <MyAccount />;
 }
 
 export default function AppRouter() {
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route path={ROUTES.login} element={<Login />} />
       <Route path="/auth/magic-link" element={<AuthAction mode="magic-link" />} />
       <Route path="/auth/reset" element={<AuthAction mode="reset" />} />
       <Route
@@ -139,21 +144,20 @@ export default function AppRouter() {
           </RequireAuth>
         }
       >
-        <Route index element={<HomeRedirect />} />
-        <Route path="/my-account" element={<MyAccount />} />
+        <Route index element={<HomeOrAccount />} />
         <Route element={<RequireAdmin />}>
-          <Route path="/members" element={<Members />} />
-          <Route path="/members/:id" element={<MemberDetail />} />
-          <Route path="/users" element={<Users />} />
-          <Route path="/chargers" element={<Chargers />} />
-          <Route path="/settlements" element={<Settlements />} />
-          <Route path="/settlements/:id" element={<SettlementDetail />} />
-          <Route path="/movements" element={<Movements />} />
-          <Route path="/audit" element={<AuditLog />} />
-          <Route path="/forecast" element={<ForecastSettings />} />
-          <Route path="/system" element={<SystemHealth />} />
+          <Route path={ROUTES.members} element={<Members />} />
+          <Route path={ROUTES.memberDetail(":id")} element={<MemberDetail />} />
+          <Route path={ROUTES.users} element={<Users />} />
+          <Route path={ROUTES.chargers} element={<Chargers />} />
+          <Route path={ROUTES.settlements} element={<Settlements />} />
+          <Route path={ROUTES.settlementDetail(":id")} element={<SettlementDetail />} />
+          <Route path={ROUTES.movements} element={<Movements />} />
+          <Route path={ROUTES.audit} element={<AuditLog />} />
+          <Route path={ROUTES.forecast} element={<ForecastSettings />} />
+          <Route path={ROUTES.system} element={<SystemHealth />} />
         </Route>
-        <Route path="*" element={<HomeRedirect />} />
+        <Route path="*" element={<Navigate to={ROUTES.home} replace />} />
       </Route>
     </Routes>
   );

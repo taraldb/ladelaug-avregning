@@ -17,7 +17,7 @@ describe("Movements (admin)", () => {
     seedLedgerTxn(a.id, { txn_type: "payment", amount_ore: 150000 });
     seedLedgerTxn(b.id, { txn_type: "adjustment_debit", amount_ore: -5000 });
 
-    const { user } = renderApp(<AppRouter />, { route: "/movements" });
+    const { user } = renderApp(<AppRouter />, { route: "/bevegelser" });
 
     expect(
       await screen.findByRole("link", { name: "M-1 – Alice" }),
@@ -37,7 +37,7 @@ describe("Movements (admin)", () => {
   it("records a payment via the quick action and shows the new row", async () => {
     setSession(ADMIN_USER);
     const m = seedMember({ member_reference: "M-9", full_name: "Nina" });
-    const { user } = renderApp(<AppRouter />, { route: "/movements" });
+    const { user } = renderApp(<AppRouter />, { route: "/bevegelser" });
 
     await user.click(
       await screen.findByRole("button", { name: /Registrer innbetaling/ }),

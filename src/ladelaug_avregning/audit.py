@@ -28,9 +28,9 @@ SYSTEM_ACTOR = "system"
 
 _INSERT = (
     "INSERT INTO audit_events "
-    "(occurred_at, actor_user_id, actor_label, event_type, entity_type, "
-    " entity_id, summary, detail_json, ip) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "(occurred_at, actor_user_id, actor_label, actor_role, event_type, entity_type, "
+    " entity_id, summary, detail_json, ip, user_agent) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 
@@ -39,6 +39,8 @@ class AuditContext:
     actor_user_id: int | None
     actor_label: str
     ip: str | None = None
+    user_agent: str | None = None
+    actor_role: str | None = None
 
     @classmethod
     def system(cls) -> AuditContext:
@@ -63,12 +65,14 @@ def write_audit_row(
             occurred_at or clock.now_utc().isoformat(),
             ctx.actor_user_id,
             ctx.actor_label,
+            ctx.actor_role,
             event_type,
             entity_type,
             None if entity_id is None else str(entity_id),
             summary,
             json.dumps(detail) if detail is not None else None,
             ctx.ip,
+            ctx.user_agent,
         ),
     )
     return int(cur.lastrowid or 0)

@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import useSWR from "swr";
+import { ROUTES } from "../routes";
 import {
   ApiError,
   addInvoiceLine,
@@ -977,7 +978,7 @@ function UnassignedPanel({
         ))}
       </ul>
       <p className="mt-2 text-xs text-amber-100/70">
-        Tildel laderne et medlem på <Link to="/chargers" className="underline">Ladere</Link> med
+        Tildel laderne et medlem på <Link to={ROUTES.chargers} className="underline">Ladere</Link> med
         gyldig fra-dato i {month}, og kjør ny fordeling.
       </p>
       {err && (

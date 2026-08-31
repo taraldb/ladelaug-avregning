@@ -58,6 +58,17 @@ def test_run_job_now(admin_client: Any) -> None:
     assert body["status"] == "ok"
 
 
+def test_run_job_now_is_audited(admin_client: Any, db: Any) -> None:
+    admin_client.post("/api/system/jobs/drain_mail/run", headers=FETCH)
+    row = db.connection.execute(
+        "SELECT actor_label, entity_id, actor_role FROM audit_events "
+        "WHERE event_type = 'system.job_triggered'"
+    ).fetchone()
+    assert row is not None
+    assert row["entity_id"] == "drain_mail"
+    assert row["actor_role"] == "admin"
+
+
 def test_run_unknown_job(admin_client: Any) -> None:
     out = admin_client.post("/api/system/jobs/made_up/run", headers=FETCH)
     assert out.status_code == 422
