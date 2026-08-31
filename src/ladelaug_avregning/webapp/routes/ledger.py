@@ -26,6 +26,7 @@ from ladelaug_avregning.webapp.schemas import (
     LedgerTxnOut,
     LedgerTxnRowOut,
     PaymentIn,
+    RefundIn,
 )
 
 router = APIRouter(dependencies=[Depends(require_admin)], tags=["ledger"])
@@ -115,6 +116,29 @@ async def record_adjustment(
         reason=body.reason,
         reference=body.reference,
         actor=actor,
+    )
+    return LedgerTxnOut.from_row(row)
+
+
+@router.post(
+    "/api/members/{member_id}/refunds",
+    status_code=201,
+    dependencies=[Depends(require_fetch)],
+)
+async def record_refund(
+    member_id: int,
+    body: RefundIn,
+    db: Database = Depends(get_db),
+    actor: AuditContext = Depends(get_audit_context),
+) -> LedgerTxnOut:
+    _require_member(db, member_id)
+    row = await LedgerRepo(db).refund(
+        member_id=member_id,
+        amount=body.amount,
+        value_date=body.value_date or clock.today_oslo().isoformat(),
+        reference=body.reference,
+        actor=actor,
+        allow_negative=body.allow_negative,
     )
     return LedgerTxnOut.from_row(row)
 

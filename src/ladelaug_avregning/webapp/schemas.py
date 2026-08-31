@@ -368,6 +368,26 @@ class AdjustmentIn(BaseModel):
         return _required(v, "reason")
 
 
+class RefundIn(BaseModel):
+    """Pay a member back (US-505). ``reference`` is an optional accounting
+    reference; ``allow_negative`` overrides the balance guard."""
+
+    amount: Decimal
+    value_date: str | None = None
+    reference: str | None = None
+    allow_negative: bool = False
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _v_amount(cls, v: Any) -> Decimal:
+        return _positive_nok(v)
+
+    @field_validator("value_date")
+    @classmethod
+    def _v_value_date(cls, v: str | None) -> str | None:
+        return None if v is None else _iso_date(v)
+
+
 class LedgerTxnOut(BaseModel):
     id: int
     member_id: int
