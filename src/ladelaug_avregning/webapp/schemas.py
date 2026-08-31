@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from ladelaug_avregning.money import ore_to_nok, parse_nok
+from ladelaug_avregning.money import normalise_decimal_input, ore_to_nok, parse_nok
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -611,7 +611,7 @@ class SettlementInvoiceIn(BaseModel):
         if v is None or v == "":
             return None
         try:
-            d = Decimal(str(v))
+            d = Decimal(normalise_decimal_input(str(v)))
         except (ValueError, InvalidOperation) as exc:
             raise ValueError("invoice_kwh must be a number") from exc
         if not d.is_finite() or d < 0:
@@ -703,6 +703,11 @@ class ForecastSettingsIn(BaseModel):
         if v is not None and v <= 0:
             raise ValueError("rate_override_ore_per_kwh must be a positive integer")
         return v
+
+    @field_validator("buffer_months", mode="before")
+    @classmethod
+    def _v_buffer_sep(cls, v: Any) -> Any:
+        return normalise_decimal_input(v) if isinstance(v, str) else v
 
     @field_validator("buffer_months")
     @classmethod

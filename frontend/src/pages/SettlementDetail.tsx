@@ -28,7 +28,7 @@ import {
 } from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import Table, { type Column } from "../components/Table";
-import { formatNok, formatOre } from "../lib/format";
+import { formatNok, formatOre, normalizeDecimalInput } from "../lib/format";
 
 const WARNING_LABELS: Record<string, string> = {
   negative_balances: "Noen medlemmer får negativ saldo",
@@ -419,7 +419,9 @@ function InvoicePanel({
     e.preventDefault();
     setErr(null);
     try {
-      await setSettlementInvoice(settlementId, { invoice_kwh: value });
+      await setSettlementInvoice(settlementId, {
+        invoice_kwh: normalizeDecimalInput(value),
+      });
       await onSaved();
     } catch (e2) {
       setErr(e2 instanceof ApiError ? e2.message : "Kunne ikke lagre.");
@@ -526,7 +528,7 @@ function EditLineForm({
       await updateInvoiceLine(sid, line.id, {
         description: description.trim(),
         allocation_method: method,
-        amount: amount.trim(),
+        amount: normalizeDecimalInput(amount),
       });
       await onSaved();
     } catch (e2) {
@@ -605,7 +607,7 @@ function LinesPanel({
       await addInvoiceLine(sid, {
         description: description.trim(),
         allocation_method: method,
-        amount,
+        amount: normalizeDecimalInput(amount),
       });
       setDescription("");
       setAmount("");

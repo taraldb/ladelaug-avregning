@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import useSWR from "swr";
 import { ApiError, listMembers, recordPayment } from "../api/client";
+import { normalizeDecimalInput } from "../lib/format";
 import DateField from "./DateField";
 import Modal from "./Modal";
 
@@ -70,7 +71,7 @@ export default function RecordPaymentModal({
     setSaving(true);
     try {
       await recordPayment(targetId, {
-        amount: amount.trim(),
+        amount: normalizeDecimalInput(amount),
         value_date: valueDate || undefined,
         reference: reference.trim() || undefined,
       });

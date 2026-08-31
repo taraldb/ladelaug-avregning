@@ -2,7 +2,48 @@ from decimal import Decimal
 
 import pytest
 
-from ladelaug_avregning.money import nok_to_ore, ore_to_nok, parse_nok
+from ladelaug_avregning.money import (
+    nok_to_ore,
+    normalise_decimal_input,
+    ore_to_nok,
+    parse_nok,
+)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("123,45", "123.45"),
+        ("123.45", "123.45"),
+        ("  42 ", "42"),
+        ("1 234,56", "1234.56"),
+        ("1 234,56", "1234.56"),
+        ("1.234,56", "1234.56"),
+        ("1,234.56", "1234.56"),
+        ("1,234,567", "1234567"),
+        ("-0,01", "-0.01"),
+        ("", ""),
+    ],
+)
+def test_normalise_decimal_input(raw, expected):
+    assert normalise_decimal_input(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("123,45", "123.45"),
+        ("123.45", "123.45"),
+        ("1 234,56", "1234.56"),
+        ("1.234,56", "1234.56"),
+        ("1,234.56", "1234.56"),
+        ("-50,00", "-50.00"),
+        (Decimal("123.45"), "123.45"),
+        (12345, "12345.00"),
+    ],
+)
+def test_parse_nok_accepts_comma_or_period(raw, expected):
+    assert parse_nok(raw) == Decimal(expected)
 
 
 @pytest.mark.parametrize(

@@ -38,6 +38,30 @@ export function formatOre(ore: number): string {
   return formatNok(negative ? `-${decimal}` : decimal);
 }
 
+/**
+ * Normalise a human-typed number so the backend can parse it: accept both
+ * `"123,45"` and `"123.45"` as 123.45, and tolerate space / point thousands
+ * separators (`"1 234,56"`, `"1.234,56"`, `"1,234.56"`). Whichever of `.` or `,`
+ * appears last is the decimal point; the other is grouping. Mirrors
+ * `money.normalise_decimal_input` on the backend. Apply it to the value of every
+ * free-text numeric input before sending it to the API.
+ */
+export function normalizeDecimalInput(value: string): string {
+  let s = value.replace(/\s/g, "");
+  const commas = (s.match(/,/g) ?? []).length;
+  if (s.includes(",") && s.includes(".")) {
+    s =
+      s.lastIndexOf(",") > s.lastIndexOf(".")
+        ? s.replace(/\./g, "").replace(/,/g, ".")
+        : s.replace(/,/g, "");
+  } else if (commas === 1) {
+    s = s.replace(",", ".");
+  } else if (commas > 1) {
+    s = s.replace(/,/g, "");
+  }
+  return s;
+}
+
 /** Format a `YYYY-MM-DD` (or ISO datetime) as `DD.MM.YYYY` in nb-NO order. */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "–";

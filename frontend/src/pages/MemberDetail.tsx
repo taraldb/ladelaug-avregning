@@ -31,7 +31,14 @@ import Modal from "../components/Modal";
 import RecordPaymentModal from "../components/RecordPaymentModal";
 import StatTile from "../components/StatTile";
 import Table, { type Column } from "../components/Table";
-import { formatDate, formatDateTime, formatNok, formatOre, txnTypeLabel } from "../lib/format";
+import {
+  formatDate,
+  formatDateTime,
+  formatNok,
+  formatOre,
+  normalizeDecimalInput,
+  txnTypeLabel,
+} from "../lib/format";
 import { NewUserModal, SetPasswordModal } from "./Users";
 
 export default function MemberDetail() {
@@ -551,7 +558,7 @@ function RefundModal({
     setSaving(true);
     try {
       await recordRefund(memberId, {
-        amount: amount.trim(),
+        amount: normalizeDecimalInput(amount),
         reference: reference.trim() || undefined,
         allow_negative: allowNegative,
       });
@@ -668,7 +675,7 @@ function AdjustmentModal({
     try {
       await recordAdjustment(memberId, {
         direction,
-        amount: amount.trim(),
+        amount: normalizeDecimalInput(amount),
         reason: reason.trim(),
         reference: reference.trim() || undefined,
       });

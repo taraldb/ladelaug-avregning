@@ -12,6 +12,7 @@ import {
   type MemberForecast,
 } from "../api/client";
 import Table, { type Column } from "../components/Table";
+import { normalizeDecimalInput } from "../lib/format";
 import { formatDateTime, formatOre } from "../lib/format";
 
 interface FormState {
@@ -22,20 +23,22 @@ interface FormState {
 }
 
 function parseForm(f: FormState): ForecastSettingsUpdate {
-  const rate = f.rate_override_ore_per_kwh.trim();
+  // Accept a comma or a period decimal separator (and space thousands) in every
+  // field, same as the money inputs.
+  const rate = normalizeDecimalInput(f.rate_override_ore_per_kwh);
   const rateValue = rate === "" ? null : Number(rate);
   if (rateValue !== null && (!Number.isInteger(rateValue) || rateValue <= 0)) {
     throw new Error("Overstyrt sats må være et positivt heltall (øre/kWh).");
   }
-  const buffer = Number(f.buffer_months);
+  const buffer = Number(normalizeDecimalInput(f.buffer_months));
   if (!Number.isFinite(buffer) || buffer <= 0) {
     throw new Error("Buffermåneder må være et tall større enn 0.");
   }
-  const cooldown = Number(f.notify_cooldown_days);
+  const cooldown = Number(normalizeDecimalInput(f.notify_cooldown_days));
   if (!Number.isInteger(cooldown) || cooldown < 0) {
     throw new Error("Karensdager må være et ikke-negativt heltall.");
   }
-  const lookback = Number(f.lookback_settlements);
+  const lookback = Number(normalizeDecimalInput(f.lookback_settlements));
   if (!Number.isInteger(lookback) || lookback < 1) {
     throw new Error("Antall avregninger må være minst 1.");
   }

@@ -14,6 +14,9 @@ Tests: Vitest + Testing Library + MSW (jsdom).
 - Errors are always `{"detail": {"code", "message"}}` -> `ApiError { status, code, message }`.
 - Money is a Decimal **string** from the API. Never `Number()` it for display math —
   format via `src/lib/format.ts` (`formatNok`, `formatDate`, `formatDateTime`).
+  Free-text numeric inputs pass their value through `normalizeDecimalInput` before
+  the API call, so both `"123,45"` and `"123.45"` mean 123.45 (mirrors
+  `money.normalise_decimal_input` on the backend, which is the authority).
 - Auth state comes from `useAuth()` (SWR on `GET /api/auth/me`). `<RequireAuth>` sends
   unauthenticated users to `/login`; `<RequireAdmin>` sends `role=member` to `/my-account`.
 

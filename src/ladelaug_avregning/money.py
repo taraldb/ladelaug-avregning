@@ -13,10 +13,35 @@ _CENTS = Decimal("0.01")
 _ONE = Decimal(1)
 
 
+def normalise_decimal_input(raw: str) -> str:
+    """Normalise a human-typed decimal string to a plain ``Decimal``-parseable
+    form: accept both ``"123,45"`` and ``"123.45"`` as 123.45, and tolerate
+    thousands separators (``"1 234,56"`` / ``"1.234,56"`` / ``"1,234.56"``).
+
+    Rule: strip all whitespace; when both ``,`` and ``.`` appear, whichever comes
+    last is the decimal point and the other is a grouping separator; a lone
+    ``,`` is a decimal point; repeated ``,`` with no ``.`` are grouping.
+    """
+    s = "".join(raw.split())
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif s.count(",") == 1:
+        s = s.replace(",", ".")
+    elif s.count(",") > 1:
+        s = s.replace(",", "")
+    return s
+
+
 def parse_nok(raw: str | int | Decimal) -> Decimal:
-    """Parse an amount in NOK to a 2-decimal ``Decimal``. Accepts ``str``,
-    ``int``, ``Decimal`` (and ``float``, routed through ``str`` so no binary
-    float artefact leaks in). Rejects NaN / infinity."""
+    """Parse an amount in NOK to a 2-decimal ``Decimal``. Accepts ``str``
+    (comma or period decimal separator), ``int``, ``Decimal`` (and ``float``,
+    routed through ``str`` so no binary float artefact leaks in). Rejects
+    NaN / infinity."""
+    if isinstance(raw, str):
+        raw = normalise_decimal_input(raw)
     value = Decimal(str(raw))
     if not value.is_finite():
         raise ValueError(f"amount is not a finite number: {raw!r}")
