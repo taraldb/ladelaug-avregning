@@ -19,6 +19,11 @@ _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 _SECRET_KEY_ENV = "LADELAUG_SECRET_KEY"
 _ZAPTEC_PASSWORD_ENV = "ZAPTEC_PASSWORD"
 _ZAPTEC_CAPTURE_DIR_ENV = "ZAPTEC_CAPTURE_DIR"
+_GMAIL_CLIENT_ID_ENV = "GMAIL_CLIENT_ID"
+_GMAIL_CLIENT_SECRET_ENV = "GMAIL_CLIENT_SECRET"
+_GMAIL_REFRESH_TOKEN_ENV = "GMAIL_REFRESH_TOKEN"
+
+_EMAIL_BACKENDS = ("console", "file", "smtp", "gmail")
 
 
 class ServerConfig(BaseModel):
@@ -79,8 +84,16 @@ class ZaptecConfig(BaseModel):
 
 class EmailConfig(BaseModel):
     """Outgoing mail. ``backend`` is ``console`` (log only), ``file`` (write
-    ``.eml`` under ``state/mail/``), or ``smtp``. ``base_url`` is the public
-    origin used to build links in emails (magic-link, reports)."""
+    ``.eml`` under ``state/mail/``), ``smtp``, or ``gmail`` (Gmail REST API with
+    an OAuth2 refresh token — see ``scripts/gmail_oauth_bootstrap.py``).
+    ``base_url`` is the public origin used to build links in emails (magic-link,
+    reports).
+
+    The ``gmail_*`` secrets are normally left blank here and supplied via the
+    ``GMAIL_CLIENT_SECRET`` / ``GMAIL_REFRESH_TOKEN`` environment variables (or
+    ``.env``), mirroring ``ZAPTEC_PASSWORD``. ``gmail_sender`` is the address the
+    message is sent as; blank falls back to ``from_address`` (it must be the
+    authenticated Gmail account or one of its verified "Send mail as" aliases)."""
 
     backend: str = "console"
     from_address: str = "ladelaug@example.com"
@@ -90,6 +103,10 @@ class EmailConfig(BaseModel):
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_starttls: bool = True
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    gmail_refresh_token: str = ""
+    gmail_sender: str = ""
     magic_link_ttl_minutes: int = 30
     password_reset_ttl_minutes: int = 60
 
@@ -130,9 +147,28 @@ class AppConfig(BaseModel):
                 "zaptec.enabled is true but zaptec.username / zaptec.password are not both set "
                 f"(password via config.yaml or the {_ZAPTEC_PASSWORD_ENV} environment variable)"
             )
-        if self.email.backend not in ("console", "file", "smtp"):
+        for env_name, attr in (
+            (_GMAIL_CLIENT_ID_ENV, "gmail_client_id"),
+            (_GMAIL_CLIENT_SECRET_ENV, "gmail_client_secret"),
+            (_GMAIL_REFRESH_TOKEN_ENV, "gmail_refresh_token"),
+        ):
+            env_val = os.environ.get(env_name, "").strip()
+            if env_val:
+                setattr(self.email, attr, env_val)
+        if self.email.backend not in _EMAIL_BACKENDS:
             problems.append(
-                f"email.backend {self.email.backend!r} is not one of 'console', 'file', 'smtp'"
+                f"email.backend {self.email.backend!r} is not one of "
+                + ", ".join(repr(b) for b in _EMAIL_BACKENDS)
+            )
+        if self.email.backend == "gmail" and not (
+            self.email.gmail_client_id.strip()
+            and self.email.gmail_client_secret.strip()
+            and self.email.gmail_refresh_token.strip()
+        ):
+            problems.append(
+                "email.backend is 'gmail' but gmail_client_id / gmail_client_secret / "
+                f"gmail_refresh_token are not all set (secrets via {_GMAIL_CLIENT_SECRET_ENV} / "
+                f"{_GMAIL_REFRESH_TOKEN_ENV} or .env; run scripts/gmail_oauth_bootstrap.py)"
             )
 
         try:

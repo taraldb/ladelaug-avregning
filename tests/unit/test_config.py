@@ -72,6 +72,39 @@ def test_argon2_memory_floor(tmp_path, monkeypatch):
     assert "argon2_memory_cost_kib" in str(exc.value)
 
 
+def test_gmail_backend_without_secrets_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("LADELAUG_SECRET_KEY", "x")
+    for var in ("GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.chdir(tmp_path)
+    path = _write(tmp_path, "email:\n  backend: 'gmail'\n")
+    with pytest.raises(ValueError) as exc:
+        load_config(path)
+    assert "gmail_refresh_token" in str(exc.value)
+
+
+def test_gmail_backend_secrets_from_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("LADELAUG_SECRET_KEY", "x")
+    monkeypatch.setenv("GMAIL_CLIENT_ID", "cid")
+    monkeypatch.setenv("GMAIL_CLIENT_SECRET", "csecret")
+    monkeypatch.setenv("GMAIL_REFRESH_TOKEN", "rtoken")
+    monkeypatch.chdir(tmp_path)
+    path = _write(tmp_path, "email:\n  backend: 'gmail'\n")
+    cfg = load_config(path)
+    assert cfg.email.gmail_client_id == "cid"
+    assert cfg.email.gmail_client_secret == "csecret"
+    assert cfg.email.gmail_refresh_token == "rtoken"
+
+
+def test_unknown_email_backend_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("LADELAUG_SECRET_KEY", "x")
+    monkeypatch.chdir(tmp_path)
+    path = _write(tmp_path, "email:\n  backend: 'carrier-pigeon'\n")
+    with pytest.raises(ValueError) as exc:
+        load_config(path)
+    assert "email.backend" in str(exc.value)
+
+
 def test_multiple_problems_joined(tmp_path, monkeypatch):
     monkeypatch.delenv("LADELAUG_SECRET_KEY", raising=False)
     monkeypatch.chdir(tmp_path)

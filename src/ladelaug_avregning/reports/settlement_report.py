@@ -7,13 +7,15 @@
 
 from __future__ import annotations
 
-import contextlib
 import html
+import logging
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from ladelaug_avregning.money import ore_to_nok
+
+log = logging.getLogger(__name__)
 
 _CSS = """
 :root { color-scheme: light; }
@@ -30,7 +32,9 @@ th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #edede
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.total td, .total td { font-weight: 600; border-top: 2px solid #ccc; border-bottom: none; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: .2rem 1.5rem; }
-.kv dt { color: #666; } .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+.kv dt { color: #666; }
+.kv dt .sub { display: block; font-size: .85rem; }
+.kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .neg { color: #b00020; }
 footer { margin-top: 2.5rem; font-size: .85rem; color: #888; }
 """
@@ -168,7 +172,6 @@ def render_member_report(
 ) -> str:
     month = _esc(result["period_month"])
     name = _esc(member["full_name"])
-    ref = _esc(member["member_reference"])
     b = _basis(result, member)
 
     my_by_line = {ln["invoice_line_id"]: ln for ln in member["lines"]}
@@ -202,22 +205,18 @@ def render_member_report(
     after_cls = ' class="neg"' if member["balance_after_ore"] < 0 else ""
     body = (
         f"<h1>Avregning {month}</h1>"
-        f'<p class="muted">{name} &middot; {ref}</p>'
+        f'<p class="muted">{name}</p>'
         "<h2>Avregningsgrunnlag</h2>"
         '<dl class="kv">'
-        f"<dt>Fakturert energi</dt><dd>{_esc(result.get('invoice_kwh') or '–')} kWh</dd>"
-        f"<dt>Målt energi (Zaptec)</dt><dd>{_esc(result.get('grid_kwh') or '–')} kWh</dd>"
-        f"<dt>Faste kostnader (delt likt)</dt><dd>{_nok(b['equal_nok'])}"
-        f" &middot; delt på {b['equal_members']} medlemmer</dd>"
+        f"<dt>Målt energi (Zaptec)</dt>"
+        f"<dd>{_kwh(result['grid_kwh']) if result.get('grid_kwh') else '–'} kWh</dd>"
+        f"<dt>Faste kostnader (delt likt)"
+        f'<span class="sub">delt på {b["equal_members"]} medlemmer</span></dt>'
+        f"<dd>{_nok(b['equal_nok'])}</dd>"
         f"<dt>Forbrukskostnader (etter kWh)</dt><dd>{_nok(b['consumption_nok'])}</dd>"
         + (
             f"<dt>Sum fakturagrunnlag</dt><dd>{_nok(invoice_total_nok)}</dd>"
             if invoice_total_nok is not None
-            else ""
-        )
-        + (
-            f"<dt>Sum belastet alle medlemmer</dt><dd>{_nok(result['total_charged_nok'])}</dd>"
-            if result.get("total_charged_nok") is not None
             else ""
         )
         + "</dl>"
@@ -245,7 +244,7 @@ def render_member_report(
         "</dl>"
         f"{_forecast_section(forecast)}"
     )
-    return _page(f"Avregning {result['period_month']} – {member['full_name']}", body)
+    return _page(f"Avregning {result['period_month']} – {member['member_reference']}", body)
 
 
 def render_summary_report(result: dict[str, Any]) -> str:
@@ -270,10 +269,13 @@ def render_summary_report(result: dict[str, Any]) -> str:
         f"<h1>Avregning {month} – sammendrag</h1>"
         f'<p class="muted">Status: {_esc(result["status"])}</p>'
         '<dl class="kv">'
-        f"<dt>Fakturert energi</dt><dd>{_esc(result['invoice_kwh'] or '–')} kWh</dd>"
-        f"<dt>Målt energi (Zaptec)</dt><dd>{_esc(result['grid_kwh'] or '–')} kWh</dd>"
-        f"<dt>Faste kostnader (delt likt)</dt><dd>{_nok(str(ore_to_nok(equal_ore)))}"
-        f" &middot; delt på {equal_members} medlemmer</dd>"
+        f"<dt>Fakturert energi</dt>"
+        f"<dd>{_kwh(result['invoice_kwh']) if result['invoice_kwh'] else '–'} kWh</dd>"
+        f"<dt>Målt energi (Zaptec)</dt>"
+        f"<dd>{_kwh(result['grid_kwh']) if result['grid_kwh'] else '–'} kWh</dd>"
+        f"<dt>Faste kostnader (delt likt)"
+        f'<span class="sub">delt på {equal_members} medlemmer</span></dt>'
+        f"<dd>{_nok(str(ore_to_nok(equal_ore)))}</dd>"
         f"<dt>Forbrukskostnader (etter kWh)</dt>"
         f"<dd>{_nok(str(ore_to_nok(consumption_ore)))}</dd>"
         f"<dt>Sum fakturalinjer</dt><dd>{_nok(result['invoice_lines_total_nok'])}</dd>"
@@ -290,13 +292,15 @@ def render_summary_report(result: dict[str, Any]) -> str:
 
 def _write_pdf_sibling(out_dir: Path, stem: str, html_doc: str) -> None:
     """Best-effort: write ``<stem>.pdf`` next to ``<stem>.html``. A PDF failure
-    must never break a settlement post, so every exception is swallowed."""
+    must never break a settlement post — it is logged, not raised."""
     from ladelaug_avregning.reports.pdf import PDF_AVAILABLE, html_to_pdf
 
     if not PDF_AVAILABLE:
         return
-    with contextlib.suppress(Exception):  # PDF is a nice-to-have at post time
+    try:
         (out_dir / f"{stem}.pdf").write_bytes(html_to_pdf(html_doc, base_url=str(out_dir)))
+    except Exception as exc:  # noqa: BLE001 - PDF is a nice-to-have at post time
+        log.warning("post-time PDF %s.pdf failed to render: %s", stem, exc)
 
 
 def write_reports(

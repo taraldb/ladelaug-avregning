@@ -2,6 +2,32 @@
 
 Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
+## Unreleased
+
+- **Gmail email backend** — `email.backend: gmail` sends through the Gmail REST
+  API with an OAuth2 refresh token (scope `gmail.send`), no SMTP or app
+  password. Secrets via `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` /
+  `GMAIL_REFRESH_TOKEN` (mirrors `ZAPTEC_PASSWORD`); access tokens refresh
+  automatically and a 401 forces one re-auth + retry. `gmail_sender` (defaults
+  to `from_address`) is the authenticated address / verified alias.
+  `scripts/gmail_oauth_bootstrap.py` mints the refresh token once.
+- **`drain-mail` CLI** — `python -m ladelaug_avregning drain-mail` sends the
+  queued emails (same as `POST /api/notifications/process`), so the cron line no
+  longer needs a `curl` with an admin cookie.
+- **PDF availability is observable** — the guarded `import weasyprint` now logs
+  the failure and keeps the exception string in `reports.pdf.PDF_IMPORT_ERROR`;
+  `GET /api/system/health` gains `pdf: {available, error}`. Post-time PDF render
+  failures are logged instead of silently swallowed. `scripts/serve-dev.sh` runs
+  the dev server with the Homebrew lib path so the `.pdf` endpoints work outside
+  Docker on macOS.
+- **Member report tidy-up** — the per-member settlement report drops the
+  "Fakturert energi" and "Sum belastet alle medlemmer" rows (still in the admin
+  summary), shows the member's full name once (the page title now uses the
+  member reference, not the name), and the "Avregningsgrunnlag" values sit in a
+  right-aligned tabular-figures column so kr/kWh amounts line up regardless of
+  digit count. Metered/invoiced kWh use the nb-NO decimal comma like every other
+  figure.
+
 ## 2026-08-31 — Release 1D: corrections, refunds, departure, access (`0.5.0`)
 
 The correction and exit workflows. Migration `0010` widens

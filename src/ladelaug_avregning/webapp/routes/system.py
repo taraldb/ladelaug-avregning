@@ -25,6 +25,8 @@ router = APIRouter(prefix="/api/system", dependencies=[Depends(require_admin)], 
 async def health(
     db: Database = Depends(get_db), config: AppConfig = Depends(get_config)
 ) -> dict[str, Any]:
+    from ladelaug_avregning.reports.pdf import PDF_AVAILABLE, PDF_IMPORT_ERROR
+
     runs = SyncRunRepo(db)
     notif = NotificationRepo(db)
     schema_version = db.connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
@@ -58,6 +60,7 @@ async def health(
         "schema_version": schema_version,
         "zaptec": zaptec,
         "email": email_stats,
+        "pdf": {"available": PDF_AVAILABLE, "error": PDF_IMPORT_ERROR},
         "low_balance": low_balance,
         "corrections": corrections,
         "access": access,

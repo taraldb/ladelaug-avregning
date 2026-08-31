@@ -110,8 +110,9 @@ into per-member charges.
   invoice PDF must be attached before posting.
 - **Reports** — a self-contained HTML report per member plus a summary, saved
   under `state/reports/<month>/` and served to admins and to the member.
-- **Email** — a queued sender with retry/backoff (`console` / `file` / `smtp`
-  backends). Posting a settlement queues a report email per member.
+- **Email** — a queued sender with retry/backoff (`console` / `file` / `smtp` /
+  `gmail` backends). Posting a settlement queues a report email per member;
+  drain the queue with `drain-mail` (cron) or `POST /api/notifications/process`.
 - **Passwordless sign-in & password reset** — single-use expiring links; the
   request endpoints never disclose whether an account exists.
 - **System health** — `GET /api/system/health`: Zaptec sync state, email queue
@@ -172,6 +173,7 @@ python -m ladelaug_avregning serve            # run the HTTP server (default)
 python -m ladelaug_avregning migrate          # apply DB migrations and exit
 python -m ladelaug_avregning create-admin --email <e> [--password <p>]
 python -m ladelaug_avregning low-balance-scan  # enqueue low-balance warning emails (cron)
+python -m ladelaug_avregning drain-mail        # send queued emails (cron)
 ```
 
 `create-admin` is idempotent-ish: a second run with an existing email exits
@@ -205,9 +207,10 @@ supplied via the `LADELAUG_SECRET_KEY` environment variable (or a `.env` file) �
 | `zaptec.installation_id` | — | optional; blank syncs every visible installation |
 | `zaptec.page_size` / `zaptec.max_retries` | `500` / `3` | |
 | `zaptec.capture_dir` | — | debug: dump one JSON file per Zaptec HTTP call there (token + password redacted); also `ZAPTEC_CAPTURE_DIR` env |
-| `email.backend` | `console` | `console` (log) / `file` (`state/mail/*.eml`) / `smtp` |
+| `email.backend` | `console` | `console` (log) / `file` (`state/mail/*.eml`) / `smtp` / `gmail` |
 | `email.from_address` / `email.base_url` | — | sender + public origin for links in emails |
 | `email.smtp_host` / `smtp_port` / `smtp_username` / `smtp_password` / `smtp_starttls` | — | used when `backend: smtp` |
+| `email.gmail_client_id` / `gmail_client_secret` / `gmail_refresh_token` / `gmail_sender` | — | used when `backend: gmail`; secrets via `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` env; `gmail_sender` defaults to `from_address` |
 | `email.magic_link_ttl_minutes` / `password_reset_ttl_minutes` | `30` / `60` | |
 
 **Forecast tunables are not in `config.yaml`** — `rate_override_ore_per_kwh`
@@ -230,15 +233,33 @@ they change without a restart.
 5. **Freeze** (snapshots participation + usage), **Preview** (check the
    warnings and per-member impact), then **Post**. Posting is irreversible and
    writes the ledger charges + HTML reports and queues the report emails.
-6. Drain the email queue: `POST /api/notifications/process` — run it from cron,
-   e.g. `*/10 * * * * curl -fsS -X POST -H 'X-Requested-With: fetch' --cookie …`
-   or a small authenticated script. A monthly session sync can be scheduled the
-   same way.
+6. Drain the email queue: `*/10 * * * * python -m ladelaug_avregning drain-mail`
+   (or `POST /api/notifications/process` with `-H 'X-Requested-With: fetch'` and
+   an admin cookie). A monthly session sync can be scheduled the same way.
 7. Low-balance warnings: `python -m ladelaug_avregning low-balance-scan` (or
    `POST /api/notifications/low-balance-scan`) enqueues a warning email for each
    member below their recommended minimum balance. Safe to run hourly — the
    cooldown / balance-drop / severity-escalation rule suppresses repeats. Follow
    it with the queue drain in step 6.
+
+### Email via Gmail (`backend: gmail`)
+
+Sends through the Gmail REST API with an OAuth2 refresh token (scope
+`gmail.send` only) — no SMTP, no app password. One-time setup:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/): pick/create
+   a project, **enable the Gmail API**, configure the OAuth consent screen
+   (add your own Google account as a test user), then create an **OAuth client
+   ID** of type **Desktop app**.
+2. Mint the refresh token:
+   ```sh
+   GMAIL_CLIENT_ID=… GMAIL_CLIENT_SECRET=… uv run python scripts/gmail_oauth_bootstrap.py
+   ```
+   Consent in the browser; the script prints `GMAIL_REFRESH_TOKEN=…`.
+3. Put `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` in
+   `.env`, set `email.backend: gmail` and (optionally) `email.gmail_sender` in
+   `config.yaml`. Access tokens refresh automatically; a send failure leaves the
+   message queued for retry.
 
 ### Reports
 
@@ -247,7 +268,13 @@ they change without a restart.
 - `GET /api/me/settlements/{id}/report` / `…/report.pdf` (the member's own).
 - PDF needs WeasyPrint's native libraries (bundled in the Docker image; see
   Deploy). Without them the HTML endpoints work and the `.pdf` ones return
-  `503 pdf_unavailable`.
+  `503 pdf_unavailable`; `GET /api/system/health` → `pdf.available` /
+  `pdf.error` reports whether the import succeeded.
+- **Running outside Docker on macOS:** `brew install pango`, then start the
+  server with the Homebrew lib dir on the loader path so CPython's `dlopen`
+  finds GLib/Pango — `export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`
+  (Apple Silicon) or `/usr/local/lib` (Intel). `scripts/serve-dev.sh` sets that
+  and runs the server. Verify with `python -c "import weasyprint"`.
 
 ## Deploy (Docker)
 

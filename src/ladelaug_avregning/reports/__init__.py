@@ -6,7 +6,7 @@ forecast / recommended-top-up section of the member report is filled in when a
 forecast dict is supplied (decision C10).
 """
 
-from ladelaug_avregning.reports.pdf import PDF_AVAILABLE, html_to_pdf
+from ladelaug_avregning.reports.pdf import PDF_AVAILABLE, PDF_IMPORT_ERROR, html_to_pdf
 from ladelaug_avregning.reports.settlement_report import (
     render_member_report,
     render_summary_report,
@@ -15,6 +15,7 @@ from ladelaug_avregning.reports.settlement_report import (
 
 __all__ = [
     "PDF_AVAILABLE",
+    "PDF_IMPORT_ERROR",
     "html_to_pdf",
     "render_member_report",
     "render_summary_report",

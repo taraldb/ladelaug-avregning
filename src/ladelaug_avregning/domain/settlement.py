@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import re
 import sqlite3
 from decimal import Decimal
@@ -41,6 +42,8 @@ from ladelaug_avregning.domain.ledger import LedgerRepo
 from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.money import allocate_by_weights, nok_to_ore, ore_to_nok, parse_nok
+
+log = logging.getLogger(__name__)
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _UNSET: Any = object()
@@ -1033,8 +1036,8 @@ class SettlementRepo:
                 self._state / "reports" / month,
                 forecasts,
             )
-        except OSError:  # pragma: no cover - report write must not break a post
-            pass
+        except OSError as exc:  # pragma: no cover - report write must not break a post
+            log.warning("settlement %s: report write skipped: %s", settlement_id, exc)
         return posted
 
     # --- internals -----------------------------------------------

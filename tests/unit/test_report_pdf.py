@@ -104,6 +104,22 @@ def test_pdf_unavailable_returns_503(admin_client, config, monkeypatch):
     assert summary.json()["detail"]["code"] == "pdf_unavailable"
 
 
+def test_health_reports_pdf_status(admin_client):
+    body = admin_client.get("/api/system/health").json()
+    assert "pdf" in body
+    assert body["pdf"]["available"] is PDF_AVAILABLE
+    assert set(body["pdf"]) == {"available", "error"}
+
+
+def test_health_reflects_unavailable_pdf(admin_client, monkeypatch):
+    monkeypatch.setattr("ladelaug_avregning.reports.pdf.PDF_AVAILABLE", False)
+    monkeypatch.setattr(
+        "ladelaug_avregning.reports.pdf.PDF_IMPORT_ERROR", "OSError: cannot load library 'x'"
+    )
+    body = admin_client.get("/api/system/health").json()
+    assert body["pdf"] == {"available": False, "error": "OSError: cannot load library 'x'"}
+
+
 def test_admin_pdf_routes_reject_member_session(member_client):
     assert member_client.get("/api/settlement/1/reports/1.pdf").status_code == 403
     assert member_client.get("/api/settlement/1/reports/summary.pdf").status_code == 403

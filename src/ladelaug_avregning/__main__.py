@@ -4,6 +4,7 @@ python -m ladelaug_avregning serve            # run the HTTP server (default)
 python -m ladelaug_avregning migrate          # apply migrations and exit
 python -m ladelaug_avregning create-admin     # create an administrator account
 python -m ladelaug_avregning low-balance-scan # enqueue low-balance warning emails
+python -m ladelaug_avregning drain-mail       # send queued emails (cron)
 """
 
 from __future__ import annotations
@@ -173,6 +174,32 @@ def _cmd_low_balance_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_drain_mail(args: argparse.Namespace) -> int:
+    import asyncio
+
+    from ladelaug_avregning.db import Database
+    from ladelaug_avregning.domain.notifications import NotificationRepo
+    from ladelaug_avregning.email.sender import build_sender
+
+    config = _load_config_or_exit(args.config)
+    configure_logging(config.logging.level)
+    state_dir = (
+        Path(config.database.path).parent if config.database.path != ":memory:" else Path("state")
+    )
+    db = Database(config.database.path)
+    try:
+        sender = build_sender(config.email, state_dir=state_dir)
+        result = asyncio.run(NotificationRepo(db).process_queue(sender))
+    finally:
+        db.close()
+    print(
+        "Mail drain: "
+        f"due={result['due']} sent={result['sent']} "
+        f"retried={result['retried']} failed={result['failed']}"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ladelaug_avregning")
     parser.add_argument("--config", type=Path, default=_DEFAULT_CONFIG, help="path to config.yaml")
@@ -186,6 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
     ca.add_argument("--password", help="prompted for if omitted")
 
     sub.add_parser("low-balance-scan", help="enqueue low-balance warning emails")
+    sub.add_parser("drain-mail", help="send queued emails (wire to cron)")
 
     return parser
 
@@ -199,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         "migrate": _cmd_migrate,
         "create-admin": _cmd_create_admin,
         "low-balance-scan": _cmd_low_balance_scan,
+        "drain-mail": _cmd_drain_mail,
     }[command]
     return handler(args)
 

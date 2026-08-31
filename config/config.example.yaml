@@ -56,7 +56,7 @@ zaptec:
   capture_dir: ""
 
 email:
-  # backend: console (log only) | file (.eml under state/mail/) | smtp
+  # backend: console (log only) | file (.eml under state/mail/) | smtp | gmail
   backend: "console"
   from_address: "ladelaug@example.com"
   base_url: "http://localhost:8080" # public origin, for links in emails
@@ -65,5 +65,14 @@ email:
   smtp_username: ""
   smtp_password: ""
   smtp_starttls: true
+  # backend: gmail — Gmail REST API with an OAuth2 refresh token. Leave the
+  # secrets blank here and set GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET /
+  # GMAIL_REFRESH_TOKEN (or .env); mint the token with
+  # scripts/gmail_oauth_bootstrap.py. gmail_sender defaults to from_address and
+  # must be the authenticated account or a verified "Send mail as" alias.
+  gmail_client_id: ""
+  gmail_client_secret: ""
+  gmail_refresh_token: ""
+  gmail_sender: ""
   magic_link_ttl_minutes: 30
   password_reset_ttl_minutes: 60
