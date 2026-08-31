@@ -343,6 +343,12 @@ class ChargingRepo:
         return {"months": touched}
 
     # --- reads --------------------------------------------------------
+    #
+    # Every kWh figure that leaves this repo — per-member, grid total,
+    # unassigned — is summed from per-session values quantised to 2 dp (``_q``),
+    # the precision the settlement stores, displays, and allocates on, and the
+    # precision Zaptec's own charge-history report uses. Summing the same 2-dp
+    # per-row values keeps the per-member figures and the grid total reconciled.
 
     def consumption_by_member(self, month: str) -> dict[int, Decimal]:
         rows = self._db.connection.execute(
@@ -352,14 +358,13 @@ class ChargingRepo:
         ).fetchall()
         out: dict[int, Decimal] = {}
         for r in rows:
-            out[int(r["member_id"])] = out.get(int(r["member_id"]), Decimal(0)) + Decimal(
-                r["energy_kwh"]
-            )
+            mid = int(r["member_id"])
+            out[mid] = out.get(mid, Decimal("0.00")) + _q(Decimal(r["energy_kwh"]))
         return out
 
     def member_consumption(self, member_id: int, month: str) -> Decimal:
         """That member's metered kWh for the month, before any settlement (US-902)."""
-        return self.consumption_by_member(month).get(member_id, Decimal(0))
+        return _q(self.consumption_by_member(month).get(member_id, Decimal("0.00")))
 
     def member_session_count(self, member_id: int, month: str) -> int:
         return int(
@@ -373,7 +378,7 @@ class ChargingRepo:
         rows = self._db.connection.execute(
             "SELECT energy_kwh FROM charging_sessions WHERE period_month = ?", (month,)
         ).fetchall()
-        return sum((Decimal(r["energy_kwh"]) for r in rows), Decimal(0))
+        return sum((_q(Decimal(r["energy_kwh"])) for r in rows), Decimal("0.00"))
 
     def unassigned_consumption(self, month: str) -> list[dict[str, Any]]:
         rows = self._db.connection.execute(
@@ -392,15 +397,15 @@ class ChargingRepo:
                     "charger_id": r["cid"],
                     "charger_name": r["name"],
                     "sessions": 0,
-                    "energy_kwh": Decimal(0),
+                    "energy_kwh": Decimal("0.00"),
                 },
             )
             g["sessions"] += 1
-            g["energy_kwh"] += Decimal(r["e"])
+            g["energy_kwh"] += _q(Decimal(r["e"]))
         return sorted(grouped.values(), key=lambda g: str(g["charger_zaptec_id"]))
 
     def unassigned_total_kwh(self, month: str) -> Decimal:
-        return sum((g["energy_kwh"] for g in self.unassigned_consumption(month)), Decimal(0))
+        return sum((g["energy_kwh"] for g in self.unassigned_consumption(month)), Decimal("0.00"))
 
     def list_sessions(
         self, month: str, *, member_id: int | None = None, limit: int = 100, offset: int = 0

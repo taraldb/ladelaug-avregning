@@ -277,7 +277,7 @@ def test_charging_routes(admin_client, make_member):
     )
     # no data imported yet
     body = admin_client.get("/api/charging/consumption?month=2026-07").json()
-    assert body["by_member"] == [] and body["total_kwh"] == "0"
+    assert body["by_member"] == [] and body["total_kwh"] == "0.00"
 
     assert admin_client.get("/api/charging/consumption?month=nope").status_code == 422
 

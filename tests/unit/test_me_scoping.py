@@ -107,7 +107,7 @@ def test_me_consumption_and_forecast_are_scoped_to_own_member(member_client, db)
 
     cons = member_client.get("/api/me/consumption?month=2026-08").json()
     assert cons["member_id"] == MY_ID
-    assert cons["consumption_kwh"] == "0" and cons["session_count"] == 0
+    assert cons["consumption_kwh"] == "0.00" and cons["session_count"] == 0
 
     fc = member_client.get("/api/me/forecast").json()
     assert fc["member_id"] == MY_ID

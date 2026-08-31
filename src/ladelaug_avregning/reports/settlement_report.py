@@ -252,7 +252,7 @@ def render_summary_report(result: dict[str, Any]) -> str:
     month = _esc(result["period_month"])
     rows = "".join(
         f"<tr><td>{_esc(m['member_reference'])} {_esc(m['full_name'])}</td>"
-        f'<td class="num">{_esc(m["consumption_kwh"])}</td>'
+        f'<td class="num">{_kwh(m["consumption_kwh"])}</td>'
         f'<td class="num">{_nok(m["charge_nok"])}</td>'
         f'<td class="num{" neg" if m["balance_after_ore"] < 0 else ""}">'
         f"{_nok(m['balance_after_nok'])}</td></tr>"

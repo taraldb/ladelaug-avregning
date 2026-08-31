@@ -109,7 +109,7 @@ async def test_freeze_snapshots_participation_consumption_and_grid(db):
     snap = {m["member_id"]: m for m in repo.snapshot_members(sid)}
     assert snap[m1]["participates_equal"] == 1 and snap[m3]["participates_equal"] == 0
     assert Decimal(snap[m2]["consumption_kwh"]) == Decimal(20)
-    assert repo.get(sid)["grid_kwh"] == "35"
+    assert repo.get(sid)["grid_kwh"] == "35.00"
     assert repo.get(sid)["usage_frozen_at"] is not None
 
 

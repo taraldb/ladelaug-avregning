@@ -362,7 +362,10 @@ class SettlementRepo:
         for m in members.list():
             mid = m["id"]
             is_active = mid in active
-            kwh = consumption.get(mid, Decimal(0))
+            # ``consumption_by_member`` already yields 2-dp values; the fallback
+            # for a member with no sessions is normalised to the same scale so
+            # the frozen snapshot is uniformly 2-dp.
+            kwh = consumption.get(mid, Decimal("0.00")).quantize(Decimal("0.01"))
             if not is_active and kwh == 0:
                 continue
             snapshot.append(

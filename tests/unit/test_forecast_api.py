@@ -151,12 +151,12 @@ def test_me_consumption_defaults_to_current_oslo_month(frozen_now, member_client
     body = member_client.get("/api/me/consumption").json()
     assert body["member_id"] == 1
     assert body["month"] == "2026-08"
-    assert body["consumption_kwh"] == "9.500"
+    assert body["consumption_kwh"] == "9.50"
     assert body["session_count"] == 2
 
     other = member_client.get("/api/me/consumption?month=2026-07").json()
     assert other["month"] == "2026-07"
-    assert other["consumption_kwh"] == "0"
+    assert other["consumption_kwh"] == "0.00"
     assert other["session_count"] == 0
 
 
