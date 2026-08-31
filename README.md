@@ -94,8 +94,9 @@ into per-member charges.
 - **Zaptec integration** — import chargers, archived charging sessions, and
   15-minute interval data; idempotent; sessions that cross a month boundary are
   split (interval data first, pro-rata by duration otherwise). Session energy is
-  stored to 2 decimals — the precision Zaptec's "Charge history" report shows and
-  totals — so the per-month kWh sum reconciles with that report. Consumption on a
+  stored to 2 decimals with commercial (half-up) rounding — the precision *and*
+  rounding rule Zaptec's "Charge history" report uses — so the per-month kWh sum
+  reconciles with that report to the øre. Consumption on a
   charger with no assignment is *unassigned* and blocks the settlement until
   resolved. Config-gated by `zaptec.enabled`. Set `zaptec.capture_dir` to dump
   every Zaptec request/response to disk when debugging a sync.

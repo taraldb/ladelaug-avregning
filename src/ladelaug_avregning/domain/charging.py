@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from ladelaug_avregning import clock
@@ -22,16 +22,20 @@ from ladelaug_avregning.domain import periods
 from ladelaug_avregning.domain.chargers import ChargerRepo
 from ladelaug_avregning.zaptec.client import ZaptecSession
 
-# Session energy is stored to 2 decimals — the same precision Zaptec's
-# "Charge history" report shows and totals — so our per-month kWh sum matches
-# that report. ``_rebalance`` puts any cross-month rounding drift back on the
-# largest part, so a split still sums to the (2-dp) session total.
+# Session energy is stored to 2 decimals with commercial (half-away-from-zero)
+# rounding — the exact precision *and* rounding rule Zaptec's "Charge history"
+# report shows and totals — so our per-month kWh sum reconciles with that
+# report to the øre. This is deliberately NOT ``money.py``'s ROUND_HALF_EVEN
+# policy: kWh is a physical quantity checked against the supplier's figures,
+# not money. ``_q`` feeds session storage (``import_sessions``), the
+# cross-month split (``_split`` / ``_rebalance``, still total-preserving), and
+# every ``ChargingRepo`` read, so all of them align with the report.
 _KWH = Decimal("0.01")
 _SplitPart = tuple[str, datetime, datetime, Decimal, str]
 
 
 def _q(value: Decimal) -> Decimal:
-    return value.quantize(_KWH, rounding=ROUND_HALF_EVEN)
+    return value.quantize(_KWH, rounding=ROUND_HALF_UP)
 
 
 def _close(a: Decimal, b: Decimal) -> bool:

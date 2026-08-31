@@ -95,6 +95,37 @@ async def test_single_month_session_resolves_member_and_is_idempotent(db):
     assert db.connection.execute("SELECT COUNT(*) FROM charging_sessions").fetchone()[0] == 1
 
 
+async def test_session_energy_rounds_half_up_like_the_zaptec_report(db):
+    m1 = await _member(db, "M1")
+    c = await _charger(db, "C1", "z-1")
+    await ChargerRepo(db).assign(
+        c["id"], m1, effective_from="2026-01-01", actor=AuditContext.system()
+    )
+    repo = ChargingRepo(db, tz=TZ)
+
+    # 3-dp Energy values from the API; the exact half-way case (…405) must round
+    # UP to 34.41 (as Zaptec's charge-history report does), not half-even to 34.40.
+    sessions = [
+        _session("s-1", "z-1", "2026-07-05T10:00:00+00:00", "2026-07-05T12:00:00+00:00", "34.405"),
+        _session("s-2", "z-1", "2026-07-06T10:00:00+00:00", "2026-07-06T12:00:00+00:00", "0.015"),
+        _session("s-3", "z-1", "2026-07-07T10:00:00+00:00", "2026-07-07T12:00:00+00:00", "11.342"),
+    ]
+    await repo.import_sessions(sessions, actor=AuditContext.system())
+
+    stored = {
+        r["zaptec_session_id"]: r["energy_kwh"]
+        for r in db.connection.execute(
+            "SELECT zaptec_session_id, energy_kwh FROM charging_sessions"
+        )
+    }
+    assert stored["s-1"] == "34.41"
+    assert stored["s-2"] == "0.02"
+    assert stored["s-3"] == "11.34"
+    # 34.41 + 0.02 + 11.34
+    assert repo.total_kwh("2026-07") == Decimal("45.77")
+    assert repo.consumption_by_member("2026-07") == {m1: Decimal("45.77")}
+
+
 async def test_cross_month_split_prefers_interval_data(db):
     m1 = await _member(db, "M1")
     c = await _charger(db, "C1", "z-1")
