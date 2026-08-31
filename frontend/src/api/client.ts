@@ -236,7 +236,9 @@ export type TxnType =
   | "adjustment_credit"
   | "adjustment_debit"
   | "settlement_charge"
-  | "settlement_reversal";
+  | "settlement_reversal"
+  | "settlement_correction"
+  | "refund";
 
 export interface LedgerTxn {
   id: number;
@@ -365,6 +367,80 @@ export function participationHistory(
   );
 }
 
+// --- member departure (US-204, admin) --------------------------
+
+export interface DepartureCheck {
+  member_id: number;
+  effective_date: string;
+  current_status: MemberStatus | null;
+  open_assignments: {
+    charger_id: number;
+    charger_name: string;
+    effective_from: string;
+  }[];
+  unsettled_months: string[];
+  balance_ore: number;
+  balance_nok: string;
+  would_refund_ore: number;
+}
+
+export interface DepartureResult extends DepartureCheck {
+  status_changed: boolean;
+  assignments_closed: number[];
+  refund_txn_id: number | null;
+  refunded_ore: number;
+}
+
+export function departureCheck(
+  memberId: number,
+  effectiveDate?: string,
+): Promise<DepartureCheck> {
+  const qs = effectiveDate ? `?effective_date=${encodeURIComponent(effectiveDate)}` : "";
+  return get<DepartureCheck>(`/api/members/${memberId}/departure-check${qs}`);
+}
+
+export function processDeparture(
+  memberId: number,
+  body: { effective_date: string; refund?: boolean; refund_reference?: string },
+): Promise<DepartureResult> {
+  return post<DepartureResult>(`/api/members/${memberId}/departure`, body);
+}
+
+// --- charging access status (US-305, admin) -------------------
+
+export type AccessAction = "warned" | "disabled" | "restored";
+
+export interface AccessEvent {
+  id: number;
+  member_id: number;
+  action: AccessAction;
+  reason: string | null;
+  note: string | null;
+  created_at: string;
+  created_by_user_id: number | null;
+  email_message_id: number | null;
+}
+
+export interface AccessState {
+  member_id: number;
+  status: AccessAction | null;
+  history: AccessEvent[];
+}
+
+export function getMemberAccess(memberId: number): Promise<AccessState> {
+  return get<AccessState>(`/api/members/${memberId}/access`);
+}
+
+export function recordMemberAccess(
+  memberId: number,
+  body: { action: AccessAction; reason?: string; note?: string },
+): Promise<AccessState & { event: AccessEvent }> {
+  return post<AccessState & { event: AccessEvent }>(
+    `/api/members/${memberId}/access`,
+    body,
+  );
+}
+
 // --- users (admin) -----------------------------------------------
 
 export function listUsers(): Promise<{ users: User[] }> {
@@ -423,6 +499,18 @@ export function recordAdjustment(
 
 export function reversePayment(txnId: number): Promise<LedgerTxn> {
   return post<LedgerTxn>(`/api/ledger-transactions/${txnId}/reverse`);
+}
+
+export function recordRefund(
+  memberId: number,
+  body: {
+    amount: string;
+    value_date?: string;
+    reference?: string;
+    allow_negative?: boolean;
+  },
+): Promise<LedgerTxn> {
+  return post<LedgerTxn>(`/api/members/${memberId}/refunds`, body);
 }
 
 export function listLedgerTransactions(
@@ -484,6 +572,15 @@ export function getMyLedger(
 
 export function getMyStatus(): Promise<MyStatus> {
   return get<MyStatus>("/api/me/status");
+}
+
+export interface MyAccess {
+  status: AccessAction | null;
+  portal_url: string;
+}
+
+export function getMyAccess(): Promise<MyAccess> {
+  return get<MyAccess>("/api/me/access");
 }
 
 // --- chargers (admin, Epic 3) -----------------------------------
@@ -694,11 +791,73 @@ export interface SettlementAttachment {
   uploaded_at: string;
 }
 
+export interface SettlementCorrectionMember {
+  id: number;
+  correction_id: number;
+  member_id: number;
+  consumption_kwh_before: string;
+  consumption_kwh_after: string;
+  original_charge_ore: number;
+  corrected_charge_ore: number;
+  delta_ore: number;
+  ledger_txn_id: number | null;
+}
+
+export interface SettlementCorrection {
+  id: number;
+  settlement_id: number;
+  sequence: number;
+  original_total_ore: number;
+  corrected_total_ore: number;
+  created_at: string;
+  created_by_user_id: number | null;
+  members: SettlementCorrectionMember[];
+}
+
 export interface SettlementDetail {
   settlement: Settlement;
   lines: InvoiceLine[];
   snapshot: SettlementMemberSnapshot[];
   attachments: SettlementAttachment[];
+  corrections: SettlementCorrection[];
+  correction_pending?: boolean;
+}
+
+export interface CorrectionAssessmentMember {
+  member_id: number;
+  member_reference: string;
+  full_name: string;
+  in_snapshot: boolean;
+  consumption_kwh_before: string;
+  consumption_kwh_after: string;
+  charged_ore: number;
+  charged_nok: string;
+  corrected_charge_ore: number;
+  corrected_charge_nok: string;
+  delta_ore: number;
+  delta_nok: string;
+}
+
+export interface CorrectionAssessment {
+  settlement_id: number;
+  period_month: string;
+  status: string;
+  has_changes: boolean;
+  sequence_next: number;
+  unresolved_late_flags: number;
+  original_total_charged_ore: number;
+  corrected_total_charged_ore: number;
+  members: CorrectionAssessmentMember[];
+}
+
+export function assessCorrection(id: number): Promise<CorrectionAssessment> {
+  return get<CorrectionAssessment>(`/api/settlement/${id}/correction`);
+}
+
+export function postCorrection(
+  id: number,
+): Promise<CorrectionAssessment & { correction_id: number; sequence: number; members_adjusted: number; emails_queued: number }> {
+  return post(`/api/settlement/${id}/correction`);
 }
 
 export interface PreviewMemberRow {
@@ -874,6 +1033,9 @@ export interface SystemHealth {
     failed_runs: number;
   };
   email: { queued: number; sent: number; failed: number; next_attempt_at: string | null };
+  low_balance?: { warned_total: number; members_below: number };
+  corrections: { settlements_with_pending: number };
+  access: { disabled: number };
   failed_jobs: number;
   ok: boolean;
 }

@@ -58,6 +58,39 @@ describe("Settlement flow (admin)", () => {
     ).toBeInTheDocument();
   });
 
+  it("assesses and books a correction on a posted settlement", async () => {
+    setSession(ADMIN_USER);
+    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+    await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
+    await screen.findByRole("heading", { name: /Avregning 20/ });
+
+    await user.type(screen.getByLabelText(/Beskrivelse/), "Fastledd");
+    await user.type(screen.getByLabelText(/Beløp/), "500");
+    await user.click(screen.getByRole("button", { name: "Legg til" }));
+    await user.type(screen.getByLabelText(/Fakturert kWh/), "10");
+    await user.click(screen.getByRole("button", { name: "Lagre" }));
+    const file = new File([new Uint8Array([1, 2, 3])], "faktura.pdf", {
+      type: "application/pdf",
+    });
+    await user.upload(screen.getByLabelText("Fakturavedlegg"), file);
+    await user.click(screen.getByRole("button", { name: "Last opp" }));
+    await screen.findByRole("link", { name: "faktura-1.pdf" });
+    await user.click(screen.getByRole("button", { name: "Frys forbruk" }));
+    await user.click(await screen.findByRole("button", { name: "Bokfør" }));
+    await screen.findByText(/Bokført\./);
+
+    const heading = await screen.findByRole("heading", { name: "Korrigering" });
+    const panel = heading.closest("div")!.parentElement as HTMLElement;
+    await user.click(within(panel).getByRole("button", { name: "Vurder korrigering" }));
+    expect(await within(panel).findByText(/Member Seven/)).toBeInTheDocument();
+
+    await user.click(within(panel).getByRole("button", { name: "Bokfør korrigering" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Bokfør" }));
+
+    expect(await screen.findByText(/Korrigering #1 bokført/)).toBeInTheDocument();
+  });
+
   it("uploads several invoices and deletes one after confirming", async () => {
     setSession(ADMIN_USER);
     const { user } = renderApp(<AppRouter />, { route: "/settlements" });

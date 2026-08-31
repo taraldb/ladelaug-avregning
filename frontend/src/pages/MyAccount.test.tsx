@@ -4,6 +4,7 @@ import AppRouter from "../router";
 import {
   ADMIN_USER,
   MEMBER_USER,
+  seedAccessStatus,
   seedConsumption,
   seedForecast,
   seedLedgerTxn,
@@ -104,6 +105,21 @@ describe("MyAccount (member portal)", () => {
     expect(
       await screen.findByText(/Ikke nok historikk til å lage en prognose ennå\./),
     ).toBeInTheDocument();
+  });
+
+  it("shows a charging-access banner with a Zaptec portal link", async () => {
+    setSession(MEMBER_USER);
+    const memberId = MEMBER_USER.member_id ?? 7;
+    seedMember({ id: memberId });
+    seedAccessStatus("disabled");
+
+    renderApp(<AppRouter />, { route: "/my-account" });
+
+    const alert = await screen.findByText("Ladetilgang stengt");
+    expect(alert).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Åpne Zaptec-portalen" }),
+    ).toHaveAttribute("href", "https://portal.zaptec.com");
   });
 
   it("shows an empty state for an admin with no linked member", async () => {

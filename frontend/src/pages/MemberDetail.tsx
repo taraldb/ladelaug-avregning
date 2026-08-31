@@ -5,16 +5,23 @@ import {
   ApiError,
   changeParticipation,
   changeStatus,
+  departureCheck,
   getBalance,
   getLedger,
   getMember,
+  getMemberAccess,
   participationHistory,
+  processDeparture,
   recordAdjustment,
+  recordMemberAccess,
+  recordRefund,
   reversePayment,
   setUserDisabled,
   statusHistory,
   updateMember,
   listUsers,
+  type AccessAction,
+  type DepartureCheck,
   type LedgerTxn,
   type Member,
   type MemberStatus,
@@ -24,7 +31,7 @@ import Modal from "../components/Modal";
 import RecordPaymentModal from "../components/RecordPaymentModal";
 import StatTile from "../components/StatTile";
 import Table, { type Column } from "../components/Table";
-import { formatDate, formatDateTime, formatNok, txnTypeLabel } from "../lib/format";
+import { formatDate, formatDateTime, formatNok, formatOre, txnTypeLabel } from "../lib/format";
 import { NewUserModal, SetPasswordModal } from "./Users";
 
 export default function MemberDetail() {
@@ -79,7 +86,248 @@ export default function MemberDetail() {
         onChanged={async () => void (await mutateMember())}
       />
       <LedgerSection memberId={memberId} />
+      <AccessSection memberId={memberId} />
+      <DepartureSection
+        memberId={memberId}
+        onChanged={async () => void (await mutateMember())}
+      />
     </section>
+  );
+}
+
+const ACCESS_LABEL: Record<AccessAction, string> = {
+  warned: "Varslet",
+  disabled: "Stengt",
+  restored: "Gjenåpnet",
+};
+
+function AccessSection({ memberId }: { memberId: number }) {
+  const key = `/api/members/${memberId}/access`;
+  const { data, mutate } = useSWR(key, () => getMemberAccess(memberId));
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState<AccessAction | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function act(action: AccessAction) {
+    setError(null);
+    setBusy(action);
+    try {
+      const res = await recordMemberAccess(memberId, {
+        action,
+        reason: reason.trim() || undefined,
+      });
+      setReason("");
+      await mutate(res, { revalidate: false });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Handlingen feilet.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card title="Ladetilgang">
+      <p className="text-xs text-slate-500">
+        Registrerer status og varsler medlemmet på e-post. Stenging må gjøres i
+        Zaptec-portalen — dette er ikke en teknisk sperre.
+      </p>
+      <p className="mt-2 text-sm text-slate-300">
+        Nåværende status:{" "}
+        <span className="text-slate-100">
+          {data?.status ? ACCESS_LABEL[data.status] : "Ingen registrert"}
+        </span>
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="block text-sm">
+          <span className="mb-1 block text-slate-400">Årsak (valgfritt)</span>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={busy != null}
+          onClick={() => void act("warned")}
+          className="rounded-md border border-amber-600/60 px-3 py-1.5 text-sm text-amber-300 hover:bg-amber-500/10 disabled:opacity-60"
+        >
+          Send varsel
+        </button>
+        <button
+          type="button"
+          disabled={busy != null}
+          onClick={() => void act("disabled")}
+          className="rounded-md border border-rose-600/60 px-3 py-1.5 text-sm text-rose-300 hover:bg-rose-500/10 disabled:opacity-60"
+        >
+          Steng
+        </button>
+        <button
+          type="button"
+          disabled={busy != null}
+          onClick={() => void act("restored")}
+          className="rounded-md border border-emerald-600/60 px-3 py-1.5 text-sm text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-60"
+        >
+          Gjenåpne
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-rose-400">
+          {error}
+        </p>
+      )}
+      {data && data.history.length > 0 && (
+        <ol className="mt-3 space-y-1 text-xs text-slate-400">
+          {data.history.map((e) => (
+            <li key={e.id} className="border-l-2 border-slate-700 pl-3">
+              {ACCESS_LABEL[e.action]} · {formatDateTime(e.created_at)}
+              {e.reason ? ` · ${e.reason}` : ""}
+              {e.email_message_id ? " · e-post sendt" : ""}
+            </li>
+          ))}
+        </ol>
+      )}
+    </Card>
+  );
+}
+
+function DepartureSection({
+  memberId,
+  onChanged,
+}: {
+  memberId: number;
+  onChanged: () => void | Promise<void>;
+}) {
+  const [effectiveDate, setEffectiveDate] = useState("");
+  const [check, setCheck] = useState<DepartureCheck | null>(null);
+  const [refund, setRefund] = useState(false);
+  const [reference, setReference] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function runCheck() {
+    setError(null);
+    setDone(null);
+    setBusy(true);
+    try {
+      setCheck(await departureCheck(memberId, effectiveDate || undefined));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Sjekk feilet.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function run() {
+    if (!check) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await processDeparture(memberId, {
+        effective_date: check.effective_date,
+        refund,
+        refund_reference: reference.trim() || undefined,
+      });
+      setDone(
+        `Utmeldt ${res.effective_date}. ${res.assignments_closed.length} ladere frigjort` +
+          (res.refund_txn_id ? `, ${formatOre(res.refunded_ore)} refundert.` : "."),
+      );
+      setCheck(null);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Utmelding feilet.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const refundBlocked = refund && (check?.unsettled_months.length ?? 0) > 0;
+
+  return (
+    <Card title="Utmelding">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="block text-sm">
+          <span className="mb-1 block text-slate-400">Utmeldingsdato</span>
+          <input
+            type="date"
+            value={effectiveDate}
+            onChange={(e) => setEffectiveDate(e.target.value)}
+            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void runCheck()}
+          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+        >
+          Sjekk utmelding
+        </button>
+      </div>
+
+      {check && (
+        <div className="mt-3 space-y-2 text-sm text-slate-300">
+          <p>
+            Åpne ladertilknytninger:{" "}
+            <span className="text-slate-100">
+              {check.open_assignments.length === 0
+                ? "ingen"
+                : check.open_assignments.map((a) => a.charger_name).join(", ")}
+            </span>
+          </p>
+          <p>
+            Måneder uten bokført avregning:{" "}
+            <span className={check.unsettled_months.length ? "text-amber-300" : "text-slate-100"}>
+              {check.unsettled_months.length === 0
+                ? "ingen"
+                : check.unsettled_months.join(", ")}
+            </span>
+          </p>
+          <p>
+            Saldo: <span className="text-slate-100">{formatNok(check.balance_nok)}</span>
+          </p>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={refund}
+              onChange={(e) => setRefund(e.target.checked)}
+            />
+            Refunder resterende saldo ved utmelding
+          </label>
+          {refund && (
+            <label className="block">
+              <span className="mb-1 block text-slate-400">Referanse (valgfritt)</span>
+              <input
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+              />
+            </label>
+          )}
+          {refundBlocked && (
+            <p className="text-xs text-amber-300">
+              Refusjon er sperret så lenge det finnes uavregnede måneder.
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={busy || refundBlocked}
+            onClick={() => void run()}
+            className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-rose-400 disabled:opacity-60"
+          >
+            Meld ut
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-rose-400">
+          {error}
+        </p>
+      )}
+      {done && <p className="mt-2 text-sm text-emerald-300">{done}</p>}
+    </Card>
   );
 }
 
@@ -87,7 +335,9 @@ const PAGE_SIZE = 20;
 
 function LedgerSection({ memberId }: { memberId: number }) {
   const [page, setPage] = useState(0);
-  const [modal, setModal] = useState<"payment" | "adjustment" | null>(null);
+  const [modal, setModal] = useState<"payment" | "adjustment" | "refund" | null>(
+    null,
+  );
 
   const balance = useSWR(`/api/members/${memberId}/balance`, () =>
     getBalance(memberId),
@@ -190,6 +440,13 @@ function LedgerSection({ memberId }: { memberId: number }) {
           >
             Manuell justering
           </button>
+          <button
+            type="button"
+            onClick={() => setModal("refund")}
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+          >
+            Refusjon
+          </button>
         </div>
       </div>
 
@@ -250,7 +507,130 @@ function LedgerSection({ memberId }: { memberId: number }) {
           setModal(null);
         }}
       />
+      <RefundModal
+        open={modal === "refund"}
+        memberId={memberId}
+        onClose={() => setModal(null)}
+        onDone={async () => {
+          await refresh();
+          setModal(null);
+        }}
+      />
     </Card>
+  );
+}
+
+function RefundModal({
+  open,
+  memberId,
+  onClose,
+  onDone,
+}: {
+  open: boolean;
+  memberId: number;
+  onClose: () => void;
+  onDone: () => void | Promise<void>;
+}) {
+  const [amount, setAmount] = useState("");
+  const [reference, setReference] = useState("");
+  const [allowNegative, setAllowNegative] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function reset() {
+    setAmount("");
+    setReference("");
+    setAllowNegative(false);
+    setError(null);
+    setSaving(false);
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      await recordRefund(memberId, {
+        amount: amount.trim(),
+        reference: reference.trim() || undefined,
+        allow_negative: allowNegative,
+      });
+      reset();
+      await onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Kunne ikke refundere.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      title="Refusjon"
+      onClose={() => {
+        reset();
+        onClose();
+      }}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+          >
+            Avbryt
+          </button>
+          <button
+            type="submit"
+            form="refund-form"
+            disabled={saving || amount.trim() === ""}
+            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+          >
+            Bokfør refusjon
+          </button>
+        </>
+      }
+    >
+      <form id="refund-form" className="space-y-3" onSubmit={onSubmit}>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-300">Beløp (kr)</span>
+          <input
+            inputMode="decimal"
+            required
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="500.00"
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-300">
+            Regnskapsreferanse (valgfritt)
+          </span>
+          <input
+            value={reference}
+            onChange={(e) => setReference(e.target.value)}
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={allowNegative}
+            onChange={(e) => setAllowNegative(e.target.checked)}
+          />
+          Tillat negativ saldo
+        </label>
+        {error && (
+          <p role="alert" className="text-sm text-rose-400">
+            {error}
+          </p>
+        )}
+      </form>
+    </Modal>
   );
 }
 

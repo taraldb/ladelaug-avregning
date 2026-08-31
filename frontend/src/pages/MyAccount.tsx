@@ -1,6 +1,7 @@
 import useSWR from "swr";
 import {
   ApiError,
+  getMyAccess,
   getMyBalance,
   getMyConsumption,
   getMyForecast,
@@ -42,6 +43,7 @@ export default function MyAccount() {
   const settlements = useSWR("/api/me/settlements", () => getMySettlements());
   const forecast = useSWR("/api/me/forecast", () => getMyForecast());
   const consumption = useSWR("/api/me/consumption", () => getMyConsumption());
+  const access = useSWR("/api/me/access", () => getMyAccess());
 
   if (
     [balance.error, ledger.error, status.error, forecast.error].some(isForbidden)
@@ -59,10 +61,40 @@ export default function MyAccount() {
   const txns = ledger.data?.transactions ?? [];
   const fc = forecast.data;
   const showBanner = fc?.available && fc.low_balance;
+  const acc = access.data;
+  const accessBlocked = acc?.status === "warned" || acc?.status === "disabled";
 
   return (
     <section className="space-y-6">
       <h1 className="text-lg font-semibold text-slate-100">Min konto</h1>
+
+      {accessBlocked && (
+        <div
+          role="alert"
+          className={`rounded-lg border p-4 text-sm ${
+            acc.status === "disabled"
+              ? "border-rose-500/50 bg-rose-500/10 text-rose-200"
+              : "border-amber-500/50 bg-amber-500/10 text-amber-200"
+          }`}
+        >
+          <p className="font-semibold">
+            {acc.status === "disabled" ? "Ladetilgang stengt" : "Varsel om ladetilgang"}
+          </p>
+          <p className="mt-1">
+            {acc.status === "disabled"
+              ? "Ladetilgangen din er merket som stengt. Ta kontakt med styret."
+              : "Ladetilgangen din kan bli stengt. Ta kontakt med styret."}{" "}
+            <a
+              className="underline"
+              href={acc.portal_url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Åpne Zaptec-portalen
+            </a>
+          </p>
+        </div>
+      )}
 
       {showBanner && (
         <div

@@ -4,12 +4,14 @@ import useSWR from "swr";
 import {
   ApiError,
   addInvoiceLine,
+  assessCorrection,
   deleteInvoiceLine,
   freezeSettlement,
   getConsumption,
   getSettlement,
   getUnassigned,
   listMembers,
+  postCorrection,
   postSettlement,
   previewSettlement,
   deleteSettlementAttachment,
@@ -18,12 +20,14 @@ import {
   settlementReports,
   uploadSettlementAttachments,
   type AllocationMethod,
+  type CorrectionAssessment,
   type SettlementAttachment,
+  type SettlementDetail as SettlementDetailData,
   type SettlementPreview,
 } from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import Table, { type Column } from "../components/Table";
-import { formatNok } from "../lib/format";
+import { formatNok, formatOre } from "../lib/format";
 
 const WARNING_LABELS: Record<string, string> = {
   negative_balances: "Noen medlemmer får negativ saldo",
@@ -234,7 +238,161 @@ export default function SettlementDetail() {
           Rapportforhåndsvisning utilgjengelig: {(reports.error as ApiError).message}
         </p>
       )}
+
+      {!isDraft && (
+        <CorrectionPanel detail={data} onChange={() => void mutate()} />
+      )}
     </section>
+  );
+}
+
+function CorrectionPanel({
+  detail,
+  onChange,
+}: {
+  detail: SettlementDetailData;
+  onChange: () => void | Promise<void>;
+}) {
+  const sid = detail.settlement.id;
+  const [assessment, setAssessment] = useState<CorrectionAssessment | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function assess() {
+    setMsg(null);
+    setBusy(true);
+    try {
+      setAssessment(await assessCorrection(sid));
+    } catch (err) {
+      setMsg(err instanceof ApiError ? err.message : "Vurdering feilet.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function book() {
+    setBusy(true);
+    setConfirm(false);
+    try {
+      const res = await postCorrection(sid);
+      setMsg(
+        `Korrigering #${res.sequence} bokført: ${res.members_adjusted} medlemmer, ${res.emails_queued} e-poster i kø.`,
+      );
+      setAssessment(null);
+      await onChange();
+    } catch (err) {
+      setMsg(err instanceof ApiError ? err.message : "Bokføring feilet.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-800 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-200">Korrigering</h2>
+        {detail.correction_pending && (
+          <span className="rounded-md bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-300">
+            Endret forbruk – korrigering tilgjengelig
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        Regner om denne bokførte avregningen fra dagens importerte forbruk mot de
+        fryste fakturalinjene. Original avregning røres ikke.
+      </p>
+
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void assess()}
+          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+        >
+          Vurder korrigering
+        </button>
+        {assessment?.has_changes && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setConfirm(true)}
+            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+          >
+            Bokfør korrigering
+          </button>
+        )}
+      </div>
+
+      {msg && <p className="mt-2 text-sm text-slate-300">{msg}</p>}
+
+      {assessment && !assessment.has_changes && (
+        <p className="mt-3 text-sm text-slate-400">
+          Forbruket stemmer med den bokførte avregningen – ingenting å korrigere.
+        </p>
+      )}
+
+      {assessment && assessment.has_changes && (
+        <table className="mt-3 w-full text-sm">
+          <thead className="text-left text-xs text-slate-500">
+            <tr>
+              <th className="py-1">Medlem</th>
+              <th className="py-1 text-right">kWh før</th>
+              <th className="py-1 text-right">kWh nå</th>
+              <th className="py-1 text-right">Endring</th>
+            </tr>
+          </thead>
+          <tbody>
+            {assessment.members.map((m) => (
+              <tr key={m.member_id} className="border-t border-slate-800">
+                <td className="py-1 text-slate-200">
+                  {m.member_reference} – {m.full_name}
+                  {!m.in_snapshot && (
+                    <span className="ml-1 text-xs text-amber-300">(ny)</span>
+                  )}
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  {m.consumption_kwh_before}
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  {m.consumption_kwh_after}
+                </td>
+                <td
+                  className={`py-1 text-right tabular-nums ${
+                    m.delta_ore > 0 ? "text-emerald-400" : "text-rose-400"
+                  }`}
+                >
+                  {m.delta_ore > 0 ? "+" : ""}
+                  {formatOre(m.delta_ore)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {detail.corrections.length > 0 && (
+        <ol className="mt-3 space-y-1 text-xs text-slate-400">
+          {detail.corrections.map((c) => (
+            <li key={c.id} className="border-l-2 border-slate-700 pl-3">
+              Korrigering #{c.sequence} · {c.members.length} medlemmer ·{" "}
+              {formatOre(c.corrected_total_ore - c.original_total_ore)} netto
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <ConfirmModal
+        open={confirm}
+        title="Bokfør korrigering?"
+        message="Dette skriver korrigeringstransaksjoner på medlemmenes saldo og varsler dem på e-post. Kan ikke angres."
+        confirmLabel="Bokfør"
+        tone="normal"
+        busy={busy}
+        onConfirm={() => void book()}
+        onClose={() => setConfirm(false)}
+      />
+    </div>
   );
 }
 

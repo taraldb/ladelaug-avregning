@@ -78,6 +78,20 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `GET /api/forecast/members` (admin) -> `{members:[MemberForecast]}` (one row per member; carries only `member_id`, join names from `GET /api/members`).
 - `POST /api/notifications/low-balance-scan` (admin, `X-Requested-With`) -> `{scanned,below,queued,suppressed}` (`LowBalanceScanResult`). Enqueues warning emails; drain with `POST /api/notifications/process`.
 
+### Release 1D — refunds, corrections, departure, charging access
+
+- `POST /api/members/{id}/refunds` (admin, `X-Requested-With`) `{amount:"250.00",value_date?,reference?,allow_negative?:boolean}` -> a `refund` `Txn` (negative `amount_ore`); 422 `refund_exceeds_balance` unless `allow_negative`, 422 `validation_error` on amount<=0. `TxnType` now also includes `"refund"` and `"settlement_correction"`.
+- `GET /api/settlement/{id}/correction` (admin) -> `CorrectionAssessment` — recompute a **posted** settlement from current usage vs the frozen lines/participation. `members[]` carries `charged_ore` (already charged, net), `corrected_charge_ore`, `delta_ore` (`= charged − corrected`; positive ⇒ credit to member), `consumption_kwh_before/after`, `in_snapshot`. 422 `not_posted` for a draft.
+- `POST /api/settlement/{id}/correction` (admin, `X-Requested-With`) -> the assessment plus `{correction_id,sequence,members_adjusted,emails_queued}`; 422 `no_correction_needed` when nothing changed. Writes one `settlement_correction` ledger row per adjusted member and one email each.
+- `GET /api/settlement/{id}` now also returns `corrections:SettlementCorrection[]` and, for a posted settlement, `correction_pending:boolean`.
+- `GET /api/members/{id}/departure-check?effective_date=YYYY-MM-DD` (admin) -> `DepartureCheck` `{current_status,open_assignments:[{charger_id,charger_name,effective_from}],unsettled_months:string[],balance_ore,balance_nok,would_refund_ore}` (defaults to today).
+- `POST /api/members/{id}/departure` (admin, `X-Requested-With`) `{effective_date,refund?:boolean,refund_reference?}` -> `DepartureResult` (check + `{status_changed,assignments_closed:number[],refund_txn_id:number|null,refunded_ore}`); 422 `unsettled_consumption` when `refund` is requested and any month is still unsettled.
+- `GET /api/members/{id}/access` (admin) -> `{member_id,status:"warned"|"disabled"|"restored"|null,history:AccessEvent[]}`.
+- `POST /api/members/{id}/access` (admin, `X-Requested-With`) `{action:"warned"|"disabled"|"restored",reason?,note?}` -> `{member_id,status,event:AccessEvent,history:AccessEvent[]}`. `warned`/`restored` also enqueue a member email; `disabled` does not. **No live Zaptec enforcement — status of record only.**
+- `GET /api/me/access` (member) -> `{status:AccessAction|null,portal_url:string}` — drives the portal banner + Zaptec link.
+- `GET /api/system/health` gains `corrections:{settlements_with_pending:number}` and `access:{disabled:number}` (informational; do not flip `ok`).
+- `AccessEvent = {id,member_id,action,reason:string|null,note:string|null,created_at,created_by_user_id:number|null,email_message_id:number|null}`.
+
 ### Types
 
 - `Member = {id,member_reference,full_name,email:string|null,join_date,created_at,updated_at,status:"active"|"inactive"|null,participates:boolean|null,balance_ore?:number|null,balance_nok?:string|null}` — balance fields are populated on `GET /api/members` and `GET /api/members/{id}`.

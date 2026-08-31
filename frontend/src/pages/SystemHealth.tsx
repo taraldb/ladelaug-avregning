@@ -59,6 +59,18 @@ export default function SystemHealth() {
             sub={`${h.zaptec.failed_runs} feilede synk`}
             tone={h.zaptec.failed_runs > 0 ? "negative" : "neutral"}
           />
+          <StatTile
+            label="Korrigeringer venter"
+            value={h.corrections.settlements_with_pending}
+            sub="bokførte avregninger med endret forbruk"
+            tone={h.corrections.settlements_with_pending > 0 ? "negative" : "neutral"}
+          />
+          <StatTile
+            label="Ladetilgang stengt"
+            value={h.access.disabled}
+            sub="medlemmer"
+            tone={h.access.disabled > 0 ? "negative" : "neutral"}
+          />
         </div>
       )}
 

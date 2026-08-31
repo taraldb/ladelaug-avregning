@@ -66,10 +66,21 @@ function freshState(): MockState {
 
 let state: MockState = freshState();
 
+let accessStatus: "warned" | "disabled" | "restored" | null = null;
+
+/** Seed the charging-access status returned by GET /api/me/access and
+ *  GET /api/members/:id/access. */
+export function seedAccessStatus(
+  status: "warned" | "disabled" | "restored" | null,
+): void {
+  accessStatus = status;
+}
+
 export function resetMockState(): void {
   state = freshState();
   mock1b = freshMock1b();
   forecast = freshForecast();
+  accessStatus = null;
 }
 
 export function setSession(user: AuthUser | null): void {
@@ -1182,6 +1193,7 @@ export const handlers = [
       lines: [],
       snapshot: [],
       attachments: [],
+      corrections: [],
     });
     return HttpResponse.json({ settlement });
   }),
@@ -1297,8 +1309,176 @@ export const handlers = [
       schema_version: 6,
       zaptec: { enabled: false, installation_id: null, last: {}, failed_runs: 0 },
       email: { queued: 0, sent: 2, failed: 0, next_attempt_at: null },
+      corrections: { settlements_with_pending: 0 },
+      access: { disabled: 0 },
       failed_jobs: 0,
       ok: true,
+    }),
+  ),
+
+  // --- Release 1D: refunds, corrections, departure, access --------
+
+  http.post("/api/members/:id/refunds", async ({ params, request }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const memberId = Number(params.id);
+    if (!state.members.has(memberId)) {
+      return HttpResponse.json(errorBody("not_found", "member not found"), {
+        status: 404,
+      });
+    }
+    const body = (await request.json()) as {
+      amount: string;
+      reference?: string;
+      allow_negative?: boolean;
+    };
+    const magnitude = nokToOre(body.amount ?? "0");
+    if (!Number.isFinite(magnitude) || magnitude <= 0) {
+      return HttpResponse.json(
+        errorBody("validation_error", "amount must be positive"),
+        { status: 422 },
+      );
+    }
+    if (!body.allow_negative && magnitude > ledgerBalanceOre(memberId)) {
+      return HttpResponse.json(
+        errorBody("refund_exceeds_balance", "refund exceeds the balance"),
+        { status: 422 },
+      );
+    }
+    const txn = seedLedgerTxn(memberId, {
+      txn_type: "refund",
+      amount_ore: -magnitude,
+      amount_nok: oreToNok(-magnitude),
+      value_date: today(),
+      reference: body.reference?.trim() || null,
+      recorded_at: new Date().toISOString(),
+    });
+    recordAudit(
+      "ledger.refunded",
+      "ledger_transaction",
+      String(txn.id),
+      `Refund ${txn.amount_nok} NOK for member ${memberId}`,
+    );
+    return HttpResponse.json(txn, { status: 201 });
+  }),
+
+  http.get("/api/members/:id/departure-check", ({ params, request }) => {
+    const url = new URL(request.url);
+    return HttpResponse.json({
+      member_id: Number(params.id),
+      effective_date: url.searchParams.get("effective_date") ?? "2026-09-01",
+      current_status: "active",
+      open_assignments: [],
+      unsettled_months: [],
+      balance_ore: 0,
+      balance_nok: "0.00",
+      would_refund_ore: 0,
+    });
+  }),
+
+  http.post("/api/members/:id/departure", async ({ params, request }) => {
+    const body = (await request.json()) as {
+      effective_date: string;
+      refund?: boolean;
+    };
+    return HttpResponse.json({
+      member_id: Number(params.id),
+      effective_date: body.effective_date,
+      current_status: "active",
+      open_assignments: [],
+      unsettled_months: [],
+      balance_ore: 0,
+      balance_nok: "0.00",
+      would_refund_ore: 0,
+      status_changed: true,
+      assignments_closed: [],
+      refund_txn_id: null,
+      refunded_ore: 0,
+    });
+  }),
+
+  http.get("/api/members/:id/access", ({ params }) =>
+    HttpResponse.json({
+      member_id: Number(params.id),
+      status: accessStatus,
+      history: [],
+    }),
+  ),
+
+  http.post("/api/members/:id/access", async ({ params, request }) => {
+    const body = (await request.json()) as {
+      action: "warned" | "disabled" | "restored";
+      reason?: string;
+    };
+    const event = {
+      id: nextId(),
+      member_id: Number(params.id),
+      action: body.action,
+      reason: body.reason ?? null,
+      note: null,
+      created_at: "2026-08-20T00:00:00+00:00",
+      created_by_user_id: 1,
+      email_message_id: body.action === "disabled" ? null : nextId(),
+    };
+    return HttpResponse.json({
+      member_id: Number(params.id),
+      status: body.action,
+      event,
+      history: [event],
+    });
+  }),
+
+  http.get("/api/me/access", () =>
+    HttpResponse.json({
+      status: accessStatus,
+      portal_url: "https://portal.zaptec.com",
+    }),
+  ),
+
+  http.get("/api/settlement/:id/correction", ({ params }) =>
+    HttpResponse.json({
+      settlement_id: Number(params.id),
+      period_month: "2026-07",
+      status: "posted",
+      has_changes: true,
+      sequence_next: 1,
+      unresolved_late_flags: 1,
+      original_total_charged_ore: 100000,
+      corrected_total_charged_ore: 100000,
+      members: [
+        {
+          member_id: 7,
+          member_reference: "M-7",
+          full_name: "Member Seven",
+          in_snapshot: true,
+          consumption_kwh_before: "10.000",
+          consumption_kwh_after: "20.000",
+          charged_ore: 50000,
+          charged_nok: "500.00",
+          corrected_charge_ore: 66667,
+          corrected_charge_nok: "666.67",
+          delta_ore: -16667,
+          delta_nok: "-166.67",
+        },
+      ],
+    }),
+  ),
+
+  http.post("/api/settlement/:id/correction", ({ params }) =>
+    HttpResponse.json({
+      settlement_id: Number(params.id),
+      period_month: "2026-07",
+      status: "posted",
+      has_changes: true,
+      sequence_next: 2,
+      unresolved_late_flags: 0,
+      original_total_charged_ore: 0,
+      corrected_total_charged_ore: 0,
+      members: [],
+      correction_id: nextId(),
+      sequence: 1,
+      members_adjusted: 0,
+      emails_queued: 0,
     }),
   ),
   http.get("/api/notifications", () =>
@@ -1462,6 +1642,8 @@ interface Mock1bState {
         bytes: number;
         uploaded_at: string;
       }[];
+      corrections: unknown[];
+      correction_pending?: boolean;
     }
   >;
   mySettlements: {

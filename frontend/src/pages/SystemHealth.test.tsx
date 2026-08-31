@@ -16,6 +16,16 @@ describe("SystemHealth (admin)", () => {
     expect(await screen.findByText(/Sending av e-post fullført\./)).toBeInTheDocument();
   });
 
+  it("shows the correction and access counters", async () => {
+    setSession(ADMIN_USER);
+    renderApp(<AppRouter />, { route: "/system" });
+
+    expect(
+      await screen.findByText("Korrigeringer venter"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Ladetilgang stengt")).toBeInTheDocument();
+  });
+
   it("links to the user and charger config pages", async () => {
     setSession(ADMIN_USER);
     renderApp(<AppRouter />, { route: "/system" });

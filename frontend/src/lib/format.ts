@@ -72,6 +72,10 @@ export function txnTypeLabel(type: string): string {
       return "Avregning";
     case "settlement_reversal":
       return "Avregning (reversert)";
+    case "settlement_correction":
+      return "Korrigering";
+    case "refund":
+      return "Refusjon";
     default:
       return type;
   }
