@@ -13,6 +13,13 @@ Allocation (US-606 / US-607 / US-610):
   (a member who did not charge pays 0);
 * every line's øre are apportioned by :func:`money.allocate_by_weights`, which
   is total-preserving — the residual øre land on the largest weight.
+
+Corrections (Epic 7): once posted, a settlement can be *corrected* —
+``assess_correction`` recomputes it from the month's current imported
+consumption against the frozen invoice lines + frozen equal-cost participation,
+and ``post_correction`` books the per-member difference as ``settlement_correction``
+ledger rows (positive = a credit back to the member). The original settlement,
+its snapshot, and its allocations are never mutated.
 """
 
 from __future__ import annotations
@@ -562,6 +569,266 @@ class SettlementRepo:
             (member_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # --- corrections (Epic 7 — US-701 / US-702 / US-703) ----------
+
+    def _charged_ore(self, settlement_id: int) -> dict[int, int]:
+        """member_id -> net øre already charged for this settlement (positive =
+        amount owed). Sums the ``settlement_charge`` + ``settlement_correction``
+        ledger rows and flips the sign (those rows are stored negative for a
+        debit). Naturally folds in earlier corrections."""
+        rows = self._db.connection.execute(
+            "SELECT member_id, COALESCE(SUM(amount_ore), 0) AS total "
+            "FROM ledger_transactions WHERE settlement_id = ? GROUP BY member_id",
+            (settlement_id,),
+        ).fetchall()
+        return {int(r["member_id"]): -int(r["total"]) for r in rows}
+
+    @staticmethod
+    def _allocate_charges(
+        member_rows: list[dict[str, Any]], lines: list[dict[str, Any]]
+    ) -> dict[int, int]:
+        """Same allocation as :meth:`compute` (equal lines over
+        ``participates_equal`` members, consumption lines kWh-weighted over
+        everyone), returning ``{member_id: charge_ore}``. Used to recompute a
+        posted settlement from current usage against its frozen invoice lines."""
+        by_id = {m["member_id"]: m for m in member_rows}
+        equal_ids = [m["member_id"] for m in member_rows if m["participates_equal"]]
+        all_ids = [m["member_id"] for m in member_rows]
+        charge: dict[int, int] = {mid: 0 for mid in all_ids}
+        for ln in lines:
+            if ln["allocation_method"] == "equal":
+                targets = equal_ids
+                weights: list[Decimal] = [Decimal(1)] * len(targets)
+            else:
+                targets = all_ids
+                weights = [Decimal(by_id[mid]["consumption_kwh"]) for mid in targets]
+            if not targets:
+                continue
+            for mid, share in zip(targets, allocate_by_weights(int(ln["amount_ore"]), weights)):
+                charge[mid] += share
+        return charge
+
+    def assess_correction(self, settlement_id: int) -> dict[str, Any]:
+        """Recompute a *posted* settlement from the month's current imported
+        consumption against its frozen invoice lines and frozen equal-cost
+        participation (US-701 / US-702). Pure read. ``delta_ore`` per member is
+        ``charged_ore - corrected_charge_ore`` — positive means the member was
+        over-charged and is owed a credit; it is exactly the ``amount_ore`` a
+        posted correction would write to the ledger."""
+        row = self._require(settlement_id)
+        if row["status"] != "posted":
+            raise DomainError(
+                "not_posted", "Corrections apply only to a posted settlement.", status=422
+            )
+        month = row["period_month"]
+        snap = {m["member_id"]: dict(m) for m in self.snapshot_members(settlement_id)}
+        lines = self.lines(settlement_id)
+        charged = self._charged_ore(settlement_id)
+        current = ChargingRepo(self._db, tz=self._tz).consumption_by_member(month)
+
+        members_repo = MemberRepo(self._db)
+        member_rows: list[dict[str, Any]] = []
+        for mid, m in snap.items():
+            member_rows.append(
+                {
+                    "member_id": mid,
+                    "member_reference": m["member_reference"],
+                    "full_name": m["full_name"],
+                    "participates_equal": int(m["participates_equal"]),
+                    "consumption_kwh": str(current.get(mid, Decimal(0))),
+                    "in_snapshot": True,
+                }
+            )
+        for mid, kwh in current.items():
+            if mid in snap:
+                continue
+            rec = members_repo.get(mid)
+            member_rows.append(
+                {
+                    "member_id": mid,
+                    "member_reference": rec["member_reference"] if rec else str(mid),
+                    "full_name": rec["full_name"] if rec else str(mid),
+                    "participates_equal": 0,  # equal-cost participation is frozen at post
+                    "consumption_kwh": str(kwh),
+                    "in_snapshot": False,
+                }
+            )
+
+        corrected = self._allocate_charges(member_rows, lines)
+
+        members_out: list[dict[str, Any]] = []
+        for mr in member_rows:
+            mid = mr["member_id"]
+            before_kwh = str(snap[mid]["consumption_kwh"]) if mid in snap else "0"
+            charged_ore = int(charged.get(mid, 0))
+            corrected_ore = int(corrected.get(mid, 0))
+            delta_ore = charged_ore - corrected_ore
+            if delta_ore == 0 and before_kwh == mr["consumption_kwh"]:
+                continue
+            members_out.append(
+                {
+                    "member_id": mid,
+                    "member_reference": mr["member_reference"],
+                    "full_name": mr["full_name"],
+                    "in_snapshot": mr["in_snapshot"],
+                    "consumption_kwh_before": before_kwh,
+                    "consumption_kwh_after": mr["consumption_kwh"],
+                    "charged_ore": charged_ore,
+                    "charged_nok": str(ore_to_nok(charged_ore)),
+                    "corrected_charge_ore": corrected_ore,
+                    "corrected_charge_nok": str(ore_to_nok(corrected_ore)),
+                    "delta_ore": delta_ore,
+                    "delta_nok": str(ore_to_nok(delta_ore)),
+                }
+            )
+
+        has_changes = any(m["delta_ore"] != 0 for m in members_out)
+        existing = self._db.connection.execute(
+            "SELECT COUNT(*) FROM settlement_corrections WHERE settlement_id = ?",
+            (settlement_id,),
+        ).fetchone()[0]
+        late = self._unresolved_late(month)
+        return {
+            "settlement_id": settlement_id,
+            "period_month": month,
+            "status": "posted",
+            "has_changes": has_changes,
+            "sequence_next": int(existing) + 1,
+            "unresolved_late_flags": late,
+            "original_total_charged_ore": sum(int(v) for v in charged.values()),
+            "corrected_total_charged_ore": sum(int(v) for v in corrected.values()),
+            "members": members_out,
+        }
+
+    def corrections(self, settlement_id: int) -> list[dict[str, Any]]:
+        heads = self._db.connection.execute(
+            "SELECT * FROM settlement_corrections WHERE settlement_id = ? ORDER BY sequence",
+            (settlement_id,),
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for h in heads:
+            members = self._db.connection.execute(
+                "SELECT * FROM settlement_correction_members WHERE correction_id = ? "
+                "ORDER BY member_id",
+                (h["id"],),
+            ).fetchall()
+            out.append({**dict(h), "members": [dict(m) for m in members]})
+        return out
+
+    def has_pending_correction(self, settlement_id: int) -> bool:
+        try:
+            return bool(self.assess_correction(settlement_id)["has_changes"])
+        except DomainError:
+            return False
+
+    async def post_correction(self, settlement_id: int, *, actor: AuditContext) -> dict[str, Any]:
+        """Book the assessed correction (US-703): one ``settlement_correction``
+        ledger row per member with a non-zero ``delta_ore``, a
+        ``settlement_corrections`` record, and resolution of the month's
+        outstanding ``late_session_flags``. The posted settlement row and its
+        ``settlement_allocations`` are left untouched."""
+        assessment = self.assess_correction(settlement_id)
+        if not assessment["has_changes"]:
+            raise DomainError(
+                "no_correction_needed",
+                "The current usage matches the posted settlement — nothing to correct.",
+            )
+        month = assessment["period_month"]
+        sequence = assessment["sequence_next"]
+        adjusted = [m for m in assessment["members"] if m["delta_ore"] != 0]
+        value_date = periods.last_day(month)
+        now = clock.now_utc().isoformat()
+
+        async with self._db._write() as cur:
+            cur.execute(
+                "INSERT INTO settlement_corrections "
+                "(settlement_id, sequence, original_total_ore, corrected_total_ore, "
+                " basis_json, created_at, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    settlement_id,
+                    sequence,
+                    assessment["original_total_charged_ore"],
+                    assessment["corrected_total_charged_ore"],
+                    json.dumps(assessment),
+                    now,
+                    actor.actor_user_id,
+                ),
+            )
+            correction_id = int(cur.lastrowid or 0)
+            for m in adjusted:
+                ore = int(m["delta_ore"])
+                cur.execute(
+                    "INSERT INTO ledger_transactions "
+                    "(member_id, txn_type, amount_ore, amount_nok, currency, value_date, reason, "
+                    " reference, settlement_id, created_by_user_id, recorded_at) "
+                    "VALUES (?, 'settlement_correction', ?, ?, 'NOK', ?, ?, ?, ?, ?, ?)",
+                    (
+                        m["member_id"],
+                        ore,
+                        str(ore_to_nok(ore)),
+                        value_date,
+                        f"Korrigering avregning {month} (#{sequence})",
+                        month,
+                        settlement_id,
+                        actor.actor_user_id,
+                        now,
+                    ),
+                )
+                ledger_txn_id = int(cur.lastrowid or 0)
+                cur.execute(
+                    "INSERT INTO settlement_correction_members "
+                    "(correction_id, member_id, consumption_kwh_before, consumption_kwh_after, "
+                    " original_charge_ore, corrected_charge_ore, delta_ore, ledger_txn_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        correction_id,
+                        m["member_id"],
+                        m["consumption_kwh_before"],
+                        m["consumption_kwh_after"],
+                        m["charged_ore"],
+                        m["corrected_charge_ore"],
+                        ore,
+                        ledger_txn_id,
+                    ),
+                )
+            resolved = cur.execute(
+                "UPDATE late_session_flags SET resolved_at = ?, resolved_by_user_id = ?, "
+                "note = ? WHERE period_month = ? AND resolved_at IS NULL",
+                (now, actor.actor_user_id, f"settlement correction #{correction_id}", month),
+            ).rowcount
+            write_audit_row(
+                cur,
+                actor,
+                event_type="settlement.corrected",
+                entity_type="settlement",
+                entity_id=settlement_id,
+                summary=(
+                    f"Settlement {month} correction #{sequence}: {len(adjusted)} member(s) adjusted"
+                ),
+                detail={
+                    "correction_id": correction_id,
+                    "sequence": sequence,
+                    "period_month": month,
+                    "late_flags_resolved": int(resolved),
+                    "members": [
+                        {
+                            "member_id": m["member_id"],
+                            "delta_ore": m["delta_ore"],
+                            "consumption_kwh_before": m["consumption_kwh_before"],
+                            "consumption_kwh_after": m["consumption_kwh_after"],
+                        }
+                        for m in adjusted
+                    ],
+                },
+            )
+
+        return {
+            **assessment,
+            "correction_id": correction_id,
+            "sequence": sequence,
+            "members_adjusted": len(adjusted),
+        }
 
     # --- post (US-609) ---------------------------------------------
 
