@@ -1229,6 +1229,35 @@ export const handlers = [
     d?.lines.push(line);
     return HttpResponse.json({ line }, { status: 201 });
   }),
+  http.patch("/api/settlement/:id/lines/:lineId", async ({ params, request }) => {
+    const body = (await request.json()) as Partial<{
+      description: string;
+      allocation_method: "equal" | "consumption";
+      amount: string;
+      category: string | null;
+    }>;
+    if (Object.keys(body).length === 0) {
+      return HttpResponse.json(
+        errorBody("validation_error", "provide at least one field to update"),
+        { status: 422 },
+      );
+    }
+    const d = mock1b.details.get(Number(params.id));
+    const line = d?.lines.find((l) => l.id === Number(params.lineId));
+    if (!d || !line) {
+      return HttpResponse.json(errorBody("not_found", "not found"), { status: 404 });
+    }
+    if (body.description !== undefined) line.description = body.description;
+    if (body.allocation_method !== undefined) {
+      line.allocation_method = body.allocation_method;
+    }
+    if (body.category !== undefined) line.category = body.category;
+    if (body.amount !== undefined) {
+      line.amount_ore = Math.round(Number(body.amount) * 100);
+      line.amount_nok = Number(body.amount).toFixed(2);
+    }
+    return HttpResponse.json(d);
+  }),
   http.delete("/api/settlement/:id/lines/:lineId", ({ params }) => {
     const d = mock1b.details.get(Number(params.id));
     if (d) d.lines = d.lines.filter((l) => l.id !== Number(params.lineId));

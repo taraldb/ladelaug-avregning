@@ -625,6 +625,32 @@ class InvoiceLineIn(BaseModel):
         return _positive_nok(v)
 
 
+class InvoiceLinePatch(BaseModel):
+    """Partial edit of a draft settlement's invoice line — only the fields
+    present in the body are applied."""
+
+    description: str | None = None
+    allocation_method: Literal["equal", "consumption"] | None = None
+    amount: Decimal | None = None
+    category: str | None = None
+
+    @field_validator("description")
+    @classmethod
+    def _v_desc(cls, v: str | None) -> str | None:
+        return None if v is None else _required(v, "description")
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _v_amount(cls, v: Any) -> Decimal | None:
+        return None if v is None else _positive_nok(v)
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> InvoiceLinePatch:
+        if not self.model_fields_set:
+            raise ValueError("provide at least one field to update")
+        return self
+
+
 class ChargerAssignmentOut(BaseModel):
     id: int
     charger_id: int

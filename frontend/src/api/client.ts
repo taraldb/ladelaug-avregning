@@ -935,6 +935,19 @@ export function addInvoiceLine(
   return post<{ line: InvoiceLine }>(`/api/settlement/${id}/lines`, body);
 }
 
+export function updateInvoiceLine(
+  id: number,
+  lineId: number,
+  body: Partial<{
+    description: string;
+    allocation_method: AllocationMethod;
+    amount: string;
+    category: string | null;
+  }>,
+): Promise<SettlementDetail> {
+  return patch<SettlementDetail>(`/api/settlement/${id}/lines/${lineId}`, body);
+}
+
 export function deleteInvoiceLine(
   id: number,
   lineId: number,

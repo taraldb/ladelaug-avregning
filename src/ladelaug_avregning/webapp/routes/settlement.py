@@ -34,6 +34,7 @@ from ladelaug_avregning.webapp.deps import (
 )
 from ladelaug_avregning.webapp.schemas import (
     InvoiceLineIn,
+    InvoiceLinePatch,
     SettlementDraftIn,
     SettlementInvoiceIn,
     SuggestedParticipantOut,
@@ -138,6 +139,21 @@ async def add_line(
         actor=actor,
     )
     return {"line": line}
+
+
+@router.patch("/{settlement_id}/lines/{line_id}", dependencies=[Depends(require_fetch)])
+async def update_line(
+    settlement_id: int,
+    line_id: int,
+    body: InvoiceLinePatch,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, Any]:
+    await _repo(db, config).update_line(
+        settlement_id, line_id, actor=actor, **body.model_dump(exclude_unset=True)
+    )
+    return _detail(_repo(db, config), settlement_id)
 
 
 @router.delete("/{settlement_id}/lines/{line_id}", dependencies=[Depends(require_fetch)])

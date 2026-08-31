@@ -6,6 +6,7 @@ import {
   addInvoiceLine,
   assessCorrection,
   deleteInvoiceLine,
+  updateInvoiceLine,
   freezeSettlement,
   getConsumption,
   getSettlement,
@@ -456,6 +457,131 @@ function InvoicePanel({
   );
 }
 
+const lineInput =
+  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100";
+const METHOD_LABEL: Record<AllocationMethod, string> = {
+  equal: "Likt",
+  consumption: "Forbruk",
+};
+
+/** Segmented Likt / Forbruk control — a keyboard-and-click friendly replacement
+ *  for the allocation-method dropdown. */
+function MethodToggle({
+  value,
+  onChange,
+}: {
+  value: AllocationMethod;
+  onChange: (v: AllocationMethod) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Fordeling"
+      className="inline-flex rounded-md border border-slate-700 p-0.5"
+    >
+      {(["equal", "consumption"] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          aria-label={METHOD_LABEL[m]}
+          aria-pressed={value === m}
+          onClick={() => onChange(m)}
+          className={`rounded px-3 py-1 text-sm transition-colors ${
+            value === m
+              ? "bg-emerald-500 font-semibold text-slate-950"
+              : "text-slate-300 hover:bg-slate-800"
+          }`}
+        >
+          {METHOD_LABEL[m]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+type InvoiceLineRow = Awaited<ReturnType<typeof getSettlement>>["lines"][number];
+
+function EditLineForm({
+  sid,
+  line,
+  onSaved,
+  onCancel,
+}: {
+  sid: number;
+  line: InvoiceLineRow;
+  onSaved: () => void | Promise<unknown>;
+  onCancel: () => void;
+}) {
+  const [description, setDescription] = useState(line.description);
+  const [method, setMethod] = useState<AllocationMethod>(line.allocation_method);
+  const [amount, setAmount] = useState(line.amount_nok);
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setSaving(true);
+    try {
+      await updateInvoiceLine(sid, line.id, {
+        description: description.trim(),
+        allocation_method: method,
+        amount: amount.trim(),
+      });
+      await onSaved();
+    } catch (e2) {
+      setErr(e2 instanceof ApiError ? e2.message : "Kunne ikke lagre linjen.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={save}
+      className="flex flex-wrap items-end gap-2 text-sm"
+      aria-label={`Endre linje ${line.description}`}
+    >
+      <label>
+        <span className="mb-1 block text-slate-400">Beskrivelse</span>
+        <input
+          required
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          className={lineInput}
+        />
+      </label>
+      <div>
+        <span className="mb-1 block text-slate-400">Fordeling</span>
+        <MethodToggle value={method} onChange={setMethod} />
+      </div>
+      <label>
+        <span className="mb-1 block text-slate-400">Beløp (kr)</span>
+        <input
+          required
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className={`w-28 ${lineInput}`}
+        />
+      </label>
+      <button
+        type="submit"
+        disabled={saving}
+        className="rounded-md bg-emerald-500 px-3 py-1.5 font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+      >
+        Lagre
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="rounded-md border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-800"
+      >
+        Avbryt
+      </button>
+      {err && <p className="w-full text-xs text-rose-400">{err}</p>}
+    </form>
+  );
+}
+
 function LinesPanel({
   detail,
   editable,
@@ -469,6 +595,7 @@ function LinesPanel({
   const [description, setDescription] = useState("");
   const [method, setMethod] = useState<AllocationMethod>("equal");
   const [amount, setAmount] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   async function add(e: FormEvent) {
@@ -482,45 +609,84 @@ function LinesPanel({
       });
       setDescription("");
       setAmount("");
+      setMethod("equal");
       await onChange();
     } catch (e2) {
       setErr(e2 instanceof ApiError ? e2.message : "Kunne ikke legge til linje.");
     }
   }
 
-  const columns: Column<(typeof detail.lines)[number]>[] = [
-    { key: "d", header: "Beskrivelse", render: (l) => l.description },
-    {
-      key: "m",
-      header: "Fordeling",
-      render: (l) => (l.allocation_method === "equal" ? "Likt" : "Forbruk"),
-    },
-    { key: "a", header: "Beløp", render: (l) => formatNok(l.amount_nok) },
-    {
-      key: "x",
-      header: "",
-      render: (l) =>
-        editable ? (
-          <button
-            type="button"
-            onClick={() => void deleteInvoiceLine(sid, l.id).then(onChange)}
-            className="text-xs text-rose-400 hover:underline"
-          >
-            Fjern
-          </button>
-        ) : null,
-    },
-  ];
-
   return (
     <div className="rounded-lg border border-slate-800 p-4">
       <h2 className="mb-2 text-sm font-semibold text-slate-200">Fakturalinjer</h2>
-      <Table
-        columns={columns}
-        rows={detail.lines}
-        rowKey={(l) => l.id}
-        empty="Ingen linjer"
-      />
+
+      {detail.lines.length === 0 ? (
+        <p className="text-sm text-slate-500">Ingen linjer</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-slate-500">
+            <tr>
+              <th className="py-1">Beskrivelse</th>
+              <th className="py-1">Fordeling</th>
+              <th className="py-1 text-right">Beløp</th>
+              <th className="py-1" />
+            </tr>
+          </thead>
+          <tbody>
+            {detail.lines.map((l) =>
+              editable && editingId === l.id ? (
+                <tr key={l.id} className="border-t border-slate-800">
+                  <td colSpan={4} className="py-2">
+                    <EditLineForm
+                      sid={sid}
+                      line={l}
+                      onCancel={() => setEditingId(null)}
+                      onSaved={async () => {
+                        setEditingId(null);
+                        await onChange();
+                      }}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                <tr key={l.id} className="border-t border-slate-800">
+                  <td className="py-1 text-slate-200">{l.description}</td>
+                  <td className="py-1">{METHOD_LABEL[l.allocation_method]}</td>
+                  <td className="py-1 text-right tabular-nums">
+                    {formatNok(l.amount_nok)}
+                  </td>
+                  <td className="py-1 text-right">
+                    {editable && (
+                      <span className="flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setErr(null);
+                            setEditingId(l.id);
+                          }}
+                          className="text-xs text-emerald-400 hover:underline"
+                        >
+                          Endre
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void deleteInvoiceLine(sid, l.id).then(onChange)
+                          }
+                          className="text-xs text-rose-400 hover:underline"
+                        >
+                          Fjern
+                        </button>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
+      )}
+
       {editable && (
         <form onSubmit={add} className="mt-3 flex flex-wrap items-end gap-2 text-sm">
           <label>
@@ -529,27 +695,20 @@ function LinesPanel({
               required
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
+              className={lineInput}
             />
           </label>
-          <label>
+          <div>
             <span className="mb-1 block text-slate-400">Fordeling</span>
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value as AllocationMethod)}
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
-            >
-              <option value="equal">Likt</option>
-              <option value="consumption">Forbruk</option>
-            </select>
-          </label>
+            <MethodToggle value={method} onChange={setMethod} />
+          </div>
           <label>
             <span className="mb-1 block text-slate-400">Beløp (kr)</span>
             <input
               required
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
+              className={`w-28 ${lineInput}`}
             />
           </label>
           <button

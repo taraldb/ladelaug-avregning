@@ -43,6 +43,7 @@ from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.money import allocate_by_weights, nok_to_ore, ore_to_nok, parse_nok
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+_UNSET: Any = object()
 
 
 def _ore_nok(ore: int) -> tuple[int, str]:
@@ -217,6 +218,79 @@ class SettlementRepo:
                     "allocation_method": allocation_method,
                     "amount_nok": nok,
                     "category": category,
+                },
+            )
+        return dict(
+            self._db.connection.execute(
+                "SELECT * FROM settlement_invoice_lines WHERE id = ?", (line_id,)
+            ).fetchone()
+        )
+
+    async def update_line(
+        self,
+        settlement_id: int,
+        line_id: int,
+        *,
+        description: Any = _UNSET,
+        allocation_method: Any = _UNSET,
+        amount: Any = _UNSET,
+        category: Any = _UNSET,
+        actor: AuditContext,
+    ) -> dict[str, Any]:
+        """Edit a draft settlement's invoice line in place. Partial: only the
+        fields passed are touched. Re-syncs ``invoice_total_nok``."""
+        self._require_draft(settlement_id)
+
+        updates: dict[str, Any] = {}
+        if description is not _UNSET:
+            description = (description or "").strip()
+            if not description:
+                raise DomainError("description_required", "An invoice line needs a description.")
+            updates["description"] = description
+        if allocation_method is not _UNSET:
+            if allocation_method not in ("equal", "consumption"):
+                raise DomainError(
+                    "bad_method", "allocation_method must be 'equal' or 'consumption'."
+                )
+            updates["allocation_method"] = allocation_method
+        if amount is not _UNSET:
+            amount_dec = parse_nok(amount)
+            if amount_dec <= 0:
+                raise DomainError("bad_amount", "line amount must be positive")
+            ore, nok = _ore_nok(nok_to_ore(amount_dec))
+            updates["amount_ore"] = ore
+            updates["amount_nok"] = nok
+        if category is not _UNSET:
+            updates["category"] = category
+        if not updates:
+            raise DomainError("no_changes", "No fields to update.")
+
+        async with self._db._write() as cur:
+            before = cur.execute(
+                "SELECT * FROM settlement_invoice_lines WHERE id = ? AND settlement_id = ?",
+                (line_id, settlement_id),
+            ).fetchone()
+            if before is None:
+                raise NotFoundError(f"invoice line {line_id} not found")
+            before = dict(before)
+            assignments = ", ".join(f"{k} = ?" for k in updates)
+            cur.execute(
+                f"UPDATE settlement_invoice_lines SET {assignments} WHERE id = ?",
+                (*updates.values(), line_id),
+            )
+            self._sync_invoice_total(cur, settlement_id)
+            write_audit_row(
+                cur,
+                actor,
+                event_type="settlement.line_updated",
+                entity_type="settlement",
+                entity_id=settlement_id,
+                summary=f"Line {line_id} ({before['description']!r}) updated: "
+                f"{', '.join(sorted(updates))}",
+                detail={
+                    "line_id": line_id,
+                    "before": {k: before[k] for k in updates},
+                    "after": dict(updates),
                 },
             )
         return dict(

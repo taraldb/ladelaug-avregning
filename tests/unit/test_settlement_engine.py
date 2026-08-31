@@ -8,7 +8,7 @@ from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.domain.ledger import LedgerRepo
 from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
-from ladelaug_avregning.errors import DomainError
+from ladelaug_avregning.errors import DomainError, NotFoundError
 
 FETCH = {"X-Requested-With": "fetch"}
 MONTH = "2026-07"
@@ -91,6 +91,101 @@ async def _draft_with_lines(db, *, equal_nok=None, consumption_nok=None):
         sid, filename="faktura.pdf", content=b"%PDF-1.4 fake", actor=AuditContext.system()
     )
     return repo, sid
+
+
+# --- invoice lines -------------------------------------------------
+
+
+async def test_update_line_partial_edit_and_total_resync(db):
+    repo, sid = await _draft_with_lines(db, equal_nok="900")
+    line = repo.lines(sid)[0]
+
+    updated = await repo.update_line(
+        sid,
+        line["id"],
+        description="Fastledd Q3",
+        allocation_method="consumption",
+        amount=Decimal("1200.50"),
+        actor=AuditContext.system(),
+    )
+    assert updated["description"] == "Fastledd Q3"
+    assert updated["allocation_method"] == "consumption"
+    assert updated["amount_nok"] == "1200.50"
+    assert repo.get(sid)["invoice_total_nok"] == "1200.50"
+
+    ev = db.connection.execute(
+        "SELECT event_type FROM audit_events WHERE event_type = 'settlement.line_updated'"
+    ).fetchone()
+    assert ev is not None
+
+
+async def test_update_line_only_amount(db):
+    repo, sid = await _draft_with_lines(db, equal_nok="100", consumption_nok="50")
+    equal_line = next(l for l in repo.lines(sid) if l["allocation_method"] == "equal")
+    await repo.update_line(sid, equal_line["id"], amount=Decimal(250), actor=AuditContext.system())
+    row = next(l for l in repo.lines(sid) if l["id"] == equal_line["id"])
+    assert row["amount_nok"] == "250.00" and row["allocation_method"] == "equal"
+    assert repo.get(sid)["invoice_total_nok"] == "300.00"  # 250 + 50
+
+
+async def test_update_line_validation_and_not_found(db):
+    repo, sid = await _draft_with_lines(db, equal_nok="100")
+    line = repo.lines(sid)[0]
+    with pytest.raises(DomainError) as ei:
+        await repo.update_line(sid, line["id"], amount=Decimal(0), actor=AuditContext.system())
+    assert ei.value.code == "bad_amount"
+    with pytest.raises(DomainError):
+        await repo.update_line(sid, line["id"], description="  ", actor=AuditContext.system())
+    with pytest.raises(NotFoundError):
+        await repo.update_line(sid, 99999, description="x", actor=AuditContext.system())
+
+
+async def test_update_line_rejected_once_posted(db):
+    m1 = await _member(db, "M1")
+    _add_consumption(db, member_id=m1, kwh=10)
+    repo, sid = await _draft_with_lines(db, equal_nok="100")
+    await repo.freeze(sid, actor=AuditContext.system())
+    await repo.post(sid, actor=AuditContext.system())
+    with pytest.raises(DomainError) as ei:
+        await repo.update_line(
+            sid, repo.lines(sid)[0]["id"], amount=Decimal(5), actor=AuditContext.system()
+        )
+    assert ei.value.code == "not_draft"
+
+
+def test_update_line_route(admin_client):
+    sid = admin_client.post(
+        "/api/settlement/drafts", json={"period_month": MONTH}, headers=FETCH
+    ).json()["settlement"]["id"]
+    line = admin_client.post(
+        f"/api/settlement/{sid}/lines",
+        json={"description": "Fast", "allocation_method": "equal", "amount": "500"},
+        headers=FETCH,
+    ).json()["line"]
+
+    resp = admin_client.patch(
+        f"/api/settlement/{sid}/lines/{line['id']}",
+        json={"allocation_method": "consumption", "amount": "750"},
+        headers=FETCH,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    edited = next(x for x in body["lines"] if x["id"] == line["id"])
+    assert edited["allocation_method"] == "consumption" and edited["amount_nok"] == "750.00"
+
+    # empty body -> 422; no CSRF header -> 403
+    assert (
+        admin_client.patch(
+            f"/api/settlement/{sid}/lines/{line['id']}", json={}, headers=FETCH
+        ).status_code
+        == 422
+    )
+    assert (
+        admin_client.patch(
+            f"/api/settlement/{sid}/lines/{line['id']}", json={"amount": "1"}
+        ).status_code
+        == 403
+    )
 
 
 # --- freeze ----------------------------------------------------------
