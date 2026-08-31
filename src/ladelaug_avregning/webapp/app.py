@@ -12,6 +12,7 @@ from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.errors import register_exception_handlers
 from ladelaug_avregning.webapp.routes import (
+    access,
     audit,
     auth,
     chargers,
@@ -57,6 +58,7 @@ def create_app(config: AppConfig, db: Database) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(audit.router)
     app.include_router(members.router)
+    app.include_router(access.router)
     app.include_router(users.router)
     app.include_router(chargers.router)
     app.include_router(zaptec.router)

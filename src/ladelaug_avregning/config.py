@@ -65,6 +65,10 @@ class ZaptecConfig(BaseModel):
     request_timeout_seconds: float = 30.0
     page_size: int = 500
     max_retries: int = 3
+    # Shown to a member whose charging access has been warned/disabled — 1D
+    # records the status and notifies; it does not call Zaptec to enforce it
+    # (that is a Release 2 item). The portal is where an admin acts.
+    portal_url: str = "https://portal.zaptec.com"
 
 
 class EmailConfig(BaseModel):

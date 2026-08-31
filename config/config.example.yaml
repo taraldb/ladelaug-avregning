@@ -47,6 +47,10 @@ zaptec:
   request_timeout_seconds: 30
   page_size: 500
   max_retries: 3
+  # Shown to a member whose charging access is warned/disabled (US-305). 1D
+  # records the status and emails the member; it does not call Zaptec to
+  # enforce it — an admin acts here.
+  portal_url: "https://portal.zaptec.com"
 
 email:
   # backend: console (log only) | file (.eml under state/mail/) | smtp

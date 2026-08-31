@@ -346,6 +346,39 @@ class SuggestedParticipantOut(BaseModel):
     source: str
 
 
+# --- charging access (US-305) ----------------------------------------
+
+
+class AccessActionIn(BaseModel):
+    action: Literal["warned", "disabled", "restored"]
+    reason: str | None = None
+    note: str | None = None
+
+
+class AccessEventOut(BaseModel):
+    id: int
+    member_id: int
+    action: str
+    reason: str | None
+    note: str | None
+    created_at: str
+    created_by_user_id: int | None
+    email_message_id: int | None
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> AccessEventOut:
+        return cls(
+            id=row["id"],
+            member_id=row["member_id"],
+            action=row["action"],
+            reason=row["reason"],
+            note=row["note"],
+            created_at=row["created_at"],
+            created_by_user_id=row["created_by_user_id"],
+            email_message_id=row["email_message_id"],
+        )
+
+
 # --- ledger (US-501..504) --------------------------------------------
 
 

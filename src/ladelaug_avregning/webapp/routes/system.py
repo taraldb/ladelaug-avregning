@@ -11,8 +11,10 @@ from fastapi import APIRouter, Depends
 from ladelaug_avregning import __version__
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
+from ladelaug_avregning.domain.access import AccessRepo
 from ladelaug_avregning.domain.forecast import ForecastRepo
 from ladelaug_avregning.domain.notifications import NotificationRepo
+from ladelaug_avregning.domain.settlement import SettlementRepo
 from ladelaug_avregning.domain.sync_runs import SyncRunRepo
 from ladelaug_avregning.webapp.deps import get_config, get_db, require_admin
 
@@ -36,6 +38,15 @@ async def health(
         1 for f in ForecastRepo(db).all_member_forecasts() if f["available"] and f["low_balance"]
     )
     low_balance = {"warned_total": int(warned_total), "members_below": members_below}
+    srepo = SettlementRepo(db, tz=config.timezone)
+    corrections = {
+        "settlements_with_pending": sum(
+            1
+            for s in srepo.list()
+            if s["status"] == "posted" and srepo.has_pending_correction(int(s["id"]))
+        )
+    }
+    access = {"disabled": AccessRepo(db).disabled_count()}
     zaptec = {
         "enabled": config.zaptec.enabled,
         "installation_id": config.zaptec.installation_id or None,
@@ -48,6 +59,8 @@ async def health(
         "zaptec": zaptec,
         "email": email_stats,
         "low_balance": low_balance,
+        "corrections": corrections,
+        "access": access,
         "failed_jobs": email_stats["failed"] + zaptec["failed_runs"],
         "ok": email_stats["failed"] == 0 and zaptec["failed_runs"] == 0,
     }

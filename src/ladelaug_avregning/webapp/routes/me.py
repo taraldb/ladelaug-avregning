@@ -89,6 +89,22 @@ async def my_status(
     }
 
 
+@router.get("/access")
+async def my_access(
+    member_id: int = Depends(get_current_member),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> dict[str, Any]:
+    """Charging-access status for the portal banner (US-305). ``portal_url`` is
+    where the member goes if their access has been warned/disabled."""
+    from ladelaug_avregning.domain.access import AccessRepo
+
+    return {
+        "status": AccessRepo(db).current(member_id),
+        "portal_url": config.zaptec.portal_url,
+    }
+
+
 @router.get("/forecast")
 async def my_forecast(
     member_id: int = Depends(get_current_member), db: Database = Depends(get_db)
