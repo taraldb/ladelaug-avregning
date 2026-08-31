@@ -117,6 +117,55 @@ def test_magic_link_full_flow(client, db, seed_user_sync):
     )
 
 
+def _last_email(db, template: str):
+    return db.connection.execute(
+        "SELECT status, attempts FROM email_messages WHERE template = ? ORDER BY id DESC LIMIT 1",
+        (template,),
+    ).fetchone()
+
+
+def test_magic_link_email_is_sent_immediately(client, db, seed_user_sync):
+    """The link goes out on the request, not on the next queue drain."""
+    seed_user_sync(email="kari@example.com", role="member")
+    client.post("/api/auth/magic-link", json={"email": "kari@example.com"}, headers=FETCH)
+    assert _last_email(db, "magic_link")["status"] == "sent"
+
+
+def test_password_reset_email_is_sent_immediately(client, db, seed_user_sync):
+    seed_user_sync(email="kari@example.com", role="member", password="oldpassword12")
+    client.post(
+        "/api/auth/password-reset/request", json={"email": "kari@example.com"}, headers=FETCH
+    )
+    assert _last_email(db, "password_reset")["status"] == "sent"
+
+
+def test_magic_link_survives_an_immediate_send_failure(client, db, seed_user_sync, monkeypatch):
+    """A failing sender must not break sign-in: the request still 200s and the
+    message stays queued for the scheduler to retry."""
+    seed_user_sync(email="kari@example.com", role="member")
+
+    class Boom:
+        async def send(self, **_kw):
+            raise RuntimeError("smtp down")
+
+    monkeypatch.setattr(
+        "ladelaug_avregning.webapp.routes.auth.build_sender", lambda *a, **k: Boom()
+    )
+    resp = client.post("/api/auth/magic-link", json={"email": "kari@example.com"}, headers=FETCH)
+    assert resp.status_code == 200
+
+    row = _last_email(db, "magic_link")
+    assert row["status"] == "queued" and row["attempts"] == 1
+    # the token flow still works once the queue drains it later
+    token = _token_from_last_email(db, "magic-link")
+    assert (
+        client.post(
+            "/api/auth/magic-link/consume", json={"token": token}, headers=FETCH
+        ).status_code
+        == 200
+    )
+
+
 def test_magic_link_disabled_user_gets_no_token(client, db, seed_user_sync):
     seed_user_sync(email="off@example.com", role="member", disabled=True)
     client.post("/api/auth/magic-link", json={"email": "off@example.com"}, headers=FETCH)

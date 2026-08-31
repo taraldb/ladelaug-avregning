@@ -4,6 +4,12 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Sign-in links send immediately** — the magic-link and password-reset request
+  endpoints now deliver their email on the request itself via
+  `NotificationRepo.send_now`, instead of leaving the user to wait up to a
+  `drain_mail` interval. Delivery failures are non-fatal: the row stays queued
+  and the scheduler retries it as before. New `AppConfig.state_dir` property
+  replaces the mail-spool path recomputed in four places.
 - **Re-send settlement report emails** — `POST /api/settlement/{id}/resend-reports`
   (admin, `X-Requested-With`, posted settlements only — `422 not_posted`
   otherwise) recomputes the settlement from its frozen snapshot and queues a

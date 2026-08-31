@@ -9,7 +9,6 @@ each job, not three.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 from typing import Any
 
 from ladelaug_avregning.audit import AuditContext
@@ -23,15 +22,8 @@ from ladelaug_avregning.zaptec.sync import ZaptecSync
 JobFn = Callable[[Database, AppConfig], Awaitable[dict[str, Any]]]
 
 
-def _state_dir(config: AppConfig) -> Path:
-    # Mirrors routes/notifications.py and __main__._cmd_drain_mail.
-    if config.database.path == ":memory:":
-        return Path("state")
-    return Path(config.database.path).parent
-
-
 async def drain_mail(db: Database, config: AppConfig) -> dict[str, Any]:
-    sender = build_sender(config.email, state_dir=_state_dir(config))
+    sender = build_sender(config.email, state_dir=config.state_dir)
     return await NotificationRepo(db).process_queue(sender)
 
 

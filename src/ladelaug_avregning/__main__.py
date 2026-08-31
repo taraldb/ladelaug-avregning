@@ -184,12 +184,9 @@ def _cmd_drain_mail(args: argparse.Namespace) -> int:
 
     config = _load_config_or_exit(args.config)
     configure_logging(config.logging.level)
-    state_dir = (
-        Path(config.database.path).parent if config.database.path != ":memory:" else Path("state")
-    )
     db = Database(config.database.path)
     try:
-        sender = build_sender(config.email, state_dir=state_dir)
+        sender = build_sender(config.email, state_dir=config.state_dir)
         result = asyncio.run(NotificationRepo(db).process_queue(sender))
     finally:
         db.close()

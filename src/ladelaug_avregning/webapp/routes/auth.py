@@ -8,6 +8,7 @@ unknown, the password is wrong, or the account is disabled.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -21,6 +22,7 @@ from ladelaug_avregning.domain.notifications import NotificationRepo
 from ladelaug_avregning.domain.rate_limit import LoginRateLimiter
 from ladelaug_avregning.domain.sessions import SessionRepo
 from ladelaug_avregning.domain.users import UserRepo
+from ladelaug_avregning.email.sender import build_sender
 from ladelaug_avregning.errors import AuthError
 from ladelaug_avregning.webapp.deps import get_config, get_current_user, get_db, require_fetch
 from ladelaug_avregning.webapp.schemas import (
@@ -33,9 +35,22 @@ from ladelaug_avregning.webapp.schemas import (
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+log = logging.getLogger(__name__)
+
 
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+async def _deliver_now(db: Database, config: AppConfig, message_id: int) -> None:
+    """Push a just-enqueued message straight out instead of waiting for the next
+    queue drain — the sign-in / reset links people are actively waiting for. On
+    any failure the row stays queued and the scheduler retries it as usual."""
+    try:
+        sender = build_sender(config.email, state_dir=config.state_dir)
+        await NotificationRepo(db).send_now(sender, message_id=message_id)
+    except Exception:  # delivery must never break the sign-in request
+        log.warning("immediate email delivery failed for message %s", message_id, exc_info=True)
 
 
 async def _start_session(
@@ -190,7 +205,7 @@ async def request_magic_link(
             ip=_client_ip(request),
         )
         link = f"{config.email.base_url.rstrip('/')}/auth/magic-link?token={token}"
-        await NotificationRepo(db).enqueue(
+        message_id = await NotificationRepo(db).enqueue(
             to_address=user["email"],
             subject="Innloggingslenke – ladelaug",
             body_text=(
@@ -202,6 +217,7 @@ async def request_magic_link(
             related_entity_type="user",
             related_entity_id=int(user["id"]),
         )
+        await _deliver_now(db, config, message_id)
         await record_audit(
             db,
             AuditContext(
@@ -264,7 +280,7 @@ async def request_password_reset(
             ip=_client_ip(request),
         )
         link = f"{config.email.base_url.rstrip('/')}/auth/reset?token={token}"
-        await NotificationRepo(db).enqueue(
+        message_id = await NotificationRepo(db).enqueue(
             to_address=user["email"],
             subject="Tilbakestill passord – ladelaug",
             body_text=(
@@ -276,6 +292,7 @@ async def request_password_reset(
             related_entity_type="user",
             related_entity_id=int(user["id"]),
         )
+        await _deliver_now(db, config, message_id)
         await record_audit(
             db,
             AuditContext(

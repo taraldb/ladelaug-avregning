@@ -118,7 +118,9 @@ into per-member charges.
   with `POST /api/settlement/{id}/resend-reports`, or one stuck message with
   `POST /api/notifications/{id}/requeue` (both enqueue only).
 - **Passwordless sign-in & password reset** — single-use expiring links; the
-  request endpoints never disclose whether an account exists.
+  request endpoints never disclose whether an account exists. The link email is
+  delivered on the request itself (not on the next queue drain); if that send
+  fails it falls back to the queue for the scheduler to retry.
 - **System health** — `GET /api/system/health`: Zaptec sync state, email queue
   stats, background-job schedules + last run, failed jobs, versions.
 - **Background jobs** — an optional in-process scheduler runs `drain_mail`,

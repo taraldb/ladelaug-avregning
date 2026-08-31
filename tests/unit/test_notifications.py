@@ -183,6 +183,34 @@ async def test_requeue_unknown_message(db):
         await NotificationRepo(db).requeue(999, actor=AuditContext.system())
 
 
+# --- send_now (immediate delivery) ---------------------------------
+
+
+async def test_send_now_delivers_a_queued_message(db):
+    repo = NotificationRepo(db)
+    mid = await repo.enqueue(to_address="a@example.com", subject="s", body_text="t")
+    sender = FakeSender()
+    assert await repo.send_now(sender, message_id=mid) == "sent"
+    assert repo.get(mid)["status"] == "sent"
+    assert sender.sent == ["a@example.com"]
+
+
+async def test_send_now_skips_a_missing_or_already_sent_row(db):
+    repo = NotificationRepo(db)
+    assert await repo.send_now(FakeSender(), message_id=999) == "skipped"
+    mid = await repo.enqueue(to_address="a@example.com", subject="s", body_text="t")
+    await repo.process_queue(FakeSender())
+    assert await repo.send_now(FakeSender(), message_id=mid) == "skipped"
+
+
+async def test_send_now_leaves_row_queued_on_failure(db):
+    repo = NotificationRepo(db)
+    mid = await repo.enqueue(to_address="a@example.com", subject="s", body_text="t", max_attempts=3)
+    assert await repo.send_now(FakeSender(fail=True), message_id=mid) == "retried"
+    row = repo.get(mid)
+    assert row["status"] == "queued" and row["attempts"] == 1
+
+
 # --- routes ------------------------------------------------------------
 
 

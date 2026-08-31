@@ -83,35 +83,52 @@ class NotificationRepo:
             (now.isoformat(), limit),
         ).fetchall()
 
-        sent = failed = retried = 0
+        tally = {"sent": 0, "failed": 0, "retried": 0}
         for row in due:
-            msg = dict(row)
-            try:
-                await sender.send(
-                    to=msg["to_address"],
-                    subject=msg["subject"],
-                    text=msg["body_text"],
-                    html=msg["body_html"],
-                )
-            except Exception as exc:  # noqa: BLE001 - any send failure is retryable
-                attempts = int(msg["attempts"]) + 1
-                if attempts >= int(msg["max_attempts"]):
-                    await self._mark(msg["id"], status="failed", attempts=attempts, error=str(exc))
-                    failed += 1
-                else:
-                    nxt = (now + _backoff(attempts)).isoformat()
-                    await self._mark(
-                        msg["id"],
-                        status="queued",
-                        attempts=attempts,
-                        error=str(exc),
-                        next_attempt_at=nxt,
-                    )
-                    retried += 1
-            else:
-                await self._mark(msg["id"], status="sent", attempts=int(msg["attempts"]) + 1)
-                sent += 1
-        return {"due": len(due), "sent": sent, "failed": failed, "retried": retried}
+            tally[await self._attempt(dict(row), sender, now)] += 1
+        return {"due": len(due), **tally}
+
+    async def _attempt(self, msg: dict[str, Any], sender: EmailSender, now: datetime) -> str:
+        """Try to deliver one row and record the outcome. Returns ``"sent"``,
+        ``"failed"`` (gave up after ``max_attempts``), or ``"retried"`` (queued
+        again with backoff). A send failure never propagates."""
+        try:
+            await sender.send(
+                to=msg["to_address"],
+                subject=msg["subject"],
+                text=msg["body_text"],
+                html=msg["body_html"],
+            )
+        except Exception as exc:  # noqa: BLE001 - any send failure is retryable
+            attempts = int(msg["attempts"]) + 1
+            if attempts >= int(msg["max_attempts"]):
+                await self._mark(msg["id"], status="failed", attempts=attempts, error=str(exc))
+                return "failed"
+            nxt = (now + _backoff(attempts)).isoformat()
+            await self._mark(
+                msg["id"],
+                status="queued",
+                attempts=attempts,
+                error=str(exc),
+                next_attempt_at=nxt,
+            )
+            return "retried"
+        await self._mark(msg["id"], status="sent", attempts=int(msg["attempts"]) + 1)
+        return "sent"
+
+    async def send_now(self, sender: EmailSender, *, message_id: int) -> str:
+        """Attempt an immediate delivery of one still-``queued`` row, for
+        latency-sensitive callers (the magic-link / password-reset endpoints).
+        Returns ``"sent"`` / ``"retried"`` / ``"failed"`` like :meth:`_attempt`,
+        or ``"skipped"`` when the row is gone or no longer queued. A send failure
+        leaves the row queued for ``process_queue`` exactly as normal — this
+        never raises for a delivery error."""
+        row = self._db.connection.execute(
+            "SELECT * FROM email_messages WHERE id = ? AND status = 'queued'", (message_id,)
+        ).fetchone()
+        if row is None:
+            return "skipped"
+        return await self._attempt(dict(row), sender, clock.now_utc())
 
     async def _mark(
         self,

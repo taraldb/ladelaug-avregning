@@ -6,7 +6,6 @@ recent messages and the queue stats for the health view.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -52,10 +51,7 @@ async def process_queue(
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
 ) -> dict[str, Any]:
-    state_dir = (
-        Path(config.database.path).parent if config.database.path != ":memory:" else Path("state")
-    )
-    sender = build_sender(config.email, state_dir=state_dir)
+    sender = build_sender(config.email, state_dir=config.state_dir)
     return await NotificationRepo(db).process_queue(sender, limit=min(limit, 200))
 
 

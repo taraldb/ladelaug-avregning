@@ -97,7 +97,11 @@
   `last_error=NULL`, `sent_at=NULL`, `next_attempt_at=now`, with an in-transaction
   `notifications.email_requeued` audit row; an already-`queued` row is 422
   `not_requeueable`, unknown id 404. Both endpoints only enqueue — `process_queue`
-  still does the sending.
+  still does the sending. **Exception:** the `/api/auth/magic-link` and
+  `/api/auth/password-reset/request` handlers call `NotificationRepo.send_now`
+  right after `enqueue` (via `_deliver_now`, building a sender from
+  `config.state_dir`) so the link goes out on the request; a send failure there
+  is swallowed and the row is left queued for the scheduler.
 
 - **Member departure (1D, US-204).** `MemberRepo.departure_check` /
   `process_departure` orchestrate `set_status('inactive')` + `ChargerRepo.unassign` per open

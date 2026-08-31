@@ -213,6 +213,15 @@ class AppConfig(BaseModel):
             raise ValueError("Invalid configuration:\n  - " + "\n  - ".join(problems))
         return self
 
+    @property
+    def state_dir(self) -> Path:
+        """Directory for file-backed state (the mail spool, attachments,
+        reports): the database file's parent, or ``state/`` for an in-memory DB.
+        Single source of truth for what several call sites used to recompute."""
+        if self.database.path == ":memory:":
+            return Path("state")
+        return Path(self.database.path).parent
+
 
 def _load_dotenv(path: Path = Path(".env")) -> None:
     """Minimal ``.env`` reader: ``KEY=value`` lines, ``#`` comments, no export
