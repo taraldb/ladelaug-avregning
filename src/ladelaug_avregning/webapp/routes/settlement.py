@@ -63,12 +63,16 @@ def _detail(repo: SettlementRepo, settlement_id: int) -> dict[str, Any]:
     row = repo.get(settlement_id)
     if row is None:
         raise NotFoundError(f"settlement {settlement_id} not found")
-    return {
+    detail = {
         "settlement": row,
         "lines": repo.lines(settlement_id),
         "snapshot": repo.snapshot_members(settlement_id),
         "attachments": repo.attachments(settlement_id),
+        "corrections": repo.corrections(settlement_id),
     }
+    if row["status"] == "posted":
+        detail["correction_pending"] = repo.has_pending_correction(settlement_id)
+    return detail
 
 
 @router.get("/suggested-participants")
@@ -230,6 +234,29 @@ async def post_settlement(
     result = await _repo(db, config).post(settlement_id, actor=actor)
     queued = await NotificationRepo(db).enqueue_settlement_reports(
         settlement_id=settlement_id, result=result, base_url=config.email.base_url
+    )
+    return {**result, "emails_queued": queued}
+
+
+@router.get("/{settlement_id}/correction")
+async def assess_correction(
+    settlement_id: int, db: Database = Depends(get_db), config: AppConfig = Depends(get_config)
+) -> dict[str, Any]:
+    """Recompute a posted settlement from current usage (US-701 / US-702). No writes."""
+    return _repo(db, config).assess_correction(settlement_id)
+
+
+@router.post("/{settlement_id}/correction", dependencies=[Depends(require_fetch)])
+async def post_correction(
+    settlement_id: int,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, Any]:
+    """Book the assessed correction (US-703) and notify each adjusted member."""
+    result = await _repo(db, config).post_correction(settlement_id, actor=actor)
+    queued = await NotificationRepo(db).enqueue_correction_reports(
+        settlement_id=settlement_id, correction=result, base_url=config.email.base_url
     )
     return {**result, "emails_queued": queued}
 

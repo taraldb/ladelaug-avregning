@@ -186,6 +186,51 @@ class NotificationRepo:
             queued += 1
         return queued
 
+    async def enqueue_correction_reports(
+        self, *, settlement_id: int, correction: dict[str, Any], base_url: str
+    ) -> int:
+        """One email per adjusted member with a linked, enabled user (US-703):
+        the correction delta (kr tilbakeført / kr ekstra), the new balance, and
+        a portal link."""
+        from ladelaug_avregning.domain.ledger import LedgerRepo
+        from ladelaug_avregning.domain.users import UserRepo
+
+        users = UserRepo(self._db)
+        ledger = LedgerRepo(self._db)
+        month = correction["period_month"]
+        seq = correction["sequence"]
+        link = f"{base_url.rstrip('/')}/my-account"
+        queued = 0
+        for m in correction["members"]:
+            if int(m["delta_ore"]) == 0:
+                continue
+            user = users.get_by_member_id(m["member_id"])
+            if not user or user["disabled"] or not user["email"]:
+                continue
+            delta_ore = int(m["delta_ore"])
+            balance_nok = ore_to_nok(ledger.balance_ore(m["member_id"]))
+            if delta_ore > 0:
+                movement = f"Du får {ore_to_nok(delta_ore)} kr tilbakeført."
+            else:
+                movement = f"Du blir belastet {ore_to_nok(-delta_ore)} kr ekstra."
+            text = (
+                f"Hei {m['full_name']},\n\n"
+                f"Avregningen for {month} er korrigert (korrigering #{seq}). "
+                f"{movement}\n"
+                f"Ny saldo er {balance_nok} kr.\n\n"
+                f"Se detaljene i portalen: {link}\n"
+            )
+            await self.enqueue(
+                to_address=user["email"],
+                subject=f"Korrigert avregning {month}",
+                body_text=text,
+                template="settlement_correction",
+                related_entity_type="settlement",
+                related_entity_id=settlement_id,
+            )
+            queued += 1
+        return queued
+
     async def scan_low_balances(self, *, actor: AuditContext) -> dict[str, int]:
         """Enqueue a Norwegian low-balance warning for every member whose forecast
         says ``low_balance`` (US-805), skipping members whose forecast is not
