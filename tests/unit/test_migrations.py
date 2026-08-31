@@ -123,6 +123,28 @@ def test_0008_backfills_serial_from_device_id(db: Database):
     assert rows["Manual"] == "Manual"
 
 
+def test_0009_creates_attachments_table_and_backfill_shape(db: Database):
+    tables = _names(db.connection, "table")
+    assert "settlement_attachments" in tables
+    assert "idx_satt_settlement" in _names(db.connection, "index")
+
+    # The backfill copies a legacy single attachment into the new table.
+    now = "2026-01-01T00:00:00+00:00"
+    db.connection.executescript(
+        "INSERT INTO settlements "
+        "(period_month, status, attachment_filename, attachment_path, created_at) "
+        f"VALUES ('2026-07', 'posted', 'faktura.pdf', 'attachments/1/faktura.pdf', '{now}');"
+        "INSERT INTO settlement_attachments "
+        "  (settlement_id, filename, path, bytes, uploaded_at, uploaded_by_user_id) "
+        "SELECT id, attachment_filename, attachment_path, 0, "
+        "       COALESCE(posted_at, created_at), "
+        "       COALESCE(posted_by_user_id, created_by_user_id) "
+        "FROM settlements WHERE attachment_path IS NOT NULL AND attachment_filename IS NOT NULL;"
+    )
+    att = db.connection.execute("SELECT filename, path FROM settlement_attachments").fetchone()
+    assert (att["filename"], att["path"]) == ("faktura.pdf", "attachments/1/faktura.pdf")
+
+
 def test_one_open_status_period_per_member(db: Database):
     member_id = _seed_member_and_ledger(db.connection)
     db.connection.execute(

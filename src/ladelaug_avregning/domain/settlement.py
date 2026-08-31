@@ -239,21 +239,54 @@ class SettlementRepo:
                 detail={"line_id": line_id, "description": row["description"]},
             )
 
-    async def attach_invoice(
+    def attachments(self, settlement_id: int) -> list[dict[str, Any]]:
+        rows = self._db.connection.execute(
+            "SELECT * FROM settlement_attachments WHERE settlement_id = ? ORDER BY id",
+            (settlement_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def attachment(self, settlement_id: int, attachment_id: int) -> dict[str, Any] | None:
+        row = self._db.connection.execute(
+            "SELECT * FROM settlement_attachments WHERE id = ? AND settlement_id = ?",
+            (attachment_id, settlement_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def attachment_file(self, settlement_id: int, attachment_id: int) -> Path | None:
+        """Absolute on-disk path of one attachment, or None if the row or file
+        is missing."""
+        row = self.attachment(settlement_id, attachment_id)
+        if not row:
+            return None
+        path = self._state / row["path"]
+        return path if path.is_file() else None
+
+    async def add_attachment(
         self, settlement_id: int, *, filename: str, content: bytes, actor: AuditContext
     ) -> dict[str, Any]:
-        self._require_draft(settlement_id)
+        """Store one invoice file. Allowed in any status — supplier invoices can
+        arrive (or be corrected) after the settlement is posted."""
+        self._require(settlement_id)
         if not content:
             raise DomainError("empty_file", "The attachment is empty.")
         safe = _SAFE_NAME.sub("_", Path(filename or "invoice.pdf").name) or "invoice.pdf"
-        rel = Path("attachments") / str(settlement_id) / safe
-        dest = self._state / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(content)
+        now = clock.now_utc().isoformat()
         async with self._db._write() as cur:
             cur.execute(
-                "UPDATE settlements SET attachment_filename = ?, attachment_path = ? WHERE id = ?",
-                (safe, str(rel), settlement_id),
+                "INSERT INTO settlement_attachments "
+                "(settlement_id, filename, path, bytes, uploaded_at, uploaded_by_user_id) "
+                "VALUES (?, ?, '', ?, ?, ?)",
+                (settlement_id, safe, len(content), now, actor.actor_user_id),
+            )
+            attachment_id = int(cur.lastrowid or 0)
+            rel = Path("attachments") / str(settlement_id) / f"{attachment_id}-{safe}"
+            dest = self._state / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(content)
+            cur.execute(
+                "UPDATE settlement_attachments SET path = ? WHERE id = ?",
+                (str(rel), attachment_id),
             )
             write_audit_row(
                 cur,
@@ -261,16 +294,32 @@ class SettlementRepo:
                 event_type="settlement.invoice_attached",
                 entity_type="settlement",
                 entity_id=settlement_id,
-                summary=f"Invoice attachment {safe!r} stored for settlement {settlement_id}",
-                detail={"filename": safe, "bytes": len(content)},
+                summary=f"Invoice {safe!r} attached to settlement {settlement_id}",
+                detail={"attachment_id": attachment_id, "filename": safe, "bytes": len(content)},
             )
-        return self._require(settlement_id)
+        return self.attachment(settlement_id, attachment_id) or {}
 
-    def attachment_path(self, settlement_id: int) -> Path | None:
-        row = self.get(settlement_id)
-        if not row or not row["attachment_path"]:
-            return None
-        return self._state / row["attachment_path"]
+    async def remove_attachment(
+        self, settlement_id: int, attachment_id: int, *, actor: AuditContext
+    ) -> None:
+        """Delete one invoice file. Allowed in any status."""
+        self._require(settlement_id)
+        row = self.attachment(settlement_id, attachment_id)
+        if row is None:
+            raise NotFoundError(f"attachment {attachment_id} not found")
+        async with self._db._write() as cur:
+            cur.execute("DELETE FROM settlement_attachments WHERE id = ?", (attachment_id,))
+            write_audit_row(
+                cur,
+                actor,
+                event_type="settlement.invoice_removed",
+                entity_type="settlement",
+                entity_id=settlement_id,
+                summary=f"Invoice {row['filename']!r} removed from settlement {settlement_id}",
+                detail={"attachment_id": attachment_id, "filename": row["filename"]},
+            )
+        with contextlib.suppress(OSError):
+            (self._state / row["path"]).unlink(missing_ok=True)
 
     # --- freeze (US-602) ---------------------------------------------
 
@@ -455,7 +504,7 @@ class SettlementRepo:
             warnings.append({"code": "negative_balances", "member_ids": negatives})
         if not row["invoice_kwh"]:
             warnings.append({"code": "invoice_kwh_missing"})
-        if not row["attachment_path"]:
+        if not self.attachments(settlement_id):
             warnings.append({"code": "attachment_missing"})
         if any(ln["allocation_method"] == "consumption" for ln in lines):
             csum = sum(Decimal(m["consumption_kwh"]) for m in snap)
@@ -529,7 +578,7 @@ class SettlementRepo:
             raise DomainError(
                 "invoice_kwh_required", "Set the invoice kWh before posting (US-603)."
             )
-        if not row["attachment_path"]:
+        if not self.attachments(settlement_id):
             raise DomainError("attachment_required", "Attach the invoice before posting (US-604).")
 
         month = row["period_month"]

@@ -148,6 +148,22 @@ def test_list_members_admin_200(admin_client, make_member):
     assert [m["member_reference"] for m in body["members"]] == ["A-07"]
 
 
+def test_list_and_get_member_carry_balance(admin_client, make_member):
+    member_id = make_member(member_reference="A-08", email="a08@example.com")
+    admin_client.post(
+        f"/api/members/{member_id}/payments",
+        json={"amount": "250.00", "value_date": "2026-08-01"},
+        headers=FETCH,
+    )
+
+    listed = admin_client.get("/api/members").json()["members"][0]
+    assert listed["balance_ore"] == 25000
+    assert listed["balance_nok"] == "250.00"
+
+    fetched = admin_client.get(f"/api/members/{member_id}").json()
+    assert fetched["balance_ore"] == 25000
+
+
 def test_get_member_unknown_404(admin_client):
     resp = admin_client.get("/api/members/999")
     assert resp.status_code == 404

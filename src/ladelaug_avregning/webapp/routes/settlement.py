@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from ladelaug_avregning import clock
 from ladelaug_avregning.audit import AuditContext
@@ -67,6 +67,7 @@ def _detail(repo: SettlementRepo, settlement_id: int) -> dict[str, Any]:
         "settlement": row,
         "lines": repo.lines(settlement_id),
         "snapshot": repo.snapshot_members(settlement_id),
+        "attachments": repo.attachments(settlement_id),
     }
 
 
@@ -147,22 +148,58 @@ async def delete_line(
     return _detail(_repo(db, config), settlement_id)
 
 
-@router.post("/{settlement_id}/attachment", dependencies=[Depends(require_fetch)])
-async def attach_invoice(
+@router.post(
+    "/{settlement_id}/attachments",
+    status_code=201,
+    dependencies=[Depends(require_fetch)],
+)
+async def add_attachments(
     settlement_id: int,
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
     actor: AuditContext = Depends(get_audit_context),
 ) -> dict[str, Any]:
-    content = await file.read()
-    row = await _repo(db, config).attach_invoice(
-        settlement_id,
-        filename=file.filename or "invoice.pdf",
-        content=content,
-        actor=actor,
-    )
-    return {"settlement": row}
+    repo = _repo(db, config)
+    for file in files:
+        await repo.add_attachment(
+            settlement_id,
+            filename=file.filename or "invoice.pdf",
+            content=await file.read(),
+            actor=actor,
+        )
+    return _detail(repo, settlement_id)
+
+
+@router.get("/{settlement_id}/attachments/{attachment_id}")
+async def download_attachment(
+    settlement_id: int,
+    attachment_id: int,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> FileResponse:
+    repo = _repo(db, config)
+    row = repo.attachment(settlement_id, attachment_id)
+    path = repo.attachment_file(settlement_id, attachment_id)
+    if row is None or path is None:
+        raise NotFoundError(f"attachment {attachment_id} not found")
+    return FileResponse(path, media_type="application/pdf", filename=row["filename"])
+
+
+@router.delete(
+    "/{settlement_id}/attachments/{attachment_id}",
+    dependencies=[Depends(require_fetch)],
+)
+async def delete_attachment(
+    settlement_id: int,
+    attachment_id: int,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, Any]:
+    repo = _repo(db, config)
+    await repo.remove_attachment(settlement_id, attachment_id, actor=actor)
+    return _detail(repo, settlement_id)
 
 
 @router.post("/{settlement_id}/freeze", dependencies=[Depends(require_fetch)])
@@ -241,11 +278,18 @@ async def member_report(
     db: Database = Depends(get_db),
     config: AppConfig = Depends(get_config),
 ) -> HTMLResponse:
-    entry = _repo(db, config).member_entry(settlement_id, member_id)
+    repo = _repo(db, config)
+    entry = repo.member_entry(settlement_id, member_id)
     if entry is None:
         raise DomainError("not_in_settlement", f"Member {member_id} is not in this settlement.")
     forecast = ForecastRepo(db).member_forecast(member_id)
-    return HTMLResponse(render_member_report(entry["result"], entry["member"], forecast))
+    invoices = [
+        {"filename": a["filename"], "href": f"../../attachments/{a['id']}"}
+        for a in repo.attachments(settlement_id)
+    ]
+    return HTMLResponse(
+        render_member_report(entry["result"], entry["member"], forecast, invoices=invoices)
+    )
 
 
 @router.get("/{settlement_id}/reports/{member_id:int}.pdf")

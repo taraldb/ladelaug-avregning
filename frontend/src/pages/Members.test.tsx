@@ -1,7 +1,13 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import AppRouter from "../router";
-import { ADMIN_USER, MEMBER_USER, seedMember, setSession } from "../test/handlers";
+import {
+  ADMIN_USER,
+  MEMBER_USER,
+  seedLedgerTxn,
+  seedMember,
+  setSession,
+} from "../test/handlers";
 import { renderApp } from "../test/utils";
 
 describe("Members (admin)", () => {
@@ -40,6 +46,26 @@ describe("Members (admin)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/valid email/i);
     // modal stays open
     expect(screen.getByRole("button", { name: "Opprett" })).toBeInTheDocument();
+  });
+
+  it("shows the member balance and records a payment from the header", async () => {
+    setSession(ADMIN_USER);
+    const m = seedMember({ member_reference: "M-200", full_name: "Grace Hopper" });
+    seedLedgerTxn(m.id, { txn_type: "payment", amount_ore: 120000 });
+    const { user } = renderApp(<AppRouter />, { route: "/members" });
+
+    const row = (await screen.findByText("Grace Hopper")).closest("tr")!;
+    expect(within(row).getByText("1 200,00 kr")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /Registrer innbetaling/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Medlem"), String(m.id));
+    await user.type(within(dialog).getByLabelText("Beløp (kr)"), "300");
+    await user.click(within(dialog).getByRole("button", { name: "Registrer" }));
+
+    expect(await within(row).findByText("1 500,00 kr")).toBeInTheDocument();
   });
 
   it("redirects a member session away from /members", async () => {

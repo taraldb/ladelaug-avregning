@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import AppRouter from "../router";
 import {
@@ -33,7 +33,9 @@ describe("Settlement flow (admin)", () => {
     });
     await user.upload(screen.getByLabelText("Fakturavedlegg"), file);
     await user.click(screen.getByRole("button", { name: "Last opp" }));
-    expect(await screen.findByText(/Lastet opp: faktura.pdf/)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "faktura-1.pdf" }),
+    ).toHaveAttribute("href", expect.stringMatching(/\/attachments\/\d+$/));
 
     await user.click(screen.getByRole("button", { name: "Frys forbruk" }));
 
@@ -54,6 +56,39 @@ describe("Settlement flow (admin)", () => {
     expect(
       await screen.findByRole("heading", { name: "Rapporter" }),
     ).toBeInTheDocument();
+  });
+
+  it("uploads several invoices and deletes one after confirming", async () => {
+    setSession(ADMIN_USER);
+    const { user } = renderApp(<AppRouter />, { route: "/settlements" });
+    await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
+    await screen.findByRole("heading", { name: /Avregning 20/ });
+
+    const mk = (name: string) =>
+      new File([new Uint8Array([1, 2, 3])], name, { type: "application/pdf" });
+    await user.upload(screen.getByLabelText("Fakturavedlegg"), [
+      mk("faktura-1.pdf"),
+      mk("faktura-2.pdf"),
+    ]);
+    await user.click(screen.getByRole("button", { name: "Last opp" }));
+
+    expect(await screen.findByRole("link", { name: "faktura-1.pdf" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "faktura-2.pdf" })).toBeInTheDocument();
+
+    // delete the first — a confirm dialog gates it
+    const row1 = screen.getByRole("link", { name: "faktura-1.pdf" }).closest("li")!;
+    await user.click(within(row1).getByRole("button", { name: "Slett" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("faktura-1.pdf");
+    await user.click(within(dialog).getByRole("button", { name: "Slett vedlegg" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("link", { name: "faktura-1.pdf" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("link", { name: "faktura-2.pdf" })).toBeInTheDocument();
   });
 
   it("shows a live month-consumption panel on a draft", async () => {

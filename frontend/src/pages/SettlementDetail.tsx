@@ -12,13 +12,16 @@ import {
   listMembers,
   postSettlement,
   previewSettlement,
+  deleteSettlementAttachment,
   reresolveCharging,
   setSettlementInvoice,
   settlementReports,
-  uploadSettlementAttachment,
+  uploadSettlementAttachments,
   type AllocationMethod,
+  type SettlementAttachment,
   type SettlementPreview,
 } from "../api/client";
+import ConfirmModal from "../components/ConfirmModal";
 import Table, { type Column } from "../components/Table";
 import { formatNok } from "../lib/format";
 
@@ -117,9 +120,8 @@ export default function SettlementDetail() {
 
       <AttachmentPanel
         settlementId={sid}
-        filename={s.attachment_filename}
-        editable={isDraft}
-        onUploaded={mutate}
+        attachments={data.attachments}
+        onChange={mutate}
       />
 
       {isDraft && <ConsumptionPanel month={s.period_month} />}
@@ -155,7 +157,7 @@ export default function SettlementDetail() {
             disabled={
               !s.usage_frozen_at ||
               !s.invoice_kwh ||
-              !s.attachment_filename ||
+              data.attachments.length === 0 ||
               data.lines.length === 0 ||
               (preview?.warnings.some((w) => BLOCKING.has(w.code)) ?? false)
             }
@@ -407,49 +409,113 @@ function LinesPanel({
 
 function AttachmentPanel({
   settlementId,
-  filename,
-  editable,
-  onUploaded,
+  attachments,
+  onChange,
 }: {
   settlementId: number;
-  filename: string | null;
-  editable: boolean;
-  onUploaded: () => void | Promise<unknown>;
+  attachments: SettlementAttachment[];
+  onChange: () => void | Promise<unknown>;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<SettlementAttachment | null>(null);
 
   async function upload() {
-    const file = ref.current?.files?.[0];
-    if (!file) return;
+    const files = Array.from(ref.current?.files ?? []);
+    if (files.length === 0) return;
     setErr(null);
+    setBusy(true);
     try {
-      await uploadSettlementAttachment(settlementId, file);
-      await onUploaded();
+      await uploadSettlementAttachments(settlementId, files);
+      if (ref.current) ref.current.value = "";
+      await onChange();
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Opplasting feilet.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!confirm) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      await deleteSettlementAttachment(settlementId, confirm.id);
+      setConfirm(null);
+      await onChange();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Sletting feilet.");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <div className="rounded-lg border border-slate-800 p-4 text-sm">
       <h2 className="mb-2 font-semibold text-slate-200">Fakturavedlegg</h2>
-      <p className="text-slate-400">
-        {filename ? `Lastet opp: ${filename}` : "Ingen fil lastet opp."}
-      </p>
-      {editable && (
-        <div className="mt-2 flex items-center gap-2">
-          <input ref={ref} type="file" aria-label="Fakturavedlegg" className="text-slate-300" />
-          <button
-            type="button"
-            onClick={() => void upload()}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-800"
-          >
-            Last opp
-          </button>
-        </div>
+      {attachments.length === 0 ? (
+        <p className="text-slate-400">Ingen fil lastet opp.</p>
+      ) : (
+        <ul className="space-y-1">
+          {attachments.map((a) => (
+            <li key={a.id} className="flex items-center justify-between gap-3">
+              <a
+                className="text-emerald-400 hover:underline"
+                href={`/api/settlement/${settlementId}/attachments/${a.id}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {a.filename}
+              </a>
+              <button
+                type="button"
+                onClick={() => setConfirm(a)}
+                className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
+              >
+                Slett
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
+
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          ref={ref}
+          type="file"
+          multiple
+          aria-label="Fakturavedlegg"
+          className="text-slate-300"
+        />
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void upload()}
+          className="rounded-md border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+        >
+          Last opp
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        Kan legges til og slettes også etter bokføring.
+      </p>
       {err && <p className="mt-1 text-xs text-rose-400">{err}</p>}
+
+      <ConfirmModal
+        open={confirm !== null}
+        title="Slette fakturavedlegg?"
+        message={
+          <>
+            Vil du slette «{confirm?.filename}»? Filen fjernes permanent.
+          </>
+        }
+        confirmLabel="Slett vedlegg"
+        busy={busy}
+        onConfirm={() => void remove()}
+        onClose={() => setConfirm(null)}
+      />
     </div>
   );
 }

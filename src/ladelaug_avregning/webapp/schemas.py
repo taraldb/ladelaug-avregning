@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from ladelaug_avregning.money import parse_nok
+from ladelaug_avregning.money import ore_to_nok, parse_nok
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -110,6 +110,52 @@ class UserOut(BaseModel):
         )
 
 
+class UserCreateIn(BaseModel):
+    """Admin-provisioned login. ``password`` may be omitted — the account is then
+    activation-only (magic link / password reset)."""
+
+    email: str
+    password: str | None = None
+    role: Literal["admin", "member"]
+    member_id: int | None = None
+
+    @field_validator("email")
+    @classmethod
+    def _v_email(cls, v: str) -> str:
+        v = _required(v, "email")
+        if not _EMAIL_RE.match(v):
+            raise ValueError("not a valid email address")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def _v_password(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        if len(v) < 10:
+            raise ValueError("password must be at least 10 characters")
+        return v
+
+    @model_validator(mode="after")
+    def _v_member_link(self) -> UserCreateIn:
+        if self.role == "member" and self.member_id is None:
+            raise ValueError("a member login requires member_id")
+        if self.role == "admin" and self.member_id is not None:
+            raise ValueError("an admin login must not set member_id")
+        return self
+
+
+class UserSetPasswordIn(BaseModel):
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def _v_password(cls, v: str) -> str:
+        if len(v) < 10:
+            raise ValueError("password must be at least 10 characters")
+        return v
+
+
 # --- members (US-201) ----------------------------------------------------
 
 
@@ -183,6 +229,8 @@ class MemberOut(BaseModel):
     updated_at: str
     status: str | None = None
     participates: bool | None = None
+    balance_ore: int | None = None
+    balance_nok: str | None = None
 
     @classmethod
     def from_row(
@@ -191,6 +239,7 @@ class MemberOut(BaseModel):
         *,
         status: str | None = None,
         participates: bool | None = None,
+        balance_ore: int | None = None,
     ) -> MemberOut:
         return cls(
             id=row["id"],
@@ -202,6 +251,8 @@ class MemberOut(BaseModel):
             updated_at=row["updated_at"],
             status=status,
             participates=participates,
+            balance_ore=balance_ore,
+            balance_nok=None if balance_ore is None else str(ore_to_nok(balance_ore)),
         )
 
 
@@ -351,6 +402,23 @@ class LedgerTxnOut(BaseModel):
                     "recorded_at",
                 )
             }
+        )
+
+
+class LedgerTxnRowOut(LedgerTxnOut):
+    """A ledger row for the cross-member movements list — adds the owning
+    member's name and reference from the join."""
+
+    member_name: str
+    member_reference: str
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> LedgerTxnRowOut:
+        base = LedgerTxnOut.from_row(row)
+        return cls(
+            **base.model_dump(),
+            member_name=row["member_name"],
+            member_reference=row["member_reference"],
         )
 
 

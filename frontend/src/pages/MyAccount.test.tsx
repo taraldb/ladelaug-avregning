@@ -9,6 +9,7 @@ import {
   seedLedgerTxn,
   seedLowBalanceForecast,
   seedMember,
+  seedMySettlement,
   setSession,
 } from "../test/handlers";
 import { renderApp } from "../test/utils";
@@ -29,6 +30,24 @@ describe("MyAccount (member portal)", () => {
     expect(await screen.findByText(/1\s?500,00\s?kr/)).toBeInTheDocument();
     expect(screen.getByText("Innbetaling")).toBeInTheDocument();
     expect(screen.getByText(/Deltar i avregning:/)).toHaveTextContent("Ja");
+  });
+
+  it("lists settlements with report and PDF links (invoices only inside the report)", async () => {
+    setSession(MEMBER_USER);
+    const memberId = MEMBER_USER.member_id ?? 7;
+    seedMember({ id: memberId });
+    const s = seedMySettlement({ period_month: "2026-07" });
+
+    renderApp(<AppRouter />, { route: "/my-account" });
+
+    expect(await screen.findByText(/2026-07/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Rapport" })).toHaveAttribute(
+      "href",
+      s.report_url,
+    );
+    expect(screen.getByRole("link", { name: "PDF" })).toBeInTheDocument();
+    // the invoice itself is not surfaced here — only via the report page
+    expect(screen.queryByRole("link", { name: /Faktura/ })).not.toBeInTheDocument();
   });
 
   it("renders the forecast and consumption cards, no banner when balance is fine", async () => {

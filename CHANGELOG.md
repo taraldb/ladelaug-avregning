@@ -2,6 +2,50 @@
 
 Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
+## 2026-08-30 — User provisioning + movements (`0.4.0`)
+
+Admin can now create and manage login accounts from the UI, see balances at a
+glance, and record incoming payments from anywhere.
+
+- **User administration** — new `Brukere` page (`/users`, reached from **System**
+  alongside `Ladere` — both are configuration, not day-to-day nav) listing every
+  login (email, role, linked member, enabled/disabled). `POST /api/users` creates an
+  administrator or a member login; `password` is optional — omit it and the
+  account activates via magic link / password reset (`users.password_hash` stays
+  NULL). `POST /api/users/{id}/disable|enable` (disable revokes the user's
+  sessions; guards against disabling yourself or the last active admin) and
+  `POST /api/users/{id}/password`. `GET /api/users` lists them. The member
+  detail page gains a **Pålogging** card to create/disable/reset that member's
+  login inline. `UserRepo.create` now accepts `password=None`.
+- **Balance movements list** — new `Bevegelser` page (`/movements`) shows the
+  ledger across all members, newest first, filterable by member and transaction
+  type. Backed by `GET /api/ledger-transactions?limit=&offset=&member_id=&txn_type=`
+  (`LedgerRepo.list_all`, joined to member name/reference).
+- **Balances on the member overview** — `GET /api/members` and
+  `GET /api/members/{id}` now carry `balance_ore` / `balance_nok`
+  (`LedgerRepo.balance_ore_map`); the member table shows a `Saldo` column.
+- **Quick "Registrer innbetaling"** — a shared `RecordPaymentModal` (member
+  picker, value date prefilled to today) is reachable from a `＋` button on the
+  member overview and the movements page, as well as the existing per-member
+  ledger card.
+- **Settlement report shows the calculation** — the member report
+  (`render_member_report`) gains an "Avregningsgrunnlag" section: fixed costs
+  (equal-split, with the participant count), consumption costs (kWh-weighted),
+  invoiced vs. metered kWh, and totals — plus "Din andel av totalforbruk"
+  (the member's kWh as a percentage of the settlement total) and a per-line
+  table with both the settlement-wide amount and the member's share. The admin
+  summary report gets the same fixed/consumption split.
+- **Invoices available to members** — settlements now hold **several** invoice
+  files (new `settlement_attachments` table, migration `0009`; the legacy
+  `settlements.attachment_*` columns are backfilled and then unused). Admins add
+  and delete invoices from the settlement page **in any status** (a confirm
+  dialog gates deletion) via `POST /api/settlement/{id}/attachments`,
+  `GET|DELETE /api/settlement/{id}/attachments/{aid}`; `GET /api/settlement/{id}`
+  now returns an `attachments` list. Members reach each invoice for their posted
+  settlements **through the settlement report** (which links every file) via
+  `GET /api/me/settlements/{id}/invoices/{aid}` — the invoices are not listed on
+  the "Min konto" page itself. New reusable `ConfirmModal` component.
+
 ## 2026-08-30 — Charger fixes (`0.3.1`)
 
 Bug-fix batch for chargers and pre-import usage attribution. See

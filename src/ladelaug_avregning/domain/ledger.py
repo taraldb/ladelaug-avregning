@@ -65,6 +65,45 @@ class LedgerRepo:
         ).fetchall()
         return [dict(r) for r in rows], int(total)
 
+    def list_all(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        member_id: int | None = None,
+        txn_type: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Newest-first ledger rows across every member, each joined to its
+        member's name/reference. Optional ``member_id`` / ``txn_type`` filters."""
+        conn = self._db.connection
+        where: list[str] = []
+        params: list[Any] = []
+        if member_id is not None:
+            where.append("lt.member_id = ?")
+            params.append(member_id)
+        if txn_type:
+            where.append("lt.txn_type = ?")
+            params.append(txn_type)
+        clause = f" WHERE {' AND '.join(where)}" if where else ""
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM ledger_transactions lt{clause}", params
+        ).fetchone()[0]
+        rows = conn.execute(
+            "SELECT lt.*, m.full_name AS member_name, m.member_reference AS member_reference "
+            "FROM ledger_transactions lt JOIN members m ON m.id = lt.member_id"
+            f"{clause} ORDER BY lt.id DESC LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        ).fetchall()
+        return [dict(r) for r in rows], int(total)
+
+    def balance_ore_map(self) -> dict[int, int]:
+        """member_id -> balance in øre, for every member with ledger activity."""
+        rows = self._db.connection.execute(
+            "SELECT member_id, COALESCE(SUM(amount_ore), 0) AS bal "
+            "FROM ledger_transactions GROUP BY member_id"
+        ).fetchall()
+        return {int(r["member_id"]): int(r["bal"]) for r in rows}
+
     # --- mutations -------------------------------------------------------
 
     async def record_payment(

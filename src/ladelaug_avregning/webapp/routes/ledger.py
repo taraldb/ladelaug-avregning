@@ -20,7 +20,13 @@ from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.errors import NotFoundError
 from ladelaug_avregning.money import nok_to_ore
 from ladelaug_avregning.webapp.deps import get_audit_context, get_db, require_admin, require_fetch
-from ladelaug_avregning.webapp.schemas import AdjustmentIn, BalanceOut, LedgerTxnOut, PaymentIn
+from ladelaug_avregning.webapp.schemas import (
+    AdjustmentIn,
+    BalanceOut,
+    LedgerTxnOut,
+    LedgerTxnRowOut,
+    PaymentIn,
+)
 
 router = APIRouter(dependencies=[Depends(require_admin)], tags=["ledger"])
 
@@ -54,6 +60,20 @@ async def list_ledger(
         "balance_nok": str(bal),
         "balance_ore": nok_to_ore(bal),
     }
+
+
+@router.get("/api/ledger-transactions")
+async def list_all_ledger(
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    member_id: int | None = Query(default=None),
+    txn_type: str | None = Query(default=None),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    rows, total = LedgerRepo(db).list_all(
+        limit=limit, offset=offset, member_id=member_id, txn_type=txn_type
+    )
+    return {"transactions": [LedgerTxnRowOut.from_row(r) for r in rows], "total": total}
 
 
 @router.post(

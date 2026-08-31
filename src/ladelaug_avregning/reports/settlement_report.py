@@ -40,6 +40,28 @@ def _esc(v: Any) -> str:
     return html.escape(str(v))
 
 
+def _dec(v: Any) -> Decimal:
+    try:
+        return Decimal(str(v if v not in (None, "") else 0))
+    except (ArithmeticError, ValueError):
+        return Decimal(0)
+
+
+def _pct(part: Decimal, whole: Decimal) -> str:
+    """``part`` of ``whole`` as a 1-decimal percentage string, ``"0,0"`` when
+    ``whole`` is zero. nb-NO decimal comma."""
+    if whole <= 0:
+        return "0,0"
+    return f"{(part / whole * 100).quantize(Decimal('0.1'))}".replace(".", ",")
+
+
+def _kwh(v: Any) -> str:
+    """Trim trailing zeros without ever going to scientific notation."""
+    d = _dec(v)
+    s = f"{d:.2f}".rstrip("0").rstrip(".")
+    return (s or "0").replace(".", ",")
+
+
 def _nok(value: str | int) -> str:
     """Format a NOK decimal string as ``1 234,56 kr`` (nb-NO)."""
     s = str(value)
@@ -99,38 +121,120 @@ def _forecast_section(forecast: dict[str, Any] | None) -> str:
     )
 
 
+def _basis(result: dict[str, Any], member: dict[str, Any]) -> dict[str, Any]:
+    """Settlement-wide aggregates a member is entitled to see: the fixed vs.
+    consumption cost split, participant counts, and the member's share of the
+    total metered energy."""
+    breakdown = result.get("lines") or []
+    equal_ore = sum(int(ln["amount_ore"]) for ln in breakdown if ln["kind"] == "equal")
+    consumption_ore = sum(int(ln["amount_ore"]) for ln in breakdown if ln["kind"] == "consumption")
+    members = result.get("members") or []
+    equal_members = sum(1 for m in members if m.get("participates_equal"))
+    total_kwh = sum(_dec(m.get("consumption_kwh")) for m in members)
+    my_kwh = _dec(member.get("consumption_kwh"))
+    return {
+        "equal_ore": equal_ore,
+        "equal_nok": str(ore_to_nok(equal_ore)),
+        "equal_members": equal_members,
+        "consumption_ore": consumption_ore,
+        "consumption_nok": str(ore_to_nok(consumption_ore)),
+        "total_kwh": total_kwh,
+        "my_kwh": my_kwh,
+        "my_kwh_pct": _pct(my_kwh, total_kwh),
+        "breakdown": breakdown,
+    }
+
+
+def _invoice_section(invoices: list[dict[str, str]] | None) -> str:
+    """``invoices`` is a list of ``{"filename", "href"}`` — the supplier invoice
+    files behind this settlement. Empty/None renders nothing."""
+    if not invoices:
+        return ""
+    items = "".join(
+        f'<li><a href="{_esc(i["href"])}">{_esc(i["filename"])}</a></li>' for i in invoices
+    )
+    return (
+        "<h2>Faktura fra strømleverandør</h2>"
+        f"<p>Grunnlaget for kostnadene over:</p><ul>{items}</ul>"
+    )
+
+
 def render_member_report(
     result: dict[str, Any],
     member: dict[str, Any],
     forecast: dict[str, Any] | None = None,
+    *,
+    invoices: list[dict[str, str]] | None = None,
 ) -> str:
     month = _esc(result["period_month"])
     name = _esc(member["full_name"])
     ref = _esc(member["member_reference"])
-    lines_rows = (
-        "".join(
-            f"<tr><td>{_esc(ln['description'])}</td>"
-            f'<td class="muted">{"Likt" if ln["kind"] == "equal" else "Forbruk"}</td>'
-            f'<td class="num">{_nok(ln["amount_nok"])}</td></tr>'
-            for ln in member["lines"]
-        )
-        or '<tr><td colspan="3" class="muted">Ingen kostnader denne måneden.</td></tr>'
-    )
+    b = _basis(result, member)
 
+    my_by_line = {ln["invoice_line_id"]: ln for ln in member["lines"]}
+    if b["breakdown"]:
+        line_rows = "".join(
+            '<tr><td>{desc}</td><td class="muted">{typ}</td>'
+            '<td class="num">{total}</td><td class="num">{mine}</td></tr>'.format(
+                desc=_esc(ln["description"]),
+                typ=(f"Likt · delt på {ln['recipients']}" if ln["kind"] == "equal" else "Forbruk"),
+                total=_nok(str(ore_to_nok(int(ln["amount_ore"])))),
+                mine=(
+                    _nok(my_by_line[ln["line_id"]]["amount_nok"])
+                    if ln["line_id"] in my_by_line
+                    else "–"
+                ),
+            )
+            for ln in b["breakdown"]
+        )
+    else:
+        line_rows = (
+            "".join(
+                f"<tr><td>{_esc(ln['description'])}</td>"
+                f'<td class="muted">{"Likt" if ln["kind"] == "equal" else "Forbruk"}</td>'
+                f'<td class="num">–</td><td class="num">{_nok(ln["amount_nok"])}</td></tr>'
+                for ln in member["lines"]
+            )
+            or '<tr><td colspan="4" class="muted">Ingen kostnader denne måneden.</td></tr>'
+        )
+
+    invoice_total_nok = result.get("invoice_lines_total_nok")
     after_cls = ' class="neg"' if member["balance_after_ore"] < 0 else ""
     body = (
         f"<h1>Avregning {month}</h1>"
         f'<p class="muted">{name} &middot; {ref}</p>'
-        "<h2>Forbruk</h2>"
+        "<h2>Avregningsgrunnlag</h2>"
         '<dl class="kv">'
-        f"<dt>Ladet energi</dt><dd>{_esc(member['consumption_kwh'])} kWh</dd>"
+        f"<dt>Fakturert energi</dt><dd>{_esc(result.get('invoice_kwh') or '–')} kWh</dd>"
+        f"<dt>Målt energi (Zaptec)</dt><dd>{_esc(result.get('grid_kwh') or '–')} kWh</dd>"
+        f"<dt>Faste kostnader (delt likt)</dt><dd>{_nok(b['equal_nok'])}"
+        f" &middot; delt på {b['equal_members']} medlemmer</dd>"
+        f"<dt>Forbrukskostnader (etter kWh)</dt><dd>{_nok(b['consumption_nok'])}</dd>"
+        + (
+            f"<dt>Sum fakturagrunnlag</dt><dd>{_nok(invoice_total_nok)}</dd>"
+            if invoice_total_nok is not None
+            else ""
+        )
+        + (
+            f"<dt>Sum belastet alle medlemmer</dt><dd>{_nok(result['total_charged_nok'])}</dd>"
+            if result.get("total_charged_nok") is not None
+            else ""
+        )
+        + "</dl>"
+        f"{_invoice_section(invoices)}"
+        "<h2>Ditt forbruk</h2>"
+        '<dl class="kv">'
+        f"<dt>Ladet energi</dt><dd>{_kwh(member['consumption_kwh'])} kWh</dd>"
         f"<dt>Antall ladeøkter</dt><dd>{_esc(member['session_count'])}</dd>"
+        f"<dt>Din andel av totalforbruk</dt><dd>{_kwh(b['my_kwh'])} av "
+        f"{_kwh(b['total_kwh'])} kWh ({b['my_kwh_pct']} %)</dd>"
         "</dl>"
         "<h2>Kostnadsfordeling</h2>"
-        '<table><thead><tr><th>Post</th><th>Type</th><th class="num">Din andel</th>'
+        "<table><thead><tr><th>Post</th><th>Type</th>"
+        '<th class="num">Totalbeløp</th><th class="num">Din andel</th>'
         "</tr></thead><tbody>"
-        f"{lines_rows}"
-        f'<tr class="total"><td colspan="2">Sum belastet</td>'
+        f"{line_rows}"
+        f'<tr class="total"><td colspan="3">Sum belastet deg</td>'
         f'<td class="num">{_nok(member["charge_nok"])}</td></tr>'
         "</tbody></table>"
         "<h2>Saldo</h2>"
@@ -158,12 +262,20 @@ def render_summary_report(result: dict[str, Any]) -> str:
     if result["warnings"]:
         codes = ", ".join(_esc(w["code"]) for w in result["warnings"])
         warn = f'<p class="neg">Advarsler: {codes}</p>'
+    breakdown = result.get("lines") or []
+    equal_ore = sum(int(ln["amount_ore"]) for ln in breakdown if ln["kind"] == "equal")
+    consumption_ore = sum(int(ln["amount_ore"]) for ln in breakdown if ln["kind"] == "consumption")
+    equal_members = sum(1 for m in result["members"] if m.get("participates_equal"))
     body = (
         f"<h1>Avregning {month} – sammendrag</h1>"
         f'<p class="muted">Status: {_esc(result["status"])}</p>'
         '<dl class="kv">'
         f"<dt>Fakturert energi</dt><dd>{_esc(result['invoice_kwh'] or '–')} kWh</dd>"
         f"<dt>Målt energi (Zaptec)</dt><dd>{_esc(result['grid_kwh'] or '–')} kWh</dd>"
+        f"<dt>Faste kostnader (delt likt)</dt><dd>{_nok(str(ore_to_nok(equal_ore)))}"
+        f" &middot; delt på {equal_members} medlemmer</dd>"
+        f"<dt>Forbrukskostnader (etter kWh)</dt>"
+        f"<dd>{_nok(str(ore_to_nok(consumption_ore)))}</dd>"
         f"<dt>Sum fakturalinjer</dt><dd>{_nok(result['invoice_lines_total_nok'])}</dd>"
         f"<dt>Sum belastet medlemmer</dt><dd>{_nok(result['total_charged_nok'])}</dd>"
         "</dl>"

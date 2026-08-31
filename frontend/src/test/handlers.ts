@@ -10,6 +10,7 @@ import type {
   MemberForecast,
   ParticipationPeriod,
   StatusPeriod,
+  User,
 } from "../api/client";
 
 // --- fixtures & mock state ------------------------------------------
@@ -39,6 +40,7 @@ const ACCOUNTS: AuthUser[] = [ADMIN_USER, MEMBER_USER];
 interface MockState {
   session: AuthUser | null;
   members: Map<number, Member>;
+  users: User[];
   statusHistory: Map<number, StatusPeriod[]>;
   participationHistory: Map<number, ParticipationPeriod[]>;
   ledger: Map<number, LedgerTxn[]>;
@@ -50,6 +52,10 @@ function freshState(): MockState {
   return {
     session: null,
     members: new Map(),
+    users: [
+      { id: 1, email: "admin@example.com", role: "admin", member_id: null, disabled: false },
+      { id: 2, email: "member@example.com", role: "member", member_id: 7, disabled: false },
+    ],
     statusHistory: new Map(),
     participationHistory: new Map(),
     ledger: new Map(),
@@ -122,6 +128,18 @@ export function seedMember(overrides: Partial<Member> = {}): Member {
   }
   if (!state.ledger.has(id)) state.ledger.set(id, []);
   return member;
+}
+
+export function seedUser(overrides: Partial<User> = {}): User {
+  const user: User = {
+    id: overrides.id ?? nextId(),
+    email: overrides.email ?? `user${overrides.id ?? state.seq}@example.com`,
+    role: overrides.role ?? "member",
+    member_id: overrides.member_id ?? null,
+    disabled: overrides.disabled ?? false,
+  };
+  state.users.push(user);
+  return user;
 }
 
 export function seedLedgerTxn(
@@ -327,6 +345,11 @@ function ledgerBalanceOre(memberId: number): number {
   return (state.ledger.get(memberId) ?? []).reduce((sum, t) => sum + t.amount_ore, 0);
 }
 
+function withBalance(member: Member): Member {
+  const ore = ledgerBalanceOre(member.id);
+  return { ...member, balance_ore: ore, balance_nok: oreToNok(ore) };
+}
+
 function closePreviousPeriod<T extends { effective_to: string | null }>(
   periods: T[],
   effectiveFrom: string,
@@ -378,7 +401,9 @@ export const handlers = [
     const denied = requireAdmin();
     if (denied) return denied;
     return HttpResponse.json({
-      members: [...state.members.values()].sort((a, b) => a.id - b.id),
+      members: [...state.members.values()]
+        .sort((a, b) => a.id - b.id)
+        .map(withBalance),
     });
   }),
 
@@ -438,7 +463,7 @@ export const handlers = [
         status: 404,
       });
     }
-    return HttpResponse.json(member);
+    return HttpResponse.json(withBalance(member));
   }),
 
   http.patch("/api/members/:id", async ({ params, request }) => {
@@ -595,7 +620,167 @@ export const handlers = [
     });
   }),
 
+  // --- users (admin) ---------------------------------------
+  http.get("/api/users", () => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    return HttpResponse.json({ users: [...state.users].sort((a, b) => b.id - a.id) });
+  }),
+
+  http.post("/api/users", async ({ request }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const body = (await request.json()) as {
+      email: string;
+      password?: string | null;
+      role: "admin" | "member";
+      member_id?: number | null;
+    };
+    if (!body.email?.trim() || !EMAIL_RE.test(body.email.trim())) {
+      return HttpResponse.json(
+        errorBody("validation_error", "email: not a valid email address"),
+        { status: 422 },
+      );
+    }
+    if (body.password != null && body.password !== "" && body.password.length < 10) {
+      return HttpResponse.json(
+        errorBody("validation_error", "password must be at least 10 characters"),
+        { status: 422 },
+      );
+    }
+    if (body.role === "member" && body.member_id == null) {
+      return HttpResponse.json(
+        errorBody("validation_error", "a member login requires member_id"),
+        { status: 422 },
+      );
+    }
+    if (body.role === "admin" && body.member_id != null) {
+      return HttpResponse.json(
+        errorBody("validation_error", "an admin login must not set member_id"),
+        { status: 422 },
+      );
+    }
+    if (
+      state.users.some(
+        (u) => u.email.toLowerCase() === body.email.trim().toLowerCase(),
+      )
+    ) {
+      return HttpResponse.json(
+        errorBody("email_taken", "An account with that email already exists."),
+        { status: 422 },
+      );
+    }
+    if (
+      body.member_id != null &&
+      state.users.some((u) => u.member_id === body.member_id)
+    ) {
+      return HttpResponse.json(
+        errorBody("member_linked", "That member already has a login."),
+        { status: 422 },
+      );
+    }
+    const user: User = {
+      id: nextId(),
+      email: body.email.trim(),
+      role: body.role,
+      member_id: body.role === "member" ? (body.member_id ?? null) : null,
+      disabled: false,
+    };
+    state.users.push(user);
+    recordAudit("user.created", "user", String(user.id), `User ${user.email} created`);
+    return HttpResponse.json(user, { status: 201 });
+  }),
+
+  http.post("/api/users/:id/disable", ({ params }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const user = state.users.find((u) => u.id === Number(params.id));
+    if (!user) {
+      return HttpResponse.json(errorBody("not_found", "user not found"), { status: 404 });
+    }
+    if (user.id === state.session?.id) {
+      return HttpResponse.json(
+        errorBody("cannot_disable_self", "You cannot disable your own account."),
+        { status: 422 },
+      );
+    }
+    if (
+      user.role === "admin" &&
+      !user.disabled &&
+      !state.users.some((u) => u.role === "admin" && !u.disabled && u.id !== user.id)
+    ) {
+      return HttpResponse.json(
+        errorBody("last_admin", "Cannot disable the last active administrator."),
+        { status: 422 },
+      );
+    }
+    user.disabled = true;
+    recordAudit("user.disabled", "user", String(user.id), `User ${user.id} disabled`);
+    return HttpResponse.json(user);
+  }),
+
+  http.post("/api/users/:id/enable", ({ params }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const user = state.users.find((u) => u.id === Number(params.id));
+    if (!user) {
+      return HttpResponse.json(errorBody("not_found", "user not found"), { status: 404 });
+    }
+    user.disabled = false;
+    recordAudit("user.enabled", "user", String(user.id), `User ${user.id} re-enabled`);
+    return HttpResponse.json(user);
+  }),
+
+  http.post("/api/users/:id/password", async ({ params, request }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const user = state.users.find((u) => u.id === Number(params.id));
+    if (!user) {
+      return HttpResponse.json(errorBody("not_found", "user not found"), { status: 404 });
+    }
+    const body = (await request.json()) as { password: string };
+    if (!body.password || body.password.length < 10) {
+      return HttpResponse.json(
+        errorBody("validation_error", "password must be at least 10 characters"),
+        { status: 422 },
+      );
+    }
+    recordAudit(
+      "user.password_changed",
+      "user",
+      String(user.id),
+      `Password changed for user ${user.id}`,
+    );
+    return HttpResponse.json({ ok: true });
+  }),
+
   // --- ledger (admin) ---------------------------------------
+  http.get("/api/ledger-transactions", ({ request }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const url = new URL(request.url);
+    const limit = Number(url.searchParams.get("limit") ?? "50");
+    const offset = Number(url.searchParams.get("offset") ?? "0");
+    const memberIdParam = url.searchParams.get("member_id");
+    const txnType = url.searchParams.get("txn_type");
+
+    let rows = [...state.ledger.entries()].flatMap(([mid, list]) => {
+      const m = state.members.get(mid);
+      return list.map((t) => ({
+        ...t,
+        member_name: m?.full_name ?? `Member ${mid}`,
+        member_reference: m?.member_reference ?? `M-${mid}`,
+      }));
+    });
+    if (memberIdParam) rows = rows.filter((t) => t.member_id === Number(memberIdParam));
+    if (txnType) rows = rows.filter((t) => t.txn_type === txnType);
+    rows.sort((a, b) => b.id - a.id);
+    return HttpResponse.json({
+      transactions: rows.slice(offset, offset + limit),
+      total: rows.length,
+    });
+  }),
+
   http.get("/api/members/:id/balance", ({ params }) => {
     const denied = requireAdmin();
     if (denied) return denied;
@@ -992,7 +1177,12 @@ export const handlers = [
       posted_at: null,
     };
     mock1b.settlements.push(settlement);
-    mock1b.details.set(settlement.id, { settlement, lines: [], snapshot: [] });
+    mock1b.details.set(settlement.id, {
+      settlement,
+      lines: [],
+      snapshot: [],
+      attachments: [],
+    });
     return HttpResponse.json({ settlement });
   }),
   http.get("/api/settlement/:id", ({ params }) => {
@@ -1032,10 +1222,37 @@ export const handlers = [
     if (d) d.lines = d.lines.filter((l) => l.id !== Number(params.lineId));
     return HttpResponse.json(d);
   }),
-  http.post("/api/settlement/:id/attachment", ({ params }) => {
+  // Note: the real endpoint parses a multipart body; parsing it here is
+  // unreliable under jsdom+undici, so the mock fabricates a deterministic
+  // filename per call (the client POSTs one file at a time).
+  http.post("/api/settlement/:id/attachments", ({ params }) => {
     const d = mock1b.details.get(Number(params.id));
-    if (d) d.settlement.attachment_filename = "faktura.pdf";
-    return HttpResponse.json({ settlement: d?.settlement });
+    if (d) {
+      d.attachments.push({
+        id: nextId(),
+        filename: `faktura-${d.attachments.length + 1}.pdf`,
+        bytes: 3,
+        uploaded_at: "2026-08-01T00:00:00+00:00",
+      });
+    }
+    return HttpResponse.json(d, { status: 201 });
+  }),
+  http.get("/api/settlement/:id/attachments/:aid", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    const found = d?.attachments.find((a) => a.id === Number(params.aid));
+    if (!found) {
+      return HttpResponse.json(errorBody("not_found", "not found"), { status: 404 });
+    }
+    return new HttpResponse(new Blob([`%PDF ${found.filename}`]), {
+      headers: { "content-type": "application/pdf" },
+    });
+  }),
+  http.delete("/api/settlement/:id/attachments/:aid", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    if (d) {
+      d.attachments = d.attachments.filter((a) => a.id !== Number(params.aid));
+    }
+    return HttpResponse.json(d);
   }),
   http.post("/api/settlement/:id/freeze", ({ params }) => {
     const d = mock1b.details.get(Number(params.id));
@@ -1239,6 +1456,12 @@ interface Mock1bState {
         sort_order: number;
       }[];
       snapshot: unknown[];
+      attachments: {
+        id: number;
+        filename: string;
+        bytes: number;
+        uploaded_at: string;
+      }[];
     }
   >;
   mySettlements: {
@@ -1283,6 +1506,23 @@ function freshMock1b(): Mock1bState {
 
 export function seedUnassigned(month: string, chargers: UnassignedCharger[]): void {
   mock1b.unassigned.set(month, chargers);
+}
+
+export function seedMySettlement(
+  overrides: Partial<Mock1bState["mySettlements"][number]> = {},
+): Mock1bState["mySettlements"][number] {
+  const id = overrides.settlement_id ?? nextId();
+  const entry = {
+    settlement_id: id,
+    period_month: overrides.period_month ?? "2026-07",
+    posted_at: overrides.posted_at ?? "2026-08-01T00:00:00+00:00",
+    consumption_kwh: overrides.consumption_kwh ?? "12.5",
+    charge_nok: overrides.charge_nok ?? "450.00",
+    balance_after_nok: overrides.balance_after_nok ?? "1050.00",
+    report_url: overrides.report_url ?? `/api/me/settlements/${id}/report`,
+  };
+  mock1b.mySettlements.push(entry);
+  return entry;
 }
 
 export function seedMonthConsumption(month: string, c: MonthConsumption): void {

@@ -37,9 +37,20 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `POST /api/members/{id}/payments` (201) `{amount:"1500.00",value_date?,reference?}` -> Txn; 422 `validation_error` if amount <= 0.
 - `POST /api/members/{id}/adjustments` (201) `{direction:"credit"|"debit",amount:"50.00",reason:string(non-empty),reference?}` -> Txn; 422 `validation_error` on empty reason.
 - `POST /api/ledger-transactions/{id}/reverse` (201) -> reversal Txn; 422 `already_reversed` | `not_a_payment`; 404 `not_found`.
+- `GET /api/ledger-transactions?limit=&offset=&member_id=&txn_type=` (admin) -> `{transactions:[LedgerTxnRow],total}` (newest first; cross-member, each row joined to `member_name`/`member_reference`).
+
+### Users / logins (admin)
+
+- `GET /api/users` -> `{users:[User]}`.
+- `POST /api/users` (201) `{email,password?:string|null,role:"admin"|"member",member_id?:number}` -> `User`. `password` omitted/`null` => activation-only account. 422 `email_taken` | `member_linked` | `validation_error` (member login needs `member_id`; admin login must not set it).
+- `POST /api/users/{id}/disable` / `POST /api/users/{id}/enable` (admin, `X-Requested-With`) -> `User`. Disable revokes the user's sessions; 422 `cannot_disable_self` | `last_admin`.
+- `POST /api/users/{id}/password` (admin, `X-Requested-With`) `{password:string(>=10)}` -> `{ok:true}`; 422 `validation_error`.
+- `User = {id,email,role:"admin"|"member",member_id:number|null,disabled:boolean}`.
 - `GET /api/audit-events?event_type=&entity_type=&entity_id=&limit=&offset=&sort_by=&sort_dir=` -> `{events:[AuditEvent],total,counts:{[event_type]:number}}`. `sort_by ∈ occurred_at|id|event_type`, `sort_dir ∈ asc|desc`.
 - `GET /api/me` -> Member. `GET /api/me/balance` -> Balance. `GET /api/me/ledger?limit=&offset=` -> ledger page. `GET /api/me/status` -> `{status,participates,history:[StatusPeriod]}`.
-- `GET /api/me/settlements` -> `{settlements:[MySettlement]}`; each `report_url` is `/api/me/settlements/{id}/report` — the PDF is the same URL with `.pdf` appended.
+- `GET /api/me/settlements` -> `{settlements:[MySettlement]}`; `report_url` is `/api/me/settlements/{id}/report` (PDF: same URL + `.pdf`). The report page links each supplier invoice as `invoices/{aid}` -> `GET /api/me/settlements/{id}/invoices/{aid}` (streams one PDF, member-scoped); invoices are **not** surfaced in the settlement list itself.
+- `GET /api/settlement/{id}` (admin) -> `SettlementDetail` incl. an `attachments:[SettlementAttachment]` list.
+- `POST /api/settlement/{id}/attachments` (admin, multipart `files`, `X-Requested-With`) -> `SettlementDetail`; allowed in any status. `GET /api/settlement/{id}/attachments/{aid}` -> the file. `DELETE /api/settlement/{id}/attachments/{aid}` (admin, `X-Requested-With`) -> `SettlementDetail`; allowed in any status. 404 `not_found` for an unknown attachment.
 
 ### Chargers (Release 1B, Epic 3 — admin)
 
@@ -69,12 +80,14 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 
 ### Types
 
-- `Member = {id,member_reference,full_name,email:string|null,join_date,created_at,updated_at,status:"active"|"inactive"|null,participates:boolean|null}`
+- `Member = {id,member_reference,full_name,email:string|null,join_date,created_at,updated_at,status:"active"|"inactive"|null,participates:boolean|null,balance_ore?:number|null,balance_nok?:string|null}` — balance fields are populated on `GET /api/members` and `GET /api/members/{id}`.
 - `StatusPeriod = {id,status,effective_from,effective_to:string|null,note:string|null,created_at}`
 - `ParticipationPeriod = {id,participates:boolean,effective_from,effective_to:string|null,reason:string|null,created_at}`
 - `Txn = {id,member_id,txn_type:"payment"|"payment_reversal"|"adjustment_credit"|"adjustment_debit",amount_ore:number,amount_nok:string,currency,value_date,reason:string|null,reference:string|null,reverses_transaction_id:number|null,created_by_user_id,recorded_at}`
+- `LedgerTxnRow = Txn & {member_name:string,member_reference:string}` — rows from `GET /api/ledger-transactions`. `txn_type` there may also be `"settlement_charge"`/`"settlement_reversal"`.
 - `AuditEvent = {id,occurred_at,actor_user_id:number|null,actor_label,event_type,entity_type,entity_id:string|null,summary,detail:object|null,ip:string|null}`
 - `MySettlement = {settlement_id,period_month,posted_at:string|null,consumption_kwh:string,charge_nok:string,balance_after_nok:string,report_url:string}`
+- `SettlementAttachment = {id:number,filename:string,bytes:number,uploaded_at:string}`; `SettlementDetail` gains `attachments:SettlementAttachment[]`.
 - `MemberForecast = {member_id,available:boolean,forecast_kwh:string,rate_ore_per_kwh:string,rate_source:"derived"|"override"|null,equal_share_ore:number,forecast_monthly_cost_ore:number,recommended_minimum_ore:number,balance_ore:number,recommended_topup_ore:number,low_balance:boolean,severity:"low"|"critical"|null,reason:string|null}` — money fields are canonical integer øre (format with `formatOre`), `forecast_kwh`/`rate_ore_per_kwh` are Decimal strings.
 - `MemberConsumption = {member_id,month:string,consumption_kwh:string,session_count:number}`
 - `ForecastSettings = {rate_override_ore_per_kwh:number|null,buffer_months:number,notify_cooldown_days:number,lookback_settlements:number,updated_at:string|null,updated_by_user_id:number|null}`

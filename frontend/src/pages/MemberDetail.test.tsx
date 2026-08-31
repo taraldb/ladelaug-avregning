@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import AppRouter from "../router";
 import { ADMIN_USER, seedMember, setSession } from "../test/handlers";
@@ -31,6 +31,26 @@ describe("MemberDetail (admin)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /already has that status/i,
     );
+  });
+
+  it("creates a login for a member that has none", async () => {
+    setSession(ADMIN_USER);
+    seedMember({ id: 60, member_reference: "M-60", full_name: "Radia Perlman" });
+    const { user } = renderApp(<AppRouter />, { route: "/members/60" });
+
+    const card = (
+      await screen.findByRole("heading", { name: "Pålogging" })
+    ).closest("div")!;
+    await user.click(screen.getByRole("button", { name: "Opprett pålogging" }));
+
+    await user.type(
+      await screen.findByLabelText("E-post"),
+      "radia@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Opprett" }));
+
+    expect(await within(card).findByText("radia@example.com")).toBeInTheDocument();
+    expect(within(card).getByText("Aktiv")).toBeInTheDocument();
   });
 
   it("persists a participation change in the re-rendered history", async () => {

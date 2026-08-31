@@ -1,6 +1,6 @@
 [project]
 name = "ladelaug-avregning"
-version = "0.3.1"
+version = "0.4.0"
 description = "EV charging co-op prepaid-balance and monthly-settlement portal."
 requires-python = ">=3.12"
 dependencies = [

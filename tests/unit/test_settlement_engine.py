@@ -87,7 +87,7 @@ async def _draft_with_lines(db, *, equal_nok=None, consumption_nok=None):
             actor=AuditContext.system(),
         )
     await repo.set_invoice(sid, invoice_kwh="35", actor=AuditContext.system())
-    await repo.attach_invoice(
+    await repo.add_attachment(
         sid, filename="faktura.pdf", content=b"%PDF-1.4 fake", actor=AuditContext.system()
     )
     return repo, sid
@@ -332,8 +332,8 @@ def test_settlement_http_happy_path(admin_client, make_member):
     )
     admin_client.put(f"/api/settlement/{sid}/invoice", json={"invoice_kwh": "12"}, headers=FETCH)
     admin_client.post(
-        f"/api/settlement/{sid}/attachment",
-        files={"file": ("f.pdf", b"%PDF fake", "application/pdf")},
+        f"/api/settlement/{sid}/attachments",
+        files={"files": ("f.pdf", b"%PDF fake", "application/pdf")},
         headers=FETCH,
     )
     admin_client.post(f"/api/settlement/{sid}/freeze", headers=FETCH)

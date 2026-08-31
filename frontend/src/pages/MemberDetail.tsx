@@ -10,19 +10,22 @@ import {
   getMember,
   participationHistory,
   recordAdjustment,
-  recordPayment,
   reversePayment,
+  setUserDisabled,
   statusHistory,
   updateMember,
+  listUsers,
   type LedgerTxn,
   type Member,
   type MemberStatus,
 } from "../api/client";
 import DateField from "../components/DateField";
 import Modal from "../components/Modal";
+import RecordPaymentModal from "../components/RecordPaymentModal";
 import StatTile from "../components/StatTile";
 import Table, { type Column } from "../components/Table";
 import { formatDate, formatDateTime, formatNok, txnTypeLabel } from "../lib/format";
+import { NewUserModal, SetPasswordModal } from "./Users";
 
 export default function MemberDetail() {
   const { id } = useParams<{ id: string }>();
@@ -66,6 +69,7 @@ export default function MemberDetail() {
       </div>
 
       <ProfileCard member={member} onSaved={async () => void (await mutateMember())} />
+      <LoginSection member={member} />
       <StatusSection
         memberId={memberId}
         onChanged={async () => void (await mutateMember())}
@@ -228,7 +232,7 @@ function LedgerSection({ memberId }: { memberId: number }) {
         </div>
       )}
 
-      <PaymentModal
+      <RecordPaymentModal
         open={modal === "payment"}
         memberId={memberId}
         onClose={() => setModal(null)}
@@ -247,120 +251,6 @@ function LedgerSection({ memberId }: { memberId: number }) {
         }}
       />
     </Card>
-  );
-}
-
-function PaymentModal({
-  open,
-  memberId,
-  onClose,
-  onDone,
-}: {
-  open: boolean;
-  memberId: number;
-  onClose: () => void;
-  onDone: () => void | Promise<void>;
-}) {
-  const [amount, setAmount] = useState("");
-  const [valueDate, setValueDate] = useState("");
-  const [reference, setReference] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  function reset() {
-    setAmount("");
-    setValueDate("");
-    setReference("");
-    setError(null);
-    setSaving(false);
-  }
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSaving(true);
-    try {
-      await recordPayment(memberId, {
-        amount: amount.trim(),
-        value_date: valueDate || undefined,
-        reference: reference.trim() || undefined,
-      });
-      reset();
-      await onDone();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Kunne ikke registrere.");
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal
-      open={open}
-      title="Registrer innbetaling"
-      onClose={() => {
-        reset();
-        onClose();
-      }}
-      footer={
-        <>
-          <button
-            type="button"
-            onClick={() => {
-              reset();
-              onClose();
-            }}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
-          >
-            Avbryt
-          </button>
-          <button
-            type="submit"
-            form="payment-form"
-            disabled={saving || amount.trim() === ""}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
-          >
-            Registrer
-          </button>
-        </>
-      }
-    >
-      <form id="payment-form" className="space-y-3" onSubmit={onSubmit}>
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-300">
-            Beløp (kr)
-          </span>
-          <input
-            inputMode="decimal"
-            required
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="1500.00"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
-          />
-        </label>
-        <DateField
-          label="Valørdato"
-          value={valueDate}
-          onChange={setValueDate}
-          hint="Tomt = i dag"
-        />
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-300">
-            Referanse (valgfritt)
-          </span>
-          <input
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
-          />
-        </label>
-        {error && (
-          <p role="alert" className="text-sm text-rose-400">
-            {error}
-          </p>
-        )}
-      </form>
-    </Modal>
   );
 }
 
@@ -645,6 +535,98 @@ function ProfileCard({
           </button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+function LoginSection({ member }: { member: Member }) {
+  const { data, mutate } = useSWR("/api/users", () => listUsers());
+  const login = data?.users.find((u) => u.member_id === member.id) ?? null;
+  const [createOpen, setCreateOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle() {
+    if (!login) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await setUserDisabled(login.id, !login.disabled);
+      await mutate();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Kunne ikke oppdatere.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Pålogging">
+      {login ? (
+        <div className="space-y-3 text-sm">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+            <dt className="text-slate-400">E-post</dt>
+            <dd className="text-slate-100">{login.email}</dd>
+            <dt className="text-slate-400">Status</dt>
+            <dd className={login.disabled ? "text-rose-400" : "text-emerald-400"}>
+              {login.disabled ? "Deaktivert" : "Aktiv"}
+            </dd>
+          </dl>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPwOpen(true)}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+            >
+              Nytt passord
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void toggle()}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+            >
+              {login.disabled ? "Aktiver" : "Deaktiver"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3 text-sm">
+          <p className="text-slate-400">Medlemmet har ingen pålogging.</p>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+          >
+            Opprett pålogging
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-rose-400">
+          {error}
+        </p>
+      )}
+
+      <NewUserModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={async () => {
+          await mutate();
+          setCreateOpen(false);
+        }}
+        lockedMember={{
+          id: member.id,
+          label: `${member.member_reference} – ${member.full_name}`,
+        }}
+      />
+      <SetPasswordModal
+        user={pwOpen ? login : null}
+        onClose={() => setPwOpen(false)}
+        onDone={() => setPwOpen(false)}
+      />
     </Card>
   );
 }

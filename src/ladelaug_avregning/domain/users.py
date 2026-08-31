@@ -39,21 +39,28 @@ class UserRepo:
         self,
         *,
         email: str,
-        password: str,
+        password: str | None,
         role: str,
         member_id: int | None = None,
         actor: AuditContext,
         argon2: Argon2Params = _DEFAULT_ARGON2,
     ) -> int:
+        """Create a login. ``password=None`` leaves ``password_hash`` NULL — the
+        account can only be entered via a magic link or a password-reset."""
         if role not in ("admin", "member"):
             raise DomainError("bad_role", f"role must be 'admin' or 'member', not {role!r}")
         email = email.strip()
         email_normalized = email.lower()
-        time_cost, memory_cost, parallelism = argon2
-        password_hash = security.hash_password(
-            password, time_cost=time_cost, memory_cost=memory_cost, parallelism=parallelism
-        )
         now = clock.now_utc().isoformat()
+        if password is None:
+            password_hash = None
+            password_changed_at = None
+        else:
+            time_cost, memory_cost, parallelism = argon2
+            password_hash = security.hash_password(
+                password, time_cost=time_cost, memory_cost=memory_cost, parallelism=parallelism
+            )
+            password_changed_at = now
 
         async with self._db._write() as cur:
             try:
@@ -62,7 +69,16 @@ class UserRepo:
                     "(email, email_normalized, password_hash, role, disabled, member_id, "
                     " password_changed_at, created_at, updated_at) "
                     "VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)",
-                    (email, email_normalized, password_hash, role, member_id, now, now, now),
+                    (
+                        email,
+                        email_normalized,
+                        password_hash,
+                        role,
+                        member_id,
+                        password_changed_at,
+                        now,
+                        now,
+                    ),
                 )
             except sqlite3.IntegrityError as exc:
                 if "email_normalized" in str(exc):

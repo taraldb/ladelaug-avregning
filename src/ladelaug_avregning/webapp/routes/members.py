@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends
 
 from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.db import Database
+from ladelaug_avregning.domain.ledger import LedgerRepo
 from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.errors import NotFoundError
 from ladelaug_avregning.webapp.deps import get_audit_context, get_db, require_admin, require_fetch
@@ -28,11 +29,12 @@ from ladelaug_avregning.webapp.schemas import (
 router = APIRouter(prefix="/api/members", dependencies=[Depends(require_admin)], tags=["members"])
 
 
-def _member_out(repo: MemberRepo, row: dict[str, Any]) -> MemberOut:
+def _member_out(db: Database, repo: MemberRepo, row: dict[str, Any]) -> MemberOut:
     return MemberOut.from_row(
         row,
         status=repo.current_status(row["id"]),
         participates=repo.effective_participation(row["id"]),
+        balance_ore=LedgerRepo(db).balance_ore(row["id"]),
     )
 
 
@@ -57,7 +59,7 @@ async def create_member(
         join_date=body.join_date,
         actor=actor,
     )
-    return _member_out(repo, row)
+    return _member_out(db, repo, row)
 
 
 @router.get("")
@@ -66,6 +68,7 @@ async def list_members(db: Database = Depends(get_db)) -> dict[str, list[MemberO
     status = repo.status_map()
     explicit = repo.explicit_participation_map()
     active = {mid for mid, s in status.items() if s == "active"}
+    balances = LedgerRepo(db).balance_ore_map()
 
     def participates(member_id: int) -> bool | None:
         if member_id in explicit:
@@ -74,7 +77,12 @@ async def list_members(db: Database = Depends(get_db)) -> dict[str, list[MemberO
 
     return {
         "members": [
-            MemberOut.from_row(m, status=status.get(m["id"]), participates=participates(m["id"]))
+            MemberOut.from_row(
+                m,
+                status=status.get(m["id"]),
+                participates=participates(m["id"]),
+                balance_ore=balances.get(m["id"], 0),
+            )
             for m in repo.list()
         ]
     }
@@ -83,7 +91,7 @@ async def list_members(db: Database = Depends(get_db)) -> dict[str, list[MemberO
 @router.get("/{member_id}")
 async def get_member(member_id: int, db: Database = Depends(get_db)) -> MemberOut:
     repo = MemberRepo(db)
-    return _member_out(repo, _require_member(repo, member_id))
+    return _member_out(db, repo, _require_member(repo, member_id))
 
 
 @router.patch("/{member_id}", dependencies=[Depends(require_fetch)])
@@ -95,7 +103,7 @@ async def update_member(
 ) -> MemberOut:
     repo = MemberRepo(db)
     row = await repo.update(member_id, actor=actor, **body.model_dump(exclude_unset=True))
-    return _member_out(repo, row)
+    return _member_out(db, repo, row)
 
 
 @router.post("/{member_id}/status", dependencies=[Depends(require_fetch)])

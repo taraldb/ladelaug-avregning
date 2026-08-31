@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
@@ -142,16 +142,47 @@ async def my_settlements(
     return {"settlements": out}
 
 
-def _my_report_html(settlement_id: int, member_id: int, db: Database, config: AppConfig) -> str:
-    repo = SettlementRepo(db, tz=config.timezone)
+def _my_settlement_or_403(
+    repo: SettlementRepo, settlement_id: int, member_id: int
+) -> dict[str, Any]:
     row = repo.get(settlement_id)
     if row is None or row["status"] != "posted":
         raise NotFoundError(f"settlement {settlement_id} not found")
+    if settlement_id not in {s["id"] for s in repo.posted_for_member(member_id)}:
+        raise DomainError("not_in_settlement", "You are not part of this settlement.")
+    return row
+
+
+def _my_report_html(settlement_id: int, member_id: int, db: Database, config: AppConfig) -> str:
+    repo = SettlementRepo(db, tz=config.timezone)
+    _my_settlement_or_403(repo, settlement_id, member_id)
     entry = repo.member_entry(settlement_id, member_id)
     if entry is None:
         raise DomainError("not_in_settlement", "You are not part of this settlement.")
     forecast = ForecastRepo(db).member_forecast(member_id)
-    return render_member_report(entry["result"], entry["member"], forecast)
+    # Relative to /api/me/settlements/{id}/report[.pdf] -> .../invoices/{aid}
+    invoices = [
+        {"filename": a["filename"], "href": f"invoices/{a['id']}"}
+        for a in repo.attachments(settlement_id)
+    ]
+    return render_member_report(entry["result"], entry["member"], forecast, invoices=invoices)
+
+
+@router.get("/settlements/{settlement_id}/invoices/{attachment_id}")
+async def my_settlement_invoice(
+    settlement_id: int,
+    attachment_id: int,
+    member_id: int = Depends(get_current_member),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> FileResponse:
+    repo = SettlementRepo(db, tz=config.timezone)
+    _my_settlement_or_403(repo, settlement_id, member_id)
+    row = repo.attachment(settlement_id, attachment_id)
+    path = repo.attachment_file(settlement_id, attachment_id)
+    if row is None or path is None:
+        raise NotFoundError(f"attachment {attachment_id} not found")
+    return FileResponse(path, media_type="application/pdf", filename=row["filename"])
 
 
 @router.get("/settlements/{settlement_id}/report", response_class=HTMLResponse)

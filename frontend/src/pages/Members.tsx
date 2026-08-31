@@ -9,8 +9,10 @@ import {
 } from "../api/client";
 import DateField from "../components/DateField";
 import Modal from "../components/Modal";
+import PlusIcon from "../components/PlusIcon";
+import RecordPaymentModal from "../components/RecordPaymentModal";
 import Table, { type Column } from "../components/Table";
-import { formatDate } from "../lib/format";
+import { formatDate, formatNok } from "../lib/format";
 
 const columns: Column<Member>[] = [
   { key: "ref", header: "Referanse", render: (m) => m.member_reference },
@@ -20,6 +22,23 @@ const columns: Column<Member>[] = [
     key: "join",
     header: "Innmeldt",
     render: (m) => formatDate(m.join_date),
+  },
+  {
+    key: "balance",
+    header: "Saldo",
+    className: "text-right tabular-nums",
+    render: (m) =>
+      m.balance_nok == null ? (
+        "–"
+      ) : (
+        <span
+          className={
+            (m.balance_ore ?? 0) < 0 ? "text-rose-400" : "text-emerald-400"
+          }
+        >
+          {formatNok(m.balance_nok)}
+        </span>
+      ),
   },
   {
     key: "status",
@@ -40,18 +59,28 @@ export default function Members() {
   );
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-slate-100">Medlemmer</h1>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
-        >
-          Nytt medlem
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setPayOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+          >
+            <PlusIcon /> Registrer innbetaling
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+          >
+            Nytt medlem
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -78,6 +107,15 @@ export default function Members() {
         onCreated={async () => {
           await mutate();
           setOpen(false);
+        }}
+      />
+
+      <RecordPaymentModal
+        open={payOpen}
+        onClose={() => setPayOpen(false)}
+        onDone={async () => {
+          await mutate();
+          setPayOpen(false);
         }}
       />
     </section>

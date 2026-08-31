@@ -169,6 +169,76 @@ async def test_list_newest_first_and_pagination(db):
     assert [r["reference"] for r in rows2] == ["r2", "r1"]
 
 
+async def test_list_all_spans_members_with_join_and_filters(db):
+    a = await _member(db, "M-A")
+    b = await _member(db, "M-B")
+    repo = LedgerRepo(db)
+    await repo.record_payment(
+        member_id=a, amount=Decimal("100.00"), value_date="2026-08-01", reference="pa", actor=SYS
+    )
+    await repo.record_payment(
+        member_id=b, amount=Decimal("200.00"), value_date="2026-08-02", reference="pb", actor=SYS
+    )
+    await repo.adjust(
+        member_id=b,
+        direction="debit",
+        amount=Decimal("5.00"),
+        reason="x",
+        reference=None,
+        actor=SYS,
+    )
+
+    rows, total = repo.list_all(limit=10, offset=0)
+    assert total == 3
+    # newest first
+    assert rows[0]["txn_type"] == "adjustment_debit"
+    assert rows[0]["member_name"] == "M-B"
+    assert rows[0]["member_reference"] == "M-B"
+
+    only_b, total_b = repo.list_all(member_id=b)
+    assert total_b == 2
+    assert {r["member_id"] for r in only_b} == {b}
+
+    pays, total_p = repo.list_all(txn_type="payment")
+    assert total_p == 2
+    assert {r["txn_type"] for r in pays} == {"payment"}
+
+
+async def test_balance_ore_map(db):
+    a = await _member(db, "M-A")
+    b = await _member(db, "M-B")
+    repo = LedgerRepo(db)
+    await repo.record_payment(
+        member_id=a, amount=Decimal("100.00"), value_date="2026-08-01", reference=None, actor=SYS
+    )
+    assert repo.balance_ore_map() == {a: 10000}
+    assert b not in repo.balance_ore_map()
+
+
+def test_ledger_transactions_route(admin_client, make_member):
+    a = make_member(member_reference="M-A", email="a@example.com")
+    b = make_member(member_reference="M-B", email="b@example.com")
+    _pay(admin_client, a, amount="100.00")
+    _pay(admin_client, b, amount="200.00")
+
+    body = admin_client.get("/api/ledger-transactions").json()
+    assert body["total"] == 2
+    assert body["transactions"][0]["member_reference"] in {"M-A", "M-B"}
+    assert "member_name" in body["transactions"][0]
+
+    filtered = admin_client.get(f"/api/ledger-transactions?member_id={a}").json()
+    assert filtered["total"] == 1
+    assert filtered["transactions"][0]["member_id"] == a
+
+
+def test_ledger_transactions_route_anonymous_401(client):
+    assert client.get("/api/ledger-transactions").status_code == 401
+
+
+def test_ledger_transactions_route_member_403(member_client):
+    assert member_client.get("/api/ledger-transactions").status_code == 403
+
+
 async def test_each_action_writes_one_audit_row(db):
     m = await _member(db)
     repo = LedgerRepo(db)

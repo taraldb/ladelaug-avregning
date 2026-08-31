@@ -52,14 +52,50 @@ def _result_and_member():
             },
         ],
     }
+    other = {
+        "member_id": 2,
+        "member_reference": "A-08",
+        "full_name": "Ola Nordmann",
+        "is_active": True,
+        "participates_equal": True,
+        "consumption_kwh": "37.5",
+        "session_count": 9,
+        "balance_before_ore": 200000,
+        "balance_before_nok": "2000.00",
+        "charge_ore": 75000,
+        "charge_nok": "750.00",
+        "balance_after_ore": 125000,
+        "balance_after_nok": "1250.00",
+        "lines": [],
+    }
     result = {
         "period_month": MONTH,
         "status": "posted",
         "invoice_kwh": "40",
         "grid_kwh": "38.2",
-        "invoice_lines_total_nok": "450.00",
-        "total_charged_nok": "450.00",
-        "members": [member],
+        "invoice_lines_total_ore": 120000,
+        "invoice_lines_total_nok": "1200.00",
+        "total_charged_ore": 120000,
+        "total_charged_nok": "1200.00",
+        "members": [member, other],
+        "lines": [
+            {
+                "line_id": 1,
+                "description": "Fastledd",
+                "kind": "equal",
+                "amount_ore": 60000,
+                "allocated_ore": 60000,
+                "recipients": 2,
+            },
+            {
+                "line_id": 2,
+                "description": "Energi",
+                "kind": "consumption",
+                "amount_ore": 60000,
+                "allocated_ore": 60000,
+                "recipients": 2,
+            },
+        ],
         "warnings": [],
     }
     return result, member
@@ -92,7 +128,7 @@ def test_render_member_report_contains_key_figures():
     assert "Avregning 2026-07" in page
     assert "Kari Nordmann" in page
     assert "A-07" in page
-    assert "12.5 kWh" in page
+    assert "12,5 kWh" in page
     assert f"450,00{NBSP}kr" in page
     assert f"1{NBSP}050,00{NBSP}kr" in page  # balance after
     assert "<!doctype html>" in page
@@ -100,6 +136,39 @@ def test_render_member_report_contains_key_figures():
     assert _PLACEHOLDER not in page
     assert "Prognose neste måned" not in page
     assert "ikke tilgjengelig" in page
+
+
+def test_render_member_report_shows_settlement_calculation():
+    result, member = _result_and_member()
+    page = render_member_report(result, member)
+    assert "Avregningsgrunnlag" in page
+    assert "Faste kostnader (delt likt)" in page
+    assert f"600,00{NBSP}kr" in page  # equal-cost total (60000 øre)
+    assert "delt på 2 medlemmer" in page
+    assert "Forbrukskostnader (etter kWh)" in page
+    assert f"1{NBSP}200,00{NBSP}kr" in page  # invoice + total charged
+    # my share of the metered energy: 12.5 of 50 kWh
+    assert "Din andel av totalforbruk" in page
+    assert "12,5 av 50 kWh (25,0 %)" in page
+    # per-line table gains a settlement-wide total column
+    assert "Totalbeløp" in page
+    assert "Faktura fra strømleverandør" not in page  # no invoice_href passed
+
+
+def test_render_member_report_invoice_link_when_available():
+    result, member = _result_and_member()
+    page = render_member_report(
+        result,
+        member,
+        invoices=[
+            {"filename": "faktura-a.pdf", "href": "invoices/5"},
+            {"filename": "faktura-b.pdf", "href": "invoices/6"},
+        ],
+    )
+    assert "Faktura fra strømleverandør" in page
+    assert 'href="invoices/5"' in page
+    assert "faktura-a.pdf" in page
+    assert "faktura-b.pdf" in page
 
 
 def test_render_member_report_forecast_section():
@@ -129,7 +198,10 @@ def test_render_summary_lists_members_and_warnings():
     page = render_summary_report(result)
     assert "sammendrag" in page
     assert "Kari Nordmann" in page
+    assert "Ola Nordmann" in page
     assert "negative_balances" in page
+    assert "Faste kostnader (delt likt)" in page
+    assert "Forbrukskostnader (etter kWh)" in page
 
 
 async def _posted(db, state_dir=None):
@@ -167,7 +239,7 @@ async def _posted(db, state_dir=None):
         actor=AuditContext.system(),
     )
     await repo.set_invoice(sid, invoice_kwh="10", actor=AuditContext.system())
-    await repo.attach_invoice(sid, filename="f.pdf", content=b"%PDF", actor=AuditContext.system())
+    await repo.add_attachment(sid, filename="f.pdf", content=b"%PDF", actor=AuditContext.system())
     await repo.freeze(sid, actor=AuditContext.system())
     await repo.post(sid, actor=AuditContext.system())
     return repo, sid, m1
@@ -205,8 +277,8 @@ def _build_frozen_settlement(admin_client, m1):
     )
     admin_client.put(f"/api/settlement/{sid}/invoice", json={"invoice_kwh": "10"}, headers=FETCH)
     admin_client.post(
-        f"/api/settlement/{sid}/attachment",
-        files={"file": ("f.pdf", b"%PDF", "application/pdf")},
+        f"/api/settlement/{sid}/attachments",
+        files={"files": ("f.pdf", b"%PDF", "application/pdf")},
         headers=FETCH,
     )
     admin_client.post(f"/api/settlement/{sid}/freeze", headers=FETCH)
@@ -244,3 +316,86 @@ def test_report_routes_over_http(admin_client, make_member):
 def test_me_settlements_scoped_and_empty_by_default(member_client):
     assert member_client.get("/api/me/settlements").json() == {"settlements": []}
     assert member_client.get("/api/me/settlements/999/report").status_code == 404
+
+
+def test_admin_can_download_invoice_attachment(admin_client, make_member):
+    m1 = make_member(member_reference="A-1")
+    admin_client.post(
+        f"/api/members/{m1}/status",
+        json={"status": "active", "effective_from": "2026-01-01"},
+        headers=FETCH,
+    )
+    sid = _build_frozen_settlement(admin_client, m1)
+
+    detail = admin_client.get(f"/api/settlement/{sid}").json()
+    assert len(detail["attachments"]) == 1
+    aid = detail["attachments"][0]["id"]
+    assert detail["attachments"][0]["filename"] == "f.pdf"
+
+    resp = admin_client.get(f"/api/settlement/{sid}/attachments/{aid}")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content == b"%PDF"
+
+    # a second invoice can be added even after freezing
+    detail = admin_client.post(
+        f"/api/settlement/{sid}/attachments",
+        files={"files": ("faktura-2.pdf", b"%PDF two", "application/pdf")},
+        headers=FETCH,
+    ).json()
+    assert len(detail["attachments"]) == 2
+
+    # member report lists every invoice
+    member_html = admin_client.get(f"/api/settlement/{sid}/reports/{m1}").text
+    assert "Avregningsgrunnlag" in member_html
+    assert "Faktura fra strømleverandør" in member_html
+    assert "faktura-2.pdf" in member_html
+
+    # delete one; the settlement (still a draft here) keeps the other
+    deleted = admin_client.delete(f"/api/settlement/{sid}/attachments/{aid}", headers=FETCH)
+    assert deleted.status_code == 200
+    assert [a["filename"] for a in deleted.json()["attachments"]] == ["faktura-2.pdf"]
+    assert admin_client.get(f"/api/settlement/{sid}/attachments/{aid}").status_code == 404
+
+
+def test_member_sees_calculation_and_invoice(
+    admin_client, config, make_member, seed_user_sync, make_session
+):
+    from fastapi.testclient import TestClient
+
+    m1 = make_member(member_reference="A-1", email="ada@example.com")
+    admin_client.post(
+        f"/api/members/{m1}/status",
+        json={"status": "active", "effective_from": "2026-01-01"},
+        headers=FETCH,
+    )
+    sid = _build_frozen_settlement(admin_client, m1)
+    assert admin_client.post(f"/api/settlement/{sid}/post", headers=FETCH).status_code == 200
+    aid = admin_client.get(f"/api/settlement/{sid}").json()["attachments"][0]["id"]
+
+    uid = seed_user_sync(email="ada@example.com", role="member", member_id=m1)
+    with TestClient(admin_client.app) as me:
+        me.cookies.set(config.auth.cookie_name, make_session(uid))
+
+        listing = me.get("/api/me/settlements").json()["settlements"]
+        assert len(listing) == 1
+        # the invoice is reachable only through the report, not the settlement list
+        assert "invoices" not in listing[0]
+
+        report = me.get(f"/api/me/settlements/{sid}/report")
+        assert report.status_code == 200
+        assert "Avregningsgrunnlag" in report.text
+        assert "Din andel av totalforbruk" in report.text
+        assert "Faktura fra strømleverandør" in report.text
+        assert f"invoices/{aid}" in report.text
+
+        invoice = me.get(f"/api/me/settlements/{sid}/invoices/{aid}")
+        assert invoice.status_code == 200
+        assert invoice.content == b"%PDF"
+
+    # a member not in the settlement is refused
+    other = make_member(member_reference="B-2", email="bob@example.com")
+    other_uid = seed_user_sync(email="bob@example.com", role="member", member_id=other)
+    with TestClient(admin_client.app) as bob:
+        bob.cookies.set(config.auth.cookie_name, make_session(other_uid))
+        assert bob.get(f"/api/me/settlements/{sid}/invoices/{aid}").status_code == 422

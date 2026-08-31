@@ -20,6 +20,25 @@
   holds `db._write()`, use `audit.write_audit_row(cur, ...)` (lock-free); for a stand-alone
   event use `await audit.record_audit(db, ...)`. `asyncio.Lock` is not reentrant.
 
+- **Users.** `routes/users.py` (`/api/users`, `require_admin`) provisions logins via
+  `UserRepo`. `POST` accepts `password=None` (activation-only account, NULL hash).
+  `disable` re-checks `cannot_disable_self` / `last_admin` in the route before calling
+  `UserRepo.set_disabled` (which revokes the user's sessions in-transaction).
+
+- **Ledger.** `LedgerRepo.list_all` is the cross-member movements read
+  (`GET /api/ledger-transactions`, admin); `balance_ore_map` feeds the `balance_ore` /
+  `balance_nok` fields on `MemberOut` for the member list/detail routes. Live balance is
+  still `SUM(amount_ore)` — never stored.
+
+- **Settlement invoices.** A settlement has many `settlement_attachments` rows
+  (migration 0009; legacy `settlements.attachment_*` columns are dead). `SettlementRepo`
+  `add_attachment` / `remove_attachment` work in **any** status — invoices can be
+  fixed after posting — and only `attachments()` being empty blocks `post()` and
+  raises the `attachment_missing` compute warning. Files live at
+  `state/attachments/<settlement_id>/<attachment_id>-<name>`. Admin CRUD is on
+  `/api/settlement/{id}/attachments[...]`; members read their posted settlements'
+  invoices via `/api/me/settlements/{id}/invoices/{aid}`.
+
 - **Forecast (1C).** `ForecastRepo` is a pure read-model — it computes from posted settlements
   + the ledger and persists nothing except the `forecast_settings` singleton (audited via
   `update_settings`) and the `low_balance_notifications` history rows. Member-facing:

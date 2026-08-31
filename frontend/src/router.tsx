@@ -7,10 +7,12 @@ import ForecastSettings from "./pages/ForecastSettings";
 import Login from "./pages/Login";
 import Members from "./pages/Members";
 import MemberDetail from "./pages/MemberDetail";
+import Movements from "./pages/Movements";
 import MyAccount from "./pages/MyAccount";
 import SettlementDetail from "./pages/SettlementDetail";
 import Settlements from "./pages/Settlements";
 import SystemHealth from "./pages/SystemHealth";
+import Users from "./pages/Users";
 
 function FullPageMessage({ children }: { children: React.ReactNode }) {
   return (
@@ -50,8 +52,14 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 
 function Layout() {
   const { user, logout } = useAuth();
+  const { pathname } = useLocation();
   const isAdmin = user?.role === "admin";
   const hasPortal = user?.role === "member" || user?.member_id != null;
+
+  // /users and /chargers live under System (configuration) — keep that tab lit.
+  const systemActive = ["/system", "/users", "/chargers"].some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -67,11 +75,11 @@ function Layout() {
                   <NavLink to="/members" className={navLinkClass}>
                     Medlemmer
                   </NavLink>
-                  <NavLink to="/chargers" className={navLinkClass}>
-                    Ladere
-                  </NavLink>
                   <NavLink to="/settlements" className={navLinkClass}>
                     Avregninger
+                  </NavLink>
+                  <NavLink to="/movements" className={navLinkClass}>
+                    Bevegelser
                   </NavLink>
                   <NavLink to="/audit" className={navLinkClass}>
                     Revisjonslogg
@@ -79,7 +87,10 @@ function Layout() {
                   <NavLink to="/forecast" className={navLinkClass}>
                     Prognose
                   </NavLink>
-                  <NavLink to="/system" className={navLinkClass}>
+                  <NavLink
+                    to="/system"
+                    className={() => navLinkClass({ isActive: systemActive })}
+                  >
                     System
                   </NavLink>
                 </>
@@ -133,9 +144,11 @@ export default function AppRouter() {
         <Route element={<RequireAdmin />}>
           <Route path="/members" element={<Members />} />
           <Route path="/members/:id" element={<MemberDetail />} />
+          <Route path="/users" element={<Users />} />
           <Route path="/chargers" element={<Chargers />} />
           <Route path="/settlements" element={<Settlements />} />
           <Route path="/settlements/:id" element={<SettlementDetail />} />
+          <Route path="/movements" element={<Movements />} />
           <Route path="/audit" element={<AuditLog />} />
           <Route path="/forecast" element={<ForecastSettings />} />
           <Route path="/system" element={<SystemHealth />} />

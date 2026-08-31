@@ -66,7 +66,7 @@ def _build_posted_settlement(config, *, reference: str) -> tuple[int, int]:
             actor=SYS,
         )
         await repo.set_invoice(sid, invoice_kwh="10", actor=SYS)
-        await repo.attach_invoice(sid, filename="f.pdf", content=b"%PDF", actor=SYS)
+        await repo.add_attachment(sid, filename="f.pdf", content=b"%PDF", actor=SYS)
         await repo.freeze(sid, actor=SYS)
         await repo.post(sid, actor=SYS)
         return sid, mid

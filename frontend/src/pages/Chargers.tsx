@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import useSWR from "swr";
 import {
   ApiError,
@@ -122,6 +123,9 @@ export default function Chargers() {
 
   return (
     <section className="space-y-4">
+      <Link to="/system" className="text-xs text-emerald-400 hover:underline">
+        ← System
+      </Link>
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Ladere</h1>
         <div className="flex gap-2">

@@ -179,6 +179,23 @@ export interface Member {
   updated_at: string;
   status: MemberStatus | null;
   participates: boolean | null;
+  balance_ore?: number | null;
+  balance_nok?: string | null;
+}
+
+export interface User {
+  id: number;
+  email: string;
+  role: Role;
+  member_id: number | null;
+  disabled: boolean;
+}
+
+export interface UserCreate {
+  email: string;
+  password?: string | null;
+  role: Role;
+  member_id?: number | null;
 }
 
 export interface MemberCreate {
@@ -234,6 +251,16 @@ export interface LedgerTxn {
   reverses_transaction_id: number | null;
   created_by_user_id: number | null;
   recorded_at: string;
+}
+
+export interface LedgerTxnRow extends LedgerTxn {
+  member_name: string;
+  member_reference: string;
+}
+
+export interface LedgerTxnsPage {
+  transactions: LedgerTxnRow[];
+  total: number;
 }
 
 export interface Balance {
@@ -338,6 +365,27 @@ export function participationHistory(
   );
 }
 
+// --- users (admin) -----------------------------------------------
+
+export function listUsers(): Promise<{ users: User[] }> {
+  return get<{ users: User[] }>("/api/users");
+}
+
+export function createUser(body: UserCreate): Promise<User> {
+  return post<User>("/api/users", body);
+}
+
+export function setUserDisabled(id: number, disabled: boolean): Promise<User> {
+  return post<User>(`/api/users/${id}/${disabled ? "disable" : "enable"}`);
+}
+
+export function setUserPassword(
+  id: number,
+  password: string,
+): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>(`/api/users/${id}/password`, { password });
+}
+
 // --- ledger (admin) ------------------------------------------------
 
 export function getBalance(memberId: number): Promise<Balance> {
@@ -375,6 +423,22 @@ export function recordAdjustment(
 
 export function reversePayment(txnId: number): Promise<LedgerTxn> {
   return post<LedgerTxn>(`/api/ledger-transactions/${txnId}/reverse`);
+}
+
+export function listLedgerTransactions(
+  params: {
+    limit?: number;
+    offset?: number;
+    memberId?: number | null;
+    txnType?: string | null;
+  } = {},
+): Promise<LedgerTxnsPage> {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(params.limit ?? 50));
+  qs.set("offset", String(params.offset ?? 0));
+  if (params.memberId != null) qs.set("member_id", String(params.memberId));
+  if (params.txnType) qs.set("txn_type", params.txnType);
+  return get<LedgerTxnsPage>(`/api/ledger-transactions?${qs.toString()}`);
 }
 
 // --- audit log (admin) -------------------------------------------
@@ -623,10 +687,18 @@ export interface SettlementMemberSnapshot {
   balance_before_ore: number;
 }
 
+export interface SettlementAttachment {
+  id: number;
+  filename: string;
+  bytes: number;
+  uploaded_at: string;
+}
+
 export interface SettlementDetail {
   settlement: Settlement;
   lines: InvoiceLine[];
   snapshot: SettlementMemberSnapshot[];
+  attachments: SettlementAttachment[];
 }
 
 export interface PreviewMemberRow {
@@ -711,15 +783,28 @@ export function deleteInvoiceLine(
   return del<SettlementDetail>(`/api/settlement/${id}/lines/${lineId}`);
 }
 
-export function uploadSettlementAttachment(
+export async function uploadSettlementAttachments(
   id: number,
-  file: File,
-): Promise<{ settlement: Settlement }> {
-  const form = new FormData();
-  form.append("file", file);
-  return postForm<{ settlement: Settlement }>(
-    `/api/settlement/${id}/attachment`,
-    form,
+  files: File[],
+): Promise<SettlementDetail | undefined> {
+  let detail: SettlementDetail | undefined;
+  for (const file of files) {
+    const form = new FormData();
+    form.append("files", file);
+    detail = await postForm<SettlementDetail>(
+      `/api/settlement/${id}/attachments`,
+      form,
+    );
+  }
+  return detail;
+}
+
+export function deleteSettlementAttachment(
+  id: number,
+  attachmentId: number,
+): Promise<SettlementDetail> {
+  return del<SettlementDetail>(
+    `/api/settlement/${id}/attachments/${attachmentId}`,
   );
 }
 
