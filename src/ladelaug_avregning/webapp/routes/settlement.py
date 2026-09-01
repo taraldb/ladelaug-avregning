@@ -400,7 +400,10 @@ async def member_report(
         raise DomainError("not_in_settlement", f"Member {member_id} is not in this settlement.")
     forecast = ForecastRepo(db).member_forecast(member_id)
     invoices = [
-        {"filename": a["filename"], "href": f"../../attachments/{a['id']}"}
+        {
+            "filename": a["filename"],
+            "href": f"/api/settlement/{settlement_id}/attachments/{a['id']}",
+        }
         for a in repo.attachments(settlement_id)
     ]
     return HTMLResponse(

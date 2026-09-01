@@ -20,7 +20,7 @@ describe("Members (admin)", () => {
 
     await user.type(screen.getByLabelText(/^Referanse$/), "M-100");
     await user.type(screen.getByLabelText(/Fullt navn/), "Ada Lovelace");
-    await user.type(screen.getByLabelText(/E-post/), "ada@example.com");
+    await user.type(screen.getByLabelText(/e-post/i), "ada@example.com");
     await user.click(screen.getByRole("button", { name: "Opprett" }));
 
     expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
@@ -40,7 +40,7 @@ describe("Members (admin)", () => {
 
     await user.type(screen.getByLabelText(/^Referanse$/), "M-101");
     await user.type(screen.getByLabelText(/Fullt navn/), "Bad Email");
-    await user.type(screen.getByLabelText(/E-post/), "not-an-email");
+    await user.type(screen.getByLabelText(/e-post/i), "not-an-email");
     await user.click(screen.getByRole("button", { name: "Opprett" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/valid email/i);

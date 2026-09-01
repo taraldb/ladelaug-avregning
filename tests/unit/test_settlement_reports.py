@@ -379,11 +379,14 @@ def test_admin_can_download_invoice_attachment(admin_client, make_member):
     ).json()
     assert len(detail["attachments"]) == 2
 
-    # member report lists every invoice
+    # member report lists every invoice, linking to the settlement-scoped route
+    aid2 = detail["attachments"][1]["id"]
     member_html = admin_client.get(f"/api/settlement/{sid}/reports/{m1}").text
     assert "Avregningsgrunnlag" in member_html
     assert "Faktura fra strømleverandør" in member_html
     assert "faktura-2.pdf" in member_html
+    assert f'href="/api/settlement/{sid}/attachments/{aid2}"' in member_html
+    assert "../../attachments/" not in member_html
 
     # delete one; the settlement (still a draft here) keeps the other
     deleted = admin_client.delete(f"/api/settlement/{sid}/attachments/{aid}", headers=FETCH)

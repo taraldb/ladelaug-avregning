@@ -854,11 +854,15 @@ function ProfileCard({
           <dd className="text-slate-100">{member.member_reference}</dd>
           <dt className="text-slate-400">Navn</dt>
           <dd className="text-slate-100">{member.full_name}</dd>
-          <dt className="text-slate-400">E-post</dt>
+          <dt className="text-slate-400">Reserve-e-post</dt>
           <dd className="text-slate-100">{member.email ?? "–"}</dd>
           <dt className="text-slate-400">Innmeldt</dt>
           <dd className="text-slate-100">{formatDate(member.join_date)}</dd>
         </dl>
+        <p className="mt-2 text-xs text-slate-500">
+          Reserve-e-post brukes kun for varsler til medlemmer uten aktiv pålogging.
+          Har medlemmet en pålogging, sendes all e-post dit.
+        </p>
         <button
           type="button"
           onClick={startEdit}
@@ -892,13 +896,16 @@ function ProfileCard({
           />
         </label>
         <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-300">E-post</span>
+          <span className="mb-1 block font-medium text-slate-300">Reserve-e-post</span>
           <input
             type="text"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
           />
+          <span className="mt-1 block text-xs text-slate-500">
+            Brukes kun for varsler til medlemmer uten aktiv pålogging.
+          </span>
         </label>
         <DateField label="Innmeldt" value={joinDate} onChange={setJoinDate} required />
 

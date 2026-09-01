@@ -16,7 +16,7 @@ describe("MyProfile (member self-service)", () => {
 
     const name = await screen.findByLabelText("Navn");
     expect(name).toHaveValue("Kari Hansen");
-    const email = screen.getByLabelText(/E-post/);
+    const email = screen.getByLabelText(/e-post/i);
     expect(email).toHaveValue("kari@example.com");
 
     await user.clear(name);

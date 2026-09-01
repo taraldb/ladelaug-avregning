@@ -21,7 +21,7 @@ import { formatDate } from "../lib/format";
 const columns: Column<Member>[] = [
   { key: "ref", header: "Referanse", render: (m) => m.member_reference },
   { key: "name", header: "Navn", render: (m) => m.full_name },
-  { key: "email", header: "E-post", render: (m) => m.email ?? "–" },
+  { key: "email", header: "Reserve-e-post", render: (m) => m.email ?? "–" },
   {
     key: "join",
     header: "Innmeldt",
@@ -266,7 +266,7 @@ function NewMemberModal({
         </label>
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-slate-300">
-            E-post (valgfritt)
+            Reserve-e-post (valgfritt)
           </span>
           <input
             type="text"
@@ -274,6 +274,9 @@ function NewMemberModal({
             onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
           />
+          <span className="mt-1 block text-xs text-slate-500">
+            Brukes kun for varsler til medlemmer uten aktiv pålogging.
+          </span>
         </label>
         <DateField label="Innmeldingsdato" value={joinDate} onChange={setJoinDate} required />
 

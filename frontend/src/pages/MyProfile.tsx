@@ -142,9 +142,7 @@ export default function MyProfile() {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-slate-400">
-                E-post (hit sendes avregninger og varsler)
-              </span>
+              <span className="mb-1 block text-slate-400">Reserve-e-post</span>
               <input
                 type="email"
                 value={form.email}
@@ -153,7 +151,9 @@ export default function MyProfile() {
               />
             </label>
             <p className="text-xs text-slate-500">
-              Andelsnummer og innmeldingsdato endres av styret.
+              Avregninger og varsler sendes til påloggings-e-posten din. Reserve-e-posten
+              brukes bare hvis påloggingen mangler eller er deaktivert. Andelsnummer og
+              innmeldingsdato endres av styret.
             </p>
             <div className="flex items-center gap-3">
               <button
