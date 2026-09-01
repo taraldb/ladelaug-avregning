@@ -471,9 +471,9 @@ def test_member_sees_shared_draft_watermarked_but_not_before_sharing(
 
         report = me.get(f"/api/me/settlements/{sid}/report")
         assert report.status_code == 200
-        assert "UTKAST" in report.text
-        assert "draft-watermark" in report.text
-        assert "Avregning 2026-07 (UTKAST)" in report.text
+        # a diagonal watermark, but no banner/heading marker in the report body
+        assert '<div class="draft-watermark">UTKAST</div>' in report.text
+        assert "Avregning 2026-07" in report.text and "(UTKAST)" not in report.text
         # the real calculation is still shown
         assert "Din andel av totalforbruk" in report.text
 

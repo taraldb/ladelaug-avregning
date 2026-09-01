@@ -65,7 +65,8 @@
   frozen + shared + in-snapshot drafts. `/api/me/settlements` adds them with
   `is_draft:true`; `_my_settlement_or_403` returns `(row, is_draft)` and the
   member report endpoints pass `draft=is_draft` into `render_member_report`,
-  which then renders the `UTKAST` watermark + banner + title prefix. `member_entry`
+  which then renders a diagonal `UTKAST` page watermark + `UTKAST –` title
+  prefix (no in-body banner/heading marker). `member_entry`
   / `compute` already work on any frozen settlement, so no posting is needed.
   Re-freezing a shared draft keeps it shared.
 

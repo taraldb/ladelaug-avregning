@@ -43,9 +43,6 @@ tr.total td, .total td { font-weight: 600; border-top: 2px solid #ccc; border-bo
 .money .amt { display: inline-block; min-width: 9ch; text-align: right; }
 .neg { color: #b00020; }
 footer { margin-top: 2.5rem; font-size: .85rem; color: #888; }
-.draft-banner { border: 2px solid #b8860b; background: #fff8e1; color: #6b5200;
-    padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1.5rem;
-    font-weight: 600; }
 .draft-watermark { position: fixed; top: 45%; left: 50%; z-index: 0;
     transform: translate(-50%, -50%) rotate(-28deg); font-size: 6rem;
     font-weight: 800; letter-spacing: .12em; color: rgba(184, 134, 11, .12);
@@ -192,7 +189,7 @@ def render_member_report(
     draft: bool = False,
 ) -> str:
     """``draft=True`` renders the report as an explicitly-marked preview: a
-    diagonal ``UTKAST`` watermark, a warning banner, and an ``UTKAST –`` title
+    diagonal ``UTKAST`` watermark across the page and an ``UTKAST –`` title
     prefix. Used for a frozen-but-unposted settlement the board has shared with
     its members (US-905); the numbers can still change before posting."""
     month = _esc(result["period_month"])
@@ -228,17 +225,10 @@ def render_member_report(
 
     invoice_total_nok = result.get("invoice_lines_total_nok")
     after_cls = ' class="neg"' if member["balance_after_ore"] < 0 else ""
-    draft_head = (
-        '<div class="draft-watermark">UTKAST</div>'
-        '<div class="draft-banner">UTKAST — dette er ikke en endelig avregning. '
-        "Tallene bygger på et fryst øyeblikksbilde og kan endres før avregningen "
-        "bokføres. Du blir varslet når den endelige avregningen er klar.</div>"
-        if draft
-        else ""
-    )
+    watermark = '<div class="draft-watermark">UTKAST</div>' if draft else ""
     body = (
-        f"{draft_head}"
-        f"<h1>Avregning {month}{' (UTKAST)' if draft else ''}</h1>"
+        f"{watermark}"
+        f"<h1>Avregning {month}</h1>"
         f'<p class="muted">{name}</p>'
         "<h2>Avregningsgrunnlag</h2>"
         '<dl class="kv">'

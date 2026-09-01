@@ -10,8 +10,8 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
   member then sees their own line of that settlement in a clearly-marked
   "Utkast til avregning" section on "Min konto": an amber panel stating the
   numbers are not final, an `UTKAST` badge per row, and links to the report /
-  PDF — which carry a diagonal `UTKAST` watermark, a warning banner, and an
-  `Avregning YYYY-MM (UTKAST)` heading. A draft is visible to a member **only**
+  PDF — which carry a diagonal `UTKAST` watermark across the page. A draft is
+  visible to a member **only**
   when it is frozen **and** explicitly shared **and** the member is in its
   snapshot; **Trekk tilbake** clears the share and hides it again. Re-freezing a
   shared draft keeps it shared, so members always see the latest frozen numbers.
