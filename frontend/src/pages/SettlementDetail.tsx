@@ -21,6 +21,8 @@ import {
   resendSettlementReports,
   setSettlementInvoice,
   settlementReports,
+  shareSettlementDraft,
+  unshareSettlementDraft,
   uploadSettlementAttachments,
   type AllocationMethod,
   type CorrectionAssessment,
@@ -200,6 +202,50 @@ export default function SettlementDetail() {
         <p className="text-xs text-slate-500">
           Forbruk fryst {s.usage_frozen_at}. Øyeblikksbilde: {data.snapshot.length} medlemmer.
         </p>
+      )}
+
+      {isDraft && s.usage_frozen_at && (
+        <div className="rounded-md border border-slate-800 p-4 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold text-slate-200">Utkast til medlemmer</h2>
+            {s.draft_shared_at ? (
+              <span className="rounded-md bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-300">
+                Delt {s.draft_shared_at.slice(0, 16).replace("T", " ")}
+              </span>
+            ) : (
+              <span className="rounded-md bg-slate-700/40 px-2 py-1 text-xs text-slate-400">
+                Ikke delt
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Lar medlemmene se sin egen del av denne avregningen som et tydelig merket
+            utkast, før du bokfører. Tallene oppdateres hvis du fryser på nytt.
+          </p>
+          <div className="mt-3">
+            {s.draft_shared_at ? (
+              <button
+                type="button"
+                onClick={() =>
+                  void act(() => unshareSettlementDraft(sid), "Utkast trukket tilbake.")
+                }
+                className="rounded-md border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-800"
+              >
+                Trekk tilbake
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  void act(() => shareSettlementDraft(sid), "Utkast delt med medlemmene.")
+                }
+                className="rounded-md border border-amber-600/60 px-3 py-1.5 text-amber-200 hover:bg-amber-900/40"
+              >
+                Del utkast med medlemmer
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {preview && <PreviewPanel preview={preview} />}

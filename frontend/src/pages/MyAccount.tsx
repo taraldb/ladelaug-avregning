@@ -181,39 +181,95 @@ export default function MyAccount() {
         />
       </div>
 
+      {(settlements.data?.settlements.filter((s) => s.is_draft) ?? []).length > 0 && (
+        <div
+          role="region"
+          aria-label="Utkast til avregning"
+          className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4"
+        >
+          <h2 className="mb-1 text-sm font-semibold text-amber-200">
+            Utkast til avregning
+          </h2>
+          <p className="mb-3 text-sm text-amber-200/90">
+            Dette er et <strong>utkast</strong>. Tallene er ikke endelige og kan endres
+            før avregningen bokføres. Du blir varslet når den endelige avregningen er
+            klar.
+          </p>
+          <ul className="space-y-1 text-sm text-amber-100">
+            {settlements.data!.settlements
+              .filter((s) => s.is_draft)
+              .map((s) => (
+                <li
+                  key={s.settlement_id}
+                  className="flex flex-wrap justify-between gap-2 border-b border-amber-500/20 py-1"
+                >
+                  <span>
+                    <span className="mr-2 rounded bg-amber-500/30 px-1.5 py-0.5 text-xs font-semibold text-amber-100">
+                      UTKAST
+                    </span>
+                    {s.period_month} · {s.consumption_kwh} kWh · foreløpig belastet{" "}
+                    {formatNok(s.charge_nok)}
+                  </span>
+                  <span className="flex gap-3">
+                    <a
+                      className="text-amber-200 underline hover:text-amber-100"
+                      href={s.report_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Se utkast
+                    </a>
+                    <a
+                      className="text-amber-200 underline hover:text-amber-100"
+                      href={`${s.report_url}.pdf`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      PDF
+                    </a>
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+
       <div>
         <h2 className="mb-2 text-sm font-semibold text-slate-100">Avregninger</h2>
-        {settlements.data && settlements.data.settlements.length > 0 ? (
-          <ul className="space-y-1 text-sm text-slate-300">
-            {settlements.data.settlements.map((s) => (
-              <li key={s.settlement_id} className="flex justify-between border-b border-slate-800 py-1">
-                <span>
-                  {s.period_month} · {s.consumption_kwh} kWh · belastet {formatNok(s.charge_nok)}
-                </span>
-                <span className="flex gap-3">
-                  <a
-                    className="text-emerald-400 hover:underline"
-                    href={s.report_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Rapport
-                  </a>
-                  <a
-                    className="text-emerald-400 hover:underline"
-                    href={`${s.report_url}.pdf`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    PDF
-                  </a>
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-slate-400">Ingen avregninger ennå.</p>
-        )}
+        {(() => {
+          const final = settlements.data?.settlements.filter((s) => !s.is_draft) ?? [];
+          return final.length > 0 ? (
+            <ul className="space-y-1 text-sm text-slate-300">
+              {final.map((s) => (
+                <li key={s.settlement_id} className="flex justify-between border-b border-slate-800 py-1">
+                  <span>
+                    {s.period_month} · {s.consumption_kwh} kWh · belastet {formatNok(s.charge_nok)}
+                  </span>
+                  <span className="flex gap-3">
+                    <a
+                      className="text-emerald-400 hover:underline"
+                      href={s.report_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Rapport
+                    </a>
+                    <a
+                      className="text-emerald-400 hover:underline"
+                      href={`${s.report_url}.pdf`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      PDF
+                    </a>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-400">Ingen avregninger ennå.</p>
+          );
+        })()}
       </div>
 
       <div>

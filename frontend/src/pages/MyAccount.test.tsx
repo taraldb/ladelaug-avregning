@@ -52,6 +52,32 @@ describe("MyAccount (member portal)", () => {
     expect(screen.queryByRole("link", { name: /Faktura/ })).not.toBeInTheDocument();
   });
 
+  it("shows a shared draft settlement in a clearly-marked UTKAST section", async () => {
+    setSession(MEMBER_USER);
+    const memberId = MEMBER_USER.member_id ?? 7;
+    seedMember({ id: memberId });
+    const s = seedMySettlement({
+      period_month: "2026-08",
+      is_draft: true,
+      draft_shared_at: "2026-09-02T09:00:00+00:00",
+      posted_at: null,
+    });
+
+    renderApp(<AppRouter />, { route: "/" });
+
+    const region = await screen.findByRole("region", {
+      name: "Utkast til avregning",
+    });
+    expect(within(region).getByText("UTKAST")).toBeInTheDocument();
+    expect(within(region).getByText(/ikke endelige/)).toBeInTheDocument();
+    expect(within(region).getByText(/2026-08/)).toBeInTheDocument();
+    expect(
+      within(region).getByRole("link", { name: "Se utkast" }),
+    ).toHaveAttribute("href", s.report_url);
+    // the final-settlements list stays empty
+    expect(screen.getByText("Ingen avregninger ennå.")).toBeInTheDocument();
+  });
+
   it("renders the forecast and consumption cards, no banner when balance is fine", async () => {
     setSession(MEMBER_USER);
     const memberId = MEMBER_USER.member_id ?? 7;

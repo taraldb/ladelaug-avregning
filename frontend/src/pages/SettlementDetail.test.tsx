@@ -240,4 +240,36 @@ describe("Settlement flow (admin)", () => {
     expect(within(panel).getByText("Kari Nordmann")).toBeInTheDocument();
     expect(within(panel).getByText("38.500 kWh")).toBeInTheDocument();
   });
+
+  it("shares a frozen draft with members and can retract it", async () => {
+    setSession(ADMIN_USER);
+    const { user } = renderApp(<AppRouter />, { route: "/avregninger" });
+    await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
+    await screen.findByRole("heading", { name: /Avregning 20/ });
+
+    // the toggle only appears once the usage snapshot is frozen
+    expect(
+      screen.queryByRole("button", { name: "Del utkast med medlemmer" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Frys forbruk" }));
+
+    const share = await screen.findByRole("button", {
+      name: "Del utkast med medlemmer",
+    });
+    const panel = share.closest("div")!.parentElement as HTMLElement;
+    expect(within(panel).getByText("Ikke delt")).toBeInTheDocument();
+
+    await user.click(share);
+    expect(await screen.findByText(/Utkast delt med medlemmene\./)).toBeInTheDocument();
+    expect(await screen.findByText(/^Delt /)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Trekk tilbake" }));
+    expect(
+      await screen.findByText(/Utkast trukket tilbake\./),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Del utkast med medlemmer" }),
+    ).toBeInTheDocument();
+  });
 });

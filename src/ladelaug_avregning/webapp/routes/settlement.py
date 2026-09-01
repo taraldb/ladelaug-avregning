@@ -243,6 +243,32 @@ async def freeze(
     return _detail(_repo(db, config), settlement_id)
 
 
+@router.post("/{settlement_id}/share-draft", dependencies=[Depends(require_fetch)])
+async def share_draft(
+    settlement_id: int,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, Any]:
+    """Publish a frozen draft to its members for preview (US-905). The member
+    view of it is watermarked ``UTKAST``; 422 ``not_frozen`` for an unfrozen
+    draft, 422 ``not_draft`` once posted."""
+    await _repo(db, config).share_draft(settlement_id, actor=actor)
+    return _detail(_repo(db, config), settlement_id)
+
+
+@router.delete("/{settlement_id}/share-draft", dependencies=[Depends(require_fetch)])
+async def unshare_draft(
+    settlement_id: int,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, Any]:
+    """Retract a shared draft (422 ``not_shared`` if it was not shared)."""
+    await _repo(db, config).unshare_draft(settlement_id, actor=actor)
+    return _detail(_repo(db, config), settlement_id)
+
+
 @router.get("/{settlement_id}/preview")
 async def preview(
     settlement_id: int, db: Database = Depends(get_db), config: AppConfig = Depends(get_config)

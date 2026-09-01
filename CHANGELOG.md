@@ -4,6 +4,25 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Members can preview a settlement as a DRAFT before it is posted** — after an
+  admin freezes a settlement they can click **Del utkast med medlemmer** on the
+  settlement page (only shown once the usage snapshot is frozen). Each snapshot
+  member then sees their own line of that settlement in a clearly-marked
+  "Utkast til avregning" section on "Min konto": an amber panel stating the
+  numbers are not final, an `UTKAST` badge per row, and links to the report /
+  PDF — which carry a diagonal `UTKAST` watermark, a warning banner, and an
+  `Avregning YYYY-MM (UTKAST)` heading. A draft is visible to a member **only**
+  when it is frozen **and** explicitly shared **and** the member is in its
+  snapshot; **Trekk tilbake** clears the share and hides it again. Re-freezing a
+  shared draft keeps it shared, so members always see the latest frozen numbers.
+  New: migration `0014` (`settlements.draft_shared_at` /
+  `draft_shared_by_user_id`), `POST` / `DELETE /api/settlement/{id}/share-draft`
+  (admin; 422 `not_frozen` / `not_draft` / `not_shared`, audited
+  `settlement.draft_shared` / `settlement.draft_unshared`),
+  `SettlementRepo.share_draft` / `unshare_draft` / `shared_draft_for_member`.
+  `/api/me/settlements` now also returns shared drafts, each with
+  `"is_draft": true`; `/api/me/settlements/{id}/report[.pdf]` and
+  `.../invoices/{aid}` accept a shared draft and watermark the report.
 - **Currency shown with the `kr` prefix, column-aligned** — every formatted
   amount now reads `kr 1 234,56` instead of `1 234,56 kr`, matching Norwegian
   convention where the currency symbol comes first. Centralised in

@@ -22,7 +22,7 @@ _CSS = """
 * { box-sizing: border-box; }
 body { font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
        color: #1a1a1a; background: #fff; margin: 0; padding: 2rem; }
-.wrap { max-width: 720px; margin: 0 auto; }
+.wrap { max-width: 720px; margin: 0 auto; position: relative; z-index: 1; }
 h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
 h2 { font-size: 1.05rem; margin: 1.75rem 0 .5rem; border-bottom: 1px solid #e2e2e2;
      padding-bottom: .25rem; }
@@ -43,6 +43,13 @@ tr.total td, .total td { font-weight: 600; border-top: 2px solid #ccc; border-bo
 .money .amt { display: inline-block; min-width: 9ch; text-align: right; }
 .neg { color: #b00020; }
 footer { margin-top: 2.5rem; font-size: .85rem; color: #888; }
+.draft-banner { border: 2px solid #b8860b; background: #fff8e1; color: #6b5200;
+    padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1.5rem;
+    font-weight: 600; }
+.draft-watermark { position: fixed; top: 45%; left: 50%; z-index: 0;
+    transform: translate(-50%, -50%) rotate(-28deg); font-size: 6rem;
+    font-weight: 800; letter-spacing: .12em; color: rgba(184, 134, 11, .12);
+    white-space: nowrap; pointer-events: none; }
 """
 
 
@@ -182,7 +189,12 @@ def render_member_report(
     forecast: dict[str, Any] | None = None,
     *,
     invoices: list[dict[str, str]] | None = None,
+    draft: bool = False,
 ) -> str:
+    """``draft=True`` renders the report as an explicitly-marked preview: a
+    diagonal ``UTKAST`` watermark, a warning banner, and an ``UTKAST –`` title
+    prefix. Used for a frozen-but-unposted settlement the board has shared with
+    its members (US-905); the numbers can still change before posting."""
     month = _esc(result["period_month"])
     name = _esc(member["full_name"])
     b = _basis(result, member)
@@ -216,8 +228,17 @@ def render_member_report(
 
     invoice_total_nok = result.get("invoice_lines_total_nok")
     after_cls = ' class="neg"' if member["balance_after_ore"] < 0 else ""
+    draft_head = (
+        '<div class="draft-watermark">UTKAST</div>'
+        '<div class="draft-banner">UTKAST — dette er ikke en endelig avregning. '
+        "Tallene bygger på et fryst øyeblikksbilde og kan endres før avregningen "
+        "bokføres. Du blir varslet når den endelige avregningen er klar.</div>"
+        if draft
+        else ""
+    )
     body = (
-        f"<h1>Avregning {month}</h1>"
+        f"{draft_head}"
+        f"<h1>Avregning {month}{' (UTKAST)' if draft else ''}</h1>"
         f'<p class="muted">{name}</p>'
         "<h2>Avregningsgrunnlag</h2>"
         '<dl class="kv">'
@@ -257,7 +278,8 @@ def render_member_report(
         "</dl>"
         f"{_forecast_section(forecast)}"
     )
-    return _page(f"Avregning {result['period_month']} – {member['member_reference']}", body)
+    prefix = "UTKAST – " if draft else ""
+    return _page(f"{prefix}Avregning {result['period_month']} – {member['member_reference']}", body)
 
 
 def render_summary_report(result: dict[str, Any]) -> str:

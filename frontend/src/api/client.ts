@@ -837,6 +837,8 @@ export interface Settlement {
   usage_frozen_at: string | null;
   created_at: string;
   posted_at: string | null;
+  /** Set once the board has shared this frozen draft with members for preview. */
+  draft_shared_at: string | null;
 }
 
 export interface InvoiceLine {
@@ -1065,6 +1067,16 @@ export function previewSettlement(id: number): Promise<SettlementPreview> {
   return get<SettlementPreview>(`/api/settlement/${id}/preview`);
 }
 
+/** Publish a frozen draft to its members for preview (watermarked "UTKAST"). */
+export function shareSettlementDraft(id: number): Promise<SettlementDetail> {
+  return post<SettlementDetail>(`/api/settlement/${id}/share-draft`);
+}
+
+/** Retract a shared draft so members can no longer see it. */
+export function unshareSettlementDraft(id: number): Promise<SettlementDetail> {
+  return del<SettlementDetail>(`/api/settlement/${id}/share-draft`);
+}
+
 export function postSettlement(
   id: number,
 ): Promise<SettlementPreview & { members_charged: number; emails_queued: number }> {
@@ -1195,6 +1207,9 @@ export interface MySettlement {
   settlement_id: number;
   period_month: string;
   posted_at: string | null;
+  /** True for a frozen draft the board has shared for preview — not final. */
+  is_draft: boolean;
+  draft_shared_at: string | null;
   consumption_kwh: string;
   charge_nok: string;
   balance_after_nok: string;

@@ -650,6 +650,71 @@ class SettlementRepo:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # --- draft preview for members (opt-in) -----------------------
+
+    def shared_draft_for_member(self, member_id: int) -> list[dict[str, Any]]:
+        """Frozen, admin-shared *draft* settlements the member is a snapshot
+        member of. These are previews only — the numbers are not final and every
+        member-facing rendering of them is watermarked ``UTKAST``."""
+        rows = self._db.connection.execute(
+            "SELECT s.* FROM settlements s "
+            "JOIN settlement_members sm ON sm.settlement_id = s.id "
+            "WHERE sm.member_id = ? AND s.status = 'draft' "
+            "AND s.usage_frozen_at IS NOT NULL AND s.draft_shared_at IS NOT NULL "
+            "ORDER BY s.period_month DESC",
+            (member_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    async def share_draft(self, settlement_id: int, *, actor: AuditContext) -> dict[str, Any]:
+        """Publish a frozen draft to its members for preview (US-905). Requires a
+        frozen draft; re-freezing later keeps it shared, so the members always
+        see the latest frozen numbers."""
+        row = self._require_draft(settlement_id)
+        if not row["usage_frozen_at"]:
+            raise DomainError(
+                "not_frozen", "Freeze the usage snapshot before sharing the draft.", status=422
+            )
+        now = clock.now_utc().isoformat()
+        async with self._db._write() as cur:
+            cur.execute(
+                "UPDATE settlements SET draft_shared_at = ?, draft_shared_by_user_id = ? "
+                "WHERE id = ?",
+                (now, actor.actor_user_id, settlement_id),
+            )
+            write_audit_row(
+                cur,
+                actor,
+                event_type="settlement.draft_shared",
+                entity_type="settlement",
+                entity_id=settlement_id,
+                summary=f"Settlement {settlement_id} draft shared with members for preview",
+                detail={"period_month": row["period_month"]},
+            )
+        return self._require(settlement_id)
+
+    async def unshare_draft(self, settlement_id: int, *, actor: AuditContext) -> dict[str, Any]:
+        """Retract a shared draft so members can no longer see it."""
+        row = self._require(settlement_id)
+        if not row["draft_shared_at"]:
+            raise DomainError("not_shared", "This draft is not shared with members.", status=422)
+        async with self._db._write() as cur:
+            cur.execute(
+                "UPDATE settlements SET draft_shared_at = NULL, draft_shared_by_user_id = NULL "
+                "WHERE id = ?",
+                (settlement_id,),
+            )
+            write_audit_row(
+                cur,
+                actor,
+                event_type="settlement.draft_unshared",
+                entity_type="settlement",
+                entity_id=settlement_id,
+                summary=f"Settlement {settlement_id} draft retracted from member preview",
+                detail={"period_month": row["period_month"]},
+            )
+        return self._require(settlement_id)
+
     # --- corrections (Epic 7 — US-701 / US-702 / US-703) ----------
 
     def _charged_ore(self, settlement_id: int) -> dict[int, int]:

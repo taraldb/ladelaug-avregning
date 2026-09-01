@@ -1421,6 +1421,7 @@ export const handlers = [
       usage_frozen_at: null,
       created_at: "2026-08-01T00:00:00+00:00",
       posted_at: null,
+      draft_shared_at: null,
     };
     mock1b.settlements.push(settlement);
     mock1b.details.set(settlement.id, {
@@ -1536,6 +1537,16 @@ export const handlers = [
       d.settlement.usage_frozen_at = "2026-08-01T00:00:00+00:00";
       d.settlement.grid_kwh = "10";
     }
+    return HttpResponse.json(d);
+  }),
+  http.post("/api/settlement/:id/share-draft", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    if (d) d.settlement.draft_shared_at = "2026-08-02T09:00:00+00:00";
+    return HttpResponse.json(d);
+  }),
+  http.delete("/api/settlement/:id/share-draft", ({ params }) => {
+    const d = mock1b.details.get(Number(params.id));
+    if (d) d.settlement.draft_shared_at = null;
     return HttpResponse.json(d);
   }),
   http.get("/api/settlement/:id/preview", ({ params }) =>
@@ -1982,6 +1993,7 @@ interface Mock1bState {
     usage_frozen_at: string | null;
     created_at: string;
     posted_at: string | null;
+    draft_shared_at: string | null;
   }[];
   details: Map<
     number,
@@ -2012,6 +2024,8 @@ interface Mock1bState {
     settlement_id: number;
     period_month: string;
     posted_at: string | null;
+    is_draft: boolean;
+    draft_shared_at: string | null;
     consumption_kwh: string;
     charge_nok: string;
     balance_after_nok: string;
@@ -2060,6 +2074,8 @@ export function seedMySettlement(
     settlement_id: id,
     period_month: overrides.period_month ?? "2026-07",
     posted_at: overrides.posted_at ?? "2026-08-01T00:00:00+00:00",
+    is_draft: overrides.is_draft ?? false,
+    draft_shared_at: overrides.draft_shared_at ?? null,
     consumption_kwh: overrides.consumption_kwh ?? "12.5",
     charge_nok: overrides.charge_nok ?? "450.00",
     balance_after_nok: overrides.balance_after_nok ?? "1050.00",

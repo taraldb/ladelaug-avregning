@@ -57,6 +57,18 @@
   `/api/settlement/{id}/attachments[...]`; members read their posted settlements'
   invoices via `/api/me/settlements/{id}/invoices/{aid}`.
 
+- **Shared drafts (member preview).** `POST` / `DELETE
+  /api/settlement/{id}/share-draft` set / clear `settlements.draft_shared_at`
+  (migration 0014) via `SettlementRepo.share_draft` / `unshare_draft` (422
+  `not_frozen` / `not_draft` / `not_shared`; audited `settlement.draft_shared` /
+  `settlement.draft_unshared`). `shared_draft_for_member` returns a member's
+  frozen + shared + in-snapshot drafts. `/api/me/settlements` adds them with
+  `is_draft:true`; `_my_settlement_or_403` returns `(row, is_draft)` and the
+  member report endpoints pass `draft=is_draft` into `render_member_report`,
+  which then renders the `UTKAST` watermark + banner + title prefix. `member_entry`
+  / `compute` already work on any frozen settlement, so no posting is needed.
+  Re-freezing a shared draft keeps it shared.
+
 - **Forecast (1C).** `ForecastRepo` is a pure read-model — it computes from posted settlements
   + the ledger and persists nothing except the `forecast_settings` singleton (audited via
   `update_settings`) and the `low_balance_notifications` history rows. Member-facing:

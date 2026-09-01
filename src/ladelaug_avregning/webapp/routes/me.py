@@ -277,40 +277,52 @@ async def my_settlements(
     config: AppConfig = Depends(get_config),
 ) -> dict[str, Any]:
     repo = SettlementRepo(db, tz=config.timezone)
-    out = []
-    for s in repo.posted_for_member(member_id):
+
+    def entry_for(s: dict[str, Any], *, is_draft: bool) -> dict[str, Any] | None:
         entry = repo.member_entry(int(s["id"]), member_id)
         if entry is None:
-            continue
+            return None
         m = entry["member"]
-        out.append(
-            {
-                "settlement_id": s["id"],
-                "period_month": s["period_month"],
-                "posted_at": s["posted_at"],
-                "consumption_kwh": m["consumption_kwh"],
-                "charge_nok": m["charge_nok"],
-                "balance_after_nok": m["balance_after_nok"],
-                "report_url": f"/api/me/settlements/{s['id']}/report",
-            }
-        )
+        return {
+            "settlement_id": s["id"],
+            "period_month": s["period_month"],
+            "posted_at": s["posted_at"],
+            "is_draft": is_draft,
+            "draft_shared_at": s["draft_shared_at"] if is_draft else None,
+            "consumption_kwh": m["consumption_kwh"],
+            "charge_nok": m["charge_nok"],
+            "balance_after_nok": m["balance_after_nok"],
+            "report_url": f"/api/me/settlements/{s['id']}/report",
+        }
+
+    out = [e for s in repo.posted_for_member(member_id) if (e := entry_for(s, is_draft=False))]
+    out += [
+        e for s in repo.shared_draft_for_member(member_id) if (e := entry_for(s, is_draft=True))
+    ]
     return {"settlements": out}
 
 
 def _my_settlement_or_403(
     repo: SettlementRepo, settlement_id: int, member_id: int
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bool]:
+    """``(row, is_draft)`` for a settlement the caller may see: a posted one they
+    were charged in, or a frozen draft the board has shared with them for
+    preview (US-905). Anything else -> 404 / ``not_in_settlement``."""
     row = repo.get(settlement_id)
-    if row is None or row["status"] != "posted":
-        raise NotFoundError(f"settlement {settlement_id} not found")
-    if settlement_id not in {s["id"] for s in repo.posted_for_member(member_id)}:
+    if row is not None and row["status"] == "posted":
+        if settlement_id in {s["id"] for s in repo.posted_for_member(member_id)}:
+            return row, False
         raise DomainError("not_in_settlement", "You are not part of this settlement.")
-    return row
+    if row is not None and settlement_id in {
+        s["id"] for s in repo.shared_draft_for_member(member_id)
+    }:
+        return row, True
+    raise NotFoundError(f"settlement {settlement_id} not found")
 
 
 def _my_report_html(settlement_id: int, member_id: int, db: Database, config: AppConfig) -> str:
     repo = SettlementRepo(db, tz=config.timezone)
-    _my_settlement_or_403(repo, settlement_id, member_id)
+    _, is_draft = _my_settlement_or_403(repo, settlement_id, member_id)
     entry = repo.member_entry(settlement_id, member_id)
     if entry is None:
         raise DomainError("not_in_settlement", "You are not part of this settlement.")
@@ -320,7 +332,9 @@ def _my_report_html(settlement_id: int, member_id: int, db: Database, config: Ap
         {"filename": a["filename"], "href": f"invoices/{a['id']}"}
         for a in repo.attachments(settlement_id)
     ]
-    return render_member_report(entry["result"], entry["member"], forecast, invoices=invoices)
+    return render_member_report(
+        entry["result"], entry["member"], forecast, invoices=invoices, draft=is_draft
+    )
 
 
 @router.get("/settlements/{settlement_id}/invoices/{attachment_id}")
@@ -333,7 +347,7 @@ async def my_settlement_invoice(
     actor: AuditContext = Depends(get_audit_context),
 ) -> FileResponse:
     repo = SettlementRepo(db, tz=config.timezone)
-    _my_settlement_or_403(repo, settlement_id, member_id)
+    _, is_draft = _my_settlement_or_403(repo, settlement_id, member_id)
     row = repo.attachment(settlement_id, attachment_id)
     path = repo.attachment_file(settlement_id, attachment_id)
     if row is None or path is None:
@@ -345,7 +359,7 @@ async def my_settlement_invoice(
         entity_type="settlement",
         entity_id=settlement_id,
         summary=f"Member downloaded invoice {row['filename']!r} for settlement {settlement_id}",
-        detail={"member_id": member_id, "attachment_id": attachment_id},
+        detail={"member_id": member_id, "attachment_id": attachment_id, "draft": is_draft},
     )
     return FileResponse(path, media_type="application/pdf", filename=row["filename"])
 

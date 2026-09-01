@@ -433,3 +433,83 @@ def test_member_sees_calculation_and_invoice(
     with TestClient(admin_client.app) as bob:
         bob.cookies.set(config.auth.cookie_name, make_session(other_uid))
         assert bob.get(f"/api/me/settlements/{sid}/invoices/{aid}").status_code == 422
+
+
+def test_member_sees_shared_draft_watermarked_but_not_before_sharing(
+    admin_client, config, make_member, seed_user_sync, make_session
+):
+    """A frozen draft is invisible to members until the board shares it; once
+    shared, the member's report is clearly marked UTKAST and the listing flags
+    it as a draft. Retracting hides it again."""
+    from fastapi.testclient import TestClient
+
+    m1 = make_member(member_reference="A-1", email="ada@example.com")
+    admin_client.post(
+        f"/api/members/{m1}/status",
+        json={"status": "active", "effective_from": "2026-01-01"},
+        headers=FETCH,
+    )
+    sid = _build_frozen_settlement(admin_client, m1)  # frozen, still a draft
+
+    uid = seed_user_sync(email="ada@example.com", role="member", member_id=m1)
+    with TestClient(admin_client.app) as me:
+        me.cookies.set(config.auth.cookie_name, make_session(uid))
+
+        # not shared yet -> nothing visible
+        assert me.get("/api/me/settlements").json() == {"settlements": []}
+        assert me.get(f"/api/me/settlements/{sid}/report").status_code == 404
+
+        # board shares the draft
+        shared = admin_client.post(f"/api/settlement/{sid}/share-draft", headers=FETCH)
+        assert shared.status_code == 200
+        assert shared.json()["settlement"]["draft_shared_at"] is not None
+
+        listing = me.get("/api/me/settlements").json()["settlements"]
+        assert len(listing) == 1
+        assert listing[0]["is_draft"] is True
+        assert listing[0]["posted_at"] is None
+
+        report = me.get(f"/api/me/settlements/{sid}/report")
+        assert report.status_code == 200
+        assert "UTKAST" in report.text
+        assert "draft-watermark" in report.text
+        assert "Avregning 2026-07 (UTKAST)" in report.text
+        # the real calculation is still shown
+        assert "Din andel av totalforbruk" in report.text
+
+        pdf = me.get(f"/api/me/settlements/{sid}/report.pdf")
+        assert pdf.status_code in (200, 503)
+
+        # board retracts -> hidden again
+        assert (
+            admin_client.request(
+                "DELETE", f"/api/settlement/{sid}/share-draft", headers=FETCH
+            ).status_code
+            == 200
+        )
+        assert me.get("/api/me/settlements").json() == {"settlements": []}
+        assert me.get(f"/api/me/settlements/{sid}/report").status_code == 404
+
+
+def test_share_draft_requires_frozen_draft(admin_client, make_member):
+    m1 = make_member(member_reference="A-1")
+    admin_client.post(
+        f"/api/members/{m1}/status",
+        json={"status": "active", "effective_from": "2026-01-01"},
+        headers=FETCH,
+    )
+
+    # an unfrozen draft (distinct month) cannot be shared, nor unshared
+    sid = admin_client.post(
+        "/api/settlement/drafts", json={"period_month": "2026-09"}, headers=FETCH
+    ).json()["settlement"]["id"]
+    r = admin_client.post(f"/api/settlement/{sid}/share-draft", headers=FETCH)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "not_frozen"
+    r = admin_client.request("DELETE", f"/api/settlement/{sid}/share-draft", headers=FETCH)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "not_shared"
+
+    # once posted it is no longer a draft to share
+    sid2 = _build_frozen_settlement(admin_client, m1)
+    assert admin_client.post(f"/api/settlement/{sid2}/post", headers=FETCH).status_code == 200
+    r = admin_client.post(f"/api/settlement/{sid2}/share-draft", headers=FETCH)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "not_draft"
