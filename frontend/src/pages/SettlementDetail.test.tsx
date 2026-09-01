@@ -1,10 +1,12 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import AppRouter from "../router";
 import {
   ADMIN_USER,
   seedMember,
   seedMonthConsumption,
+  server,
   setSession,
 } from "../test/handlers";
 import { renderApp } from "../test/utils";
@@ -57,6 +59,66 @@ describe("Settlement flow (admin)", () => {
     expect(
       await screen.findByRole("heading", { name: "Rapporter" }),
     ).toBeInTheDocument();
+  });
+
+  it("blocks posting and warns when Sum belastet ≠ Sum fakturalinjer", async () => {
+    setSession(ADMIN_USER);
+    const { user } = renderApp(<AppRouter />, { route: "/avregninger" });
+
+    await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
+    await screen.findByRole("heading", { name: /Avregning 20/ });
+
+    await user.type(screen.getByLabelText(/Beskrivelse/), "Fastledd");
+    await user.click(screen.getByRole("button", { name: "Likt" }));
+    await user.type(screen.getByLabelText(/Beløp/), "500");
+    await user.click(screen.getByRole("button", { name: "Legg til" }));
+    await screen.findByText("Fastledd");
+
+    await user.type(screen.getByLabelText(/Fakturert kWh/), "10");
+    await user.click(screen.getByRole("button", { name: "Lagre" }));
+
+    const file = new File([new Uint8Array([1, 2, 3])], "faktura.pdf", {
+      type: "application/pdf",
+    });
+    await user.upload(screen.getByLabelText("Fakturavedlegg"), file);
+    await user.click(screen.getByRole("button", { name: "Last opp" }));
+    await screen.findByRole("link", { name: "faktura-1.pdf" });
+
+    await user.click(screen.getByRole("button", { name: "Frys forbruk" }));
+    await screen.findByRole("heading", { name: "Rapporter (forhåndsvisning)" });
+
+    // preview reports a charge/invoice-line total mismatch
+    server.use(
+      http.get("/api/settlement/:id/preview", ({ params }) =>
+        HttpResponse.json({
+          settlement_id: Number(params.id),
+          period_month: "2026-07",
+          status: "draft",
+          invoice_kwh: "10",
+          grid_kwh: "10",
+          invoice_lines_total_nok: "500.00",
+          invoice_lines_total_ore: 50000,
+          total_charged_nok: "0.00",
+          total_charged_ore: 0,
+          members: [],
+          lines: [],
+          warnings: [
+            {
+              code: "charge_total_mismatch",
+              total_charged_ore: 0,
+              invoice_lines_total_ore: 50000,
+            },
+          ],
+        }),
+      ),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Forhåndsvis" }));
+
+    expect(
+      await screen.findByText(/Avregningen kan ikke bokføres før differansen er rettet/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bokfør" })).toBeDisabled();
   });
 
   it("defaults to Forbruk, adds a line, then edits it to a negative Likt line", async () => {

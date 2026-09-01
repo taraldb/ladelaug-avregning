@@ -587,6 +587,14 @@ class SettlementRepo:
 
         invoice_lines_total = sum(int(ln["amount_ore"]) for ln in lines)
         warnings: list[dict[str, Any]] = []
+        if total_charged != invoice_lines_total:
+            warnings.append(
+                {
+                    "code": "charge_total_mismatch",
+                    "total_charged_ore": total_charged,
+                    "invoice_lines_total_ore": invoice_lines_total,
+                }
+            )
         if negatives:
             warnings.append({"code": "negative_balances", "member_ids": negatives})
         if not row["invoice_kwh"]:
@@ -1008,6 +1016,13 @@ class SettlementRepo:
             raise DomainError(
                 "zero_consumption",
                 "A consumption line cannot be allocated when total consumption is zero (US-607).",
+            )
+        if result["total_charged_ore"] != result["invoice_lines_total_ore"]:
+            raise DomainError(
+                "charge_total_mismatch",
+                "Sum charged to members does not equal the invoice-line total. An "
+                "equal-split line has no participating members, so part of the invoice "
+                "would go uncharged.",
             )
 
         value_date = periods.last_day(month)

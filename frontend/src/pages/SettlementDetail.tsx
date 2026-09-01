@@ -43,8 +43,10 @@ const WARNING_LABELS: Record<string, string> = {
   late_sessions: "Sene ladeøkter ikke behandlet",
   kwh_mismatch: "Fakturert kWh avviker mye fra målt",
   usage_stale: "Forbruket er endret etter frysing – frys på nytt",
+  charge_total_mismatch:
+    "Sum belastet er ikke lik sum fakturalinjer – en likt-fordelt linje har ingen deltakende medlemmer",
 };
-const BLOCKING = new Set(["zero_consumption", "usage_stale"]);
+const BLOCKING = new Set(["zero_consumption", "usage_stale", "charge_total_mismatch"]);
 
 export default function SettlementDetail() {
   const { id } = useParams();
@@ -1042,6 +1044,9 @@ function UnassignedPanel({
 }
 
 function PreviewPanel({ preview }: { preview: SettlementPreview }) {
+  const totalsMismatch = preview.warnings.some(
+    (w) => w.code === "charge_total_mismatch",
+  );
   const columns: Column<SettlementPreview["members"][number]>[] = [
     { key: "ref", header: "Ref.", render: (m) => m.member_reference },
     { key: "name", header: "Navn", render: (m) => m.full_name },
@@ -1092,10 +1097,18 @@ function PreviewPanel({ preview }: { preview: SettlementPreview }) {
         rowKey={(m) => m.member_id}
         empty="Ingen medlemmer i avregningen"
       />
-      <p className="text-sm text-slate-300">
+      <p
+        className={`text-sm ${totalsMismatch ? "text-rose-300" : "text-slate-300"}`}
+      >
         Sum belastet: <strong>{formatNok(preview.total_charged_nok)}</strong> · Sum fakturalinjer:{" "}
         {formatNok(preview.invoice_lines_total_nok)}
       </p>
+      {totalsMismatch && (
+        <p role="alert" className="text-sm text-rose-300">
+          Sum belastet er ikke lik sum fakturalinjer. Avregningen kan ikke bokføres
+          før differansen er rettet.
+        </p>
+      )}
     </div>
   );
 }

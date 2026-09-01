@@ -434,6 +434,36 @@ async def test_zero_consumption_blocks_a_consumption_line(db):
     assert ei.value.code == "zero_consumption"
 
 
+async def test_charge_total_mismatch_warns_and_blocks_post(db):
+    # An equal-split line with no participating members: the line amount is
+    # allocated to nobody, so Sum belastet < Sum fakturalinjer.
+    m1 = await _member(db, "M1", participates=False)
+    _add_consumption(db, member_id=m1, kwh=10)
+    repo, sid = await _draft_with_lines(db, equal_nok="500")
+    await repo.freeze(sid, actor=AuditContext.system())
+
+    result = repo.preview(sid)
+    assert result["total_charged_ore"] == 0
+    assert result["invoice_lines_total_ore"] == 50000
+    mismatch = next(w for w in result["warnings"] if w["code"] == "charge_total_mismatch")
+    assert mismatch["total_charged_ore"] == 0
+    assert mismatch["invoice_lines_total_ore"] == 50000
+
+    with pytest.raises(DomainError) as ei:
+        await repo.post(sid, actor=AuditContext.system())
+    assert ei.value.code == "charge_total_mismatch"
+
+
+async def test_no_charge_total_mismatch_warning_on_clean_settlement(db):
+    m1 = await _member(db, "M1")
+    _add_consumption(db, member_id=m1, kwh=10)
+    repo, sid = await _draft_with_lines(db, equal_nok="100", consumption_nok="50")
+    await repo.freeze(sid, actor=AuditContext.system())
+    result = repo.preview(sid)
+    assert result["total_charged_ore"] == result["invoice_lines_total_ore"]
+    assert not any(w["code"] == "charge_total_mismatch" for w in result["warnings"])
+
+
 async def test_duplicate_month_rejected(db):
     repo = SettlementRepo(db)
     await repo.create_draft(MONTH, actor=AuditContext.system())

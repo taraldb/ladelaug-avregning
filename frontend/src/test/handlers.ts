@@ -2125,6 +2125,7 @@ function previewFor(id: number) {
     invoice_kwh: d?.settlement.invoice_kwh ?? null,
     grid_kwh: d?.settlement.grid_kwh ?? null,
     invoice_lines_total_nok: (total / 100).toFixed(2),
+    invoice_lines_total_ore: total,
     total_charged_nok: (total / 100).toFixed(2),
     total_charged_ore: total,
     members: [

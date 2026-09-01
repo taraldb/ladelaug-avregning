@@ -987,6 +987,7 @@ export interface SettlementPreview {
   invoice_kwh: string | null;
   grid_kwh: string | null;
   invoice_lines_total_nok: string;
+  invoice_lines_total_ore: number;
   total_charged_nok: string;
   total_charged_ore: number;
   members: PreviewMemberRow[];
