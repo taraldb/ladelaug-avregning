@@ -90,8 +90,7 @@ def _nok(value: str | int) -> str:
     groups.insert(0, whole)
     number = ("-" if neg else "") + " ".join(groups) + f",{frac}"
     return (
-        f'<span class="money"><span class="cur">kr</span>'
-        f'<span class="amt">{number}</span></span>'
+        f'<span class="money"><span class="cur">kr</span><span class="amt">{number}</span></span>'
     )
 
 

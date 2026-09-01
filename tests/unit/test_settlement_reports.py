@@ -21,8 +21,7 @@ def _money(number: str) -> str:
     """The ``<span class="money">`` markup ``_nok`` wraps an amount in; ``number``
     is the nb-NO digit string (NBSP-grouped, decimal comma)."""
     return (
-        f'<span class="money"><span class="cur">kr</span>'
-        f'<span class="amt">{number}</span></span>'
+        f'<span class="money"><span class="cur">kr</span><span class="amt">{number}</span></span>'
     )
 
 

@@ -1055,9 +1055,7 @@ class SettlementRepo:
         renders live. Raises ``not_posted`` for a draft."""
         row = self._require(settlement_id)
         if row["status"] != "posted":
-            raise DomainError(
-                "not_posted", "Only a posted settlement has reports to regenerate."
-            )
+            raise DomainError("not_posted", "Only a posted settlement has reports to regenerate.")
         result = {**self.compute(settlement_id), "status": "posted"}
         written = self._persist_reports(result, settlement_id)
         return {
