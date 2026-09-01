@@ -47,6 +47,10 @@ async def get_current_user(request: Request) -> dict[str, Any]:
     if session is None:
         raise AuthError("Not authenticated", status=401)
 
+    # Downstream deps (get_current_member, forbid_view_as, /api/auth/me) read the
+    # session's view_as_member_id from here without another lookup.
+    request.state.session = session
+
     user = UserRepo(db).get(int(session["user_id"]))
     if user is None or user["disabled"]:
         await sessions.revoke(token)
@@ -91,7 +95,36 @@ def require_admin(user: dict[str, Any] = Depends(get_current_user)) -> dict[str,
     return user
 
 
-def get_current_member(user: dict[str, Any] = Depends(get_current_user)) -> int:
+def active_view_as(request: Request, user: dict[str, Any]) -> int | None:
+    """The member id an admin is previewing the portal as, or ``None``.
+
+    Only ever honoured for an admin — a stale ``view_as_member_id`` on a session
+    whose user was since demoted is ignored."""
+    if user["role"] != "admin":
+        return None
+    session = getattr(request.state, "session", None)
+    if not session:
+        return None
+    member_id = session.get("view_as_member_id")
+    return int(member_id) if member_id is not None else None
+
+
+def get_current_member(request: Request, user: dict[str, Any] = Depends(get_current_user)) -> int:
+    view_as = active_view_as(request, user)
+    if view_as is not None:
+        return view_as
     if user["member_id"] is None:
         raise AuthError("This endpoint is for members", status=403)
     return int(user["member_id"])
+
+
+def forbid_view_as(request: Request, user: dict[str, Any] = Depends(get_current_user)) -> None:
+    """Block a write while the caller is previewing the portal as a member —
+    view-as is strictly read-only, so nothing can be changed on the member's
+    account."""
+    if active_view_as(request, user) is not None:
+        raise AuthError(
+            "Read-only while viewing the portal as a member",
+            status=403,
+            code="view_as_read_only",
+        )

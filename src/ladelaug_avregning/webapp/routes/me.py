@@ -30,6 +30,7 @@ from ladelaug_avregning.errors import DomainError, NotFoundError
 from ladelaug_avregning.money import nok_to_ore, ore_to_nok
 from ladelaug_avregning.reports import html_to_pdf, render_member_report
 from ladelaug_avregning.webapp.deps import (
+    forbid_view_as,
     get_audit_context,
     get_config,
     get_current_member,
@@ -67,7 +68,7 @@ async def me(
     )
 
 
-@router.patch("", dependencies=[Depends(require_fetch)])
+@router.patch("", dependencies=[Depends(require_fetch), Depends(forbid_view_as)])
 async def update_me(
     body: MeProfileIn,
     member_id: int = Depends(get_current_member),
@@ -86,7 +87,7 @@ async def update_me(
     )
 
 
-@router.post("/password", dependencies=[Depends(require_fetch)])
+@router.post("/password", dependencies=[Depends(require_fetch), Depends(forbid_view_as)])
 async def change_my_password(
     body: MePasswordIn,
     request: Request,

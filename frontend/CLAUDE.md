@@ -36,7 +36,8 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 
 - `POST /api/auth/login` `{email,password}` -> 200 `{user:{id,email,role:"admin"|"member",member_id:number|null,disabled:boolean}}`; 401 `not_authenticated`; 429 `rate_limited` (+ `Retry-After`); 403 `csrf` without `X-Requested-With`.
 - `POST /api/auth/logout` -> 200 `{ok:true}`.
-- `GET /api/auth/me` -> 200 `{id,email,role,member_id,disabled,version:string}`; 401 `not_authenticated`.
+- `GET /api/auth/me` -> 200 `{id,email,role,member_id,disabled,version:string,view_as:{member_id:number,member_name:string}|null}`; 401 `not_authenticated`. `view_as` is set only when an admin is previewing the member portal "as" that member (read-only) — see `POST`/`DELETE /api/admin/view-as`.
+- `POST /api/admin/view-as/{member_id}` (admin, `X-Requested-With`) -> 200 `{member_id,member_name}`; 404 `not_found`. Stamps the target on the admin's own session row so `get_current_member` resolves to it and every `/api/me/*` **write** returns 403 `view_as_read_only`. Audited `admin.view_as_started`. `DELETE /api/admin/view-as` -> 200 `{ok:true}` clears it (audited `admin.view_as_stopped`). Never hands over the member's session. In the SPA: `Members` row action "Se som medlem" → lands on `/` rendering `MyAccount`, with an amber "Du ser portalen som …" banner in the layout and the admin nav hidden until **Avslutt**.
 - `GET /api/members` -> `{members:[Member]}`.
 - `POST /api/members` (201) `{member_reference,full_name,email?,join_date:"YYYY-MM-DD"}` -> Member; 422 `reference_taken` | `validation_error`.
 - `GET /api/members/{id}` -> Member; 404 `not_found`.

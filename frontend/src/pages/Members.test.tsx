@@ -68,6 +68,37 @@ describe("Members (admin)", () => {
     expect(await within(row).findByText("1 500,00")).toBeInTheDocument();
   });
 
+  it("lets an admin view the portal as a member and exit again", async () => {
+    setSession(ADMIN_USER);
+    seedMember({ member_reference: "M-300", full_name: "Kari Nordmann" });
+    const { user } = renderApp(<AppRouter />, { route: "/medlemmer" });
+
+    const row = (await screen.findByText("Kari Nordmann")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Se som medlem" }));
+
+    // Landed on the member portal with the read-only banner; admin nav is gone.
+    expect(await screen.findByText(/Du ser portalen som/)).toHaveTextContent(
+      "Kari Nordmann",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Min konto" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Medlemmer" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Avslutt" }));
+
+    // Back to the members list (site root sends the admin there), banner cleared.
+    expect(
+      await screen.findByRole("heading", { name: "Medlemmer" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Nytt medlem" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Du ser portalen som/)).not.toBeInTheDocument();
+  });
+
   it("redirects a member session away from /medlemmer", async () => {
     setSession(MEMBER_USER);
     seedMember({ id: MEMBER_USER.member_id ?? 7 });

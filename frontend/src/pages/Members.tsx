@@ -6,8 +6,10 @@ import {
   ApiError,
   createMember,
   listMembers,
+  startViewAs,
   type Member,
 } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import DateField from "../components/DateField";
 import Modal from "../components/Modal";
 import PlusIcon from "../components/PlusIcon";
@@ -59,8 +61,46 @@ export default function Members() {
     listMembers(),
   );
   const navigate = useNavigate();
+  const { refresh } = useAuth();
   const [open, setOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  const [viewAsErr, setViewAsErr] = useState<string | null>(null);
+
+  async function viewAsMember(m: Member) {
+    setViewAsErr(null);
+    try {
+      await startViewAs(m.id);
+      await refresh();
+      navigate(ROUTES.home);
+    } catch (err) {
+      setViewAsErr(
+        err instanceof ApiError
+          ? err.message
+          : `Kunne ikke åpne portalen som ${m.full_name}.`,
+      );
+    }
+  }
+
+  const columnsWithActions: Column<Member>[] = [
+    ...columns,
+    {
+      key: "actions",
+      header: "",
+      className: "text-right",
+      render: (m) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void viewAsMember(m);
+          }}
+          className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+        >
+          Se som medlem
+        </button>
+      ),
+    },
+  ];
 
   return (
     <section className="space-y-4">
@@ -89,12 +129,17 @@ export default function Members() {
           Kunne ikke laste medlemmer: {(error as ApiError).message}
         </p>
       )}
+      {viewAsErr && (
+        <p role="alert" className="text-sm text-rose-400">
+          {viewAsErr}
+        </p>
+      )}
 
       {isLoading ? (
         <p className="text-sm text-slate-400">Laster …</p>
       ) : (
         <Table
-          columns={columns}
+          columns={columnsWithActions}
           rows={data?.members ?? []}
           rowKey={(m) => m.id}
           onRowClick={(m) => navigate(ROUTES.memberDetail(m.id))}

@@ -85,6 +85,15 @@ class SessionRepo:
                 (now.isoformat(), expires_iso, session_id),
             )
 
+    async def set_view_as(self, token: str, member_id: int | None) -> None:
+        """Point the admin's live session at a member to preview the portal as
+        (or clear it with ``None``). No-op if the session is already revoked."""
+        async with self._db._write() as cur:
+            cur.execute(
+                "UPDATE sessions SET view_as_member_id = ? WHERE id = ? AND revoked_at IS NULL",
+                (member_id, security.hash_token(token)),
+            )
+
     async def revoke(self, token: str) -> None:
         async with self._db._write() as cur:
             cur.execute(

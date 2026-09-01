@@ -21,6 +21,17 @@
   check). Password rules live in `security.password_policy_error` (length + a known-weak
   blocklist), shared with the `__main__` bootstrap.
 
+- **View-as (admin, read-only).** `POST /api/admin/view-as/{member_id}` (`routes/admin.py`)
+  stamps `sessions.view_as_member_id` on the *admin's own* live session (migration `0015`).
+  `deps.active_view_as` reads it back off `request.state.session` (set in `get_current_user`)
+  and is honoured **only** for an admin; `get_current_member` then returns that id so the
+  whole `/api/me/*` surface serves the target member. `deps.forbid_view_as` is mounted on the
+  two `/api/me` writes (`PATCH /api/me`, `POST /api/me/password`) and raises 403
+  `view_as_read_only` while it is active — nothing on the member's account can change and the
+  admin never gets the member's session. `DELETE /api/admin/view-as` clears it; a fresh login
+  or logout drops it with the session row. Audited `admin.view_as_started` /
+  `admin.view_as_stopped`. `GET /api/auth/me` echoes `view_as: {member_id,member_name}|null`.
+
 - **Audit.** Every mutation writes exactly one `audit_events` row. Inside a repo that already
   holds `db._write()`, use `audit.write_audit_row(cur, ...)` (lock-free); for a stand-alone
   event use `await audit.record_audit(db, ...)`. `asyncio.Lock` is not reentrant.

@@ -18,13 +18,20 @@ from ladelaug_avregning.audit import AuditContext, record_audit
 from ladelaug_avregning.config import AppConfig
 from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain.auth_tokens import AuthTokenRepo
+from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.notifications import NotificationRepo
 from ladelaug_avregning.domain.rate_limit import LoginRateLimiter, RequestRateLimiter
 from ladelaug_avregning.domain.sessions import SessionRepo
 from ladelaug_avregning.domain.users import UserRepo
 from ladelaug_avregning.email.sender import build_sender
 from ladelaug_avregning.errors import AuthError, DomainError, RateLimitError
-from ladelaug_avregning.webapp.deps import get_config, get_current_user, get_db, require_fetch
+from ladelaug_avregning.webapp.deps import (
+    active_view_as,
+    get_config,
+    get_current_user,
+    get_db,
+    require_fetch,
+)
 from ladelaug_avregning.webapp.schemas import (
     EmailRequest,
     LoginRequest,
@@ -229,9 +236,22 @@ async def logout(
 
 
 @router.get("/me")
-async def me(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+async def me(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
     out = UserOut.from_row(user).model_dump()
     out["version"] = __version__
+    out["view_as"] = None
+    member_id = active_view_as(request, user)
+    if member_id is not None:
+        member = MemberRepo(db).get(member_id)
+        if member is not None:
+            out["view_as"] = {
+                "member_id": member["id"],
+                "member_name": member["full_name"],
+            }
     return out
 
 

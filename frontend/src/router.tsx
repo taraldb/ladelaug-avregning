@@ -1,4 +1,13 @@
-import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import {
+  NavLink,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+import { stopViewAs } from "./api/client";
 import { useAuth } from "./auth/AuthContext";
 import AuditLog from "./pages/AuditLog";
 import AuthAction from "./pages/AuthAction";
@@ -53,10 +62,26 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const { pathname } = useLocation();
-  const isAdmin = user?.role === "admin";
-  const hasPortal = user?.role === "member" || user?.member_id != null;
+  const navigate = useNavigate();
+
+  const viewAs = user?.view_as ?? null;
+  // While an admin previews the portal "as" a member, show the member chrome,
+  // not the admin nav — the amber banner below is the way back.
+  const isAdmin = user?.role === "admin" && !viewAs;
+  const hasPortal =
+    !viewAs && (user?.role === "member" || user?.member_id != null);
+
+  async function endViewAs() {
+    try {
+      await stopViewAs();
+    } finally {
+      await refresh();
+      // Back to the members overview (the admin's landing page at the root).
+      navigate(ROUTES.members);
+    }
+  }
 
   // /brukere and /ladere live under System (configuration) — keep that tab lit.
   const systemActive = SYSTEM_TAB_PATHS.some(
@@ -97,14 +122,16 @@ function Layout() {
                   </NavLink>
                 </>
               )}
-              {!isAdmin && hasPortal && (
+              {(hasPortal || viewAs) && (
                 <>
                   <NavLink to={ROUTES.home} end className={navLinkClass}>
                     Min konto
                   </NavLink>
-                  <NavLink to={ROUTES.profile} className={navLinkClass}>
-                    Min profil
-                  </NavLink>
+                  {!viewAs && (
+                    <NavLink to={ROUTES.profile} className={navLinkClass}>
+                      Min profil
+                    </NavLink>
+                  )}
                 </>
               )}
             </nav>
@@ -121,6 +148,23 @@ function Layout() {
           </div>
         </div>
       </header>
+      {viewAs && (
+        <div className="border-b border-amber-500/40 bg-amber-500/10 text-amber-100">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm sm:px-6 lg:px-8">
+            <span>
+              Du ser portalen som <strong>{viewAs.member_name}</strong> —
+              skrivebeskyttet.
+            </span>
+            <button
+              type="button"
+              onClick={() => void endViewAs()}
+              className="rounded-md border border-amber-400/50 px-2.5 py-1 text-amber-100 hover:bg-amber-500/20"
+            >
+              Avslutt
+            </button>
+          </div>
+        </div>
+      )}
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
         <Outlet />
       </main>
@@ -128,10 +172,11 @@ function Layout() {
   );
 }
 
-/** The site root: a member's "min side", an admin's members list. */
+/** The site root: a member's "min side", an admin's members list — or, when an
+ * admin is previewing the portal as a member, that member's "min side". */
 function HomeOrAccount() {
   const { user } = useAuth();
-  if (user?.role === "admin") {
+  if (user?.role === "admin" && !user.view_as) {
     return <Navigate to={ROUTES.members} replace />;
   }
   return <MyAccount />;

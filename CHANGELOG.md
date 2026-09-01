@@ -4,6 +4,20 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Admins can view the member portal "as" a member (read-only)** — a
+  **Se som medlem** action on each row of the `/medlemmer` list drops the admin
+  into that member's "Min konto" exactly as they see it (balance, prognosis,
+  history, settlements, status, charging-access banner). An amber
+  *"Du ser portalen som …"* banner stays pinned under the header with an
+  **Avslutt** button, and the admin nav is hidden until then. It is strictly
+  read-only: every `/api/me/*` write returns 403 `view_as_read_only`, and the
+  admin is never handed the member's session (no email links, no password
+  reset). New: migration `0015` (`sessions.view_as_member_id`),
+  `POST` / `DELETE /api/admin/view-as[/{member_id}]` (admin; 404 `not_found`,
+  audited `admin.view_as_started` / `admin.view_as_stopped`),
+  `SessionRepo.set_view_as`, `deps.active_view_as` / `forbid_view_as`.
+  `GET /api/auth/me` now also returns `view_as: {member_id,member_name} | null`.
+
 - **Members can preview a settlement as a DRAFT before it is posted** — after an
   admin freezes a settlement they can click **Del utkast med medlemmer** on the
   settlement page (only shown once the usage snapshot is frozen). Each snapshot

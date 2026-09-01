@@ -16,7 +16,8 @@ const isForbidden = (err: unknown) => err instanceof ApiError && err.status === 
 
 export default function MyProfile() {
   const member = useSWR("/api/me", () => getMyMember());
-  const { refresh } = useAuth();
+  const { user, refresh } = useAuth();
+  const viewingAs = user?.view_as ?? null;
 
   const [form, setForm] = useState<{ full_name: string; email: string } | null>(
     null,
@@ -53,7 +54,7 @@ export default function MyProfile() {
 
   async function saveProfile(e: FormEvent) {
     e.preventDefault();
-    if (!form) return;
+    if (!form || viewingAs) return;
     setProfileMsg(null);
     setProfileErr(null);
     const name = form.full_name.trim();
@@ -78,6 +79,7 @@ export default function MyProfile() {
 
   async function savePassword(e: FormEvent) {
     e.preventDefault();
+    if (viewingAs) return;
     setPwMsg(null);
     setPwErr(null);
     if (pw.length < 10) {
@@ -113,6 +115,17 @@ export default function MyProfile() {
         </Link>
       </div>
 
+      {viewingAs && (
+        <p
+          role="alert"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100"
+        >
+          Du ser profilen til <strong>{viewingAs.member_name}</strong> —
+          skrivebeskyttet. Endringer er deaktivert mens du ser portalen som et
+          medlem.
+        </p>
+      )}
+
       <div className="rounded-lg border border-slate-800 p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-200">
           Kontaktinformasjon
@@ -145,7 +158,7 @@ export default function MyProfile() {
             <div className="flex items-center gap-3">
               <button
                 type="submit"
-                disabled={savingProfile}
+                disabled={savingProfile || !!viewingAs}
                 className="rounded-md bg-emerald-500 px-3 py-1.5 font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
               >
                 Lagre
@@ -196,7 +209,7 @@ export default function MyProfile() {
           <div className="flex items-center gap-3">
             <button
               type="submit"
-              disabled={savingPw}
+              disabled={savingPw || !!viewingAs}
               className="rounded-md bg-emerald-500 px-3 py-1.5 font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
             >
               Endre passord

@@ -40,6 +40,7 @@ const ACCOUNTS: AuthUser[] = [ADMIN_USER, MEMBER_USER];
 
 interface MockState {
   session: AuthUser | null;
+  viewAs: { member_id: number; member_name: string } | null;
   members: Map<number, Member>;
   users: User[];
   statusHistory: Map<number, StatusPeriod[]>;
@@ -52,6 +53,7 @@ interface MockState {
 function freshState(): MockState {
   return {
     session: null,
+    viewAs: null,
     members: new Map(),
     users: [
       { id: 1, email: "admin@example.com", role: "admin", member_id: null, disabled: false },
@@ -440,7 +442,28 @@ export const handlers = [
         status: 401,
       });
     }
-    return HttpResponse.json({ ...state.session, version: "test" });
+    const viewAs = state.session.role === "admin" ? state.viewAs : null;
+    return HttpResponse.json({ ...state.session, version: "test", view_as: viewAs });
+  }),
+
+  http.post("/api/admin/view-as/:memberId", ({ params }) => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    const member = state.members.get(Number(params.memberId));
+    if (!member) {
+      return HttpResponse.json(errorBody("not_found", "member not found"), {
+        status: 404,
+      });
+    }
+    state.viewAs = { member_id: member.id, member_name: member.full_name };
+    return HttpResponse.json(state.viewAs);
+  }),
+
+  http.delete("/api/admin/view-as", () => {
+    const denied = requireAdmin();
+    if (denied) return denied;
+    state.viewAs = null;
+    return HttpResponse.json({ ok: true });
   }),
 
   http.post("/api/auth/login", async ({ request }) => {
@@ -1177,6 +1200,7 @@ export const handlers = [
   }),
 
   http.patch("/api/me", async ({ request }) => {
+    if (state.viewAs) return viewAsReadOnly();
     const member = currentMemberOr403();
     if (member instanceof Response) return member;
     const body = (await request.json()) as {
@@ -1215,6 +1239,7 @@ export const handlers = [
   }),
 
   http.post("/api/me/password", async ({ request }) => {
+    if (state.viewAs) return viewAsReadOnly();
     const member = currentMemberOr403();
     if (member instanceof Response) return member;
     const body = (await request.json()) as { new_password?: string };
@@ -2136,13 +2161,23 @@ function ledgerPage(memberId: number, rawUrl: string): Response {
   });
 }
 
+function viewAsReadOnly(): Response {
+  return HttpResponse.json(
+    errorBody("view_as_read_only", "Read-only while viewing the portal as a member"),
+    { status: 403 },
+  );
+}
+
 function currentMemberOr403(): Member | Response {
   if (!state.session) {
     return HttpResponse.json(errorBody("not_authenticated", "Not authenticated"), {
       status: 401,
     });
   }
-  const memberId = state.session.member_id;
+  const memberId =
+    state.session.role === "admin" && state.viewAs
+      ? state.viewAs.member_id
+      : state.session.member_id;
   if (memberId == null) {
     return HttpResponse.json(
       errorBody("forbidden", "no linked member"),

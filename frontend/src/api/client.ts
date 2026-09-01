@@ -159,8 +159,16 @@ export interface AuthUser {
   disabled: boolean;
 }
 
+export interface ViewAs {
+  member_id: number;
+  member_name: string;
+}
+
 export interface CurrentUser extends AuthUser {
   version: string;
+  /** Set when an admin is previewing the member portal "as" this member
+   * (read-only). Never set for a real member session. */
+  view_as: ViewAs | null;
 }
 
 export interface LoginResponse {
@@ -328,6 +336,18 @@ export function logout(): Promise<{ ok: boolean }> {
 
 export function getMe(): Promise<CurrentUser> {
   return get<CurrentUser>("/api/auth/me");
+}
+
+// --- admin: view the portal "as" a member (read-only) -----------------
+
+/** Start previewing the member portal as `memberId`. The backend stamps the
+ * admin's own session; every `/api/me/*` write then returns 403. */
+export function startViewAs(memberId: number): Promise<ViewAs> {
+  return post<ViewAs>(`/api/admin/view-as/${memberId}`);
+}
+
+export function stopViewAs(): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>("/api/admin/view-as");
 }
 
 // --- members (admin) -------------------------------------------------
