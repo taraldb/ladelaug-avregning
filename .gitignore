@@ -29,3 +29,4 @@ frontend/dist/
 
 # Personal Claude Code assets — local to this machine, never shared/committed
 .claude/settings.local.json
+.claude/skills/bobk-production-debug/

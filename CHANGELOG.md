@@ -4,6 +4,16 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Zaptec session sync — last day of the window was dropped** — Zaptec's
+  `GET /api/chargehistory` treats `To` as an *exclusive* midnight bound, so the
+  monthly sync (which passed `To=<last day of month>`) never imported any
+  session on that final day. Confirmed against a production capture on
+  2026-09-01: three 2026-08-31 sessions were missing. `ZaptecSync.sync_sessions`
+  now advances the caller's inclusive `date_to` by one day
+  (`_chargehistory_to`) before calling the client; the recorded
+  `sync_runs.window_to` still shows the requested last day. After deploying,
+  re-run a sessions sync for any affected month to backfill (and correct the
+  settlement if it was already posted).
 - **Security review pass** — pinned `forwarded_allow_ips` to
   `server.trusted_proxies` (default `127.0.0.1`; `*` is now rejected) so
   `X-Forwarded-For` can no longer be spoofed to defeat the login rate limiter;

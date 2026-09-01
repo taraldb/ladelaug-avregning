@@ -72,6 +72,11 @@ structural changes**; one cosmetic tweak (below).
   assignment resolution works), `DeviceId`, `StartDateTime` / `EndDateTime`
   (naive → treated as UTC), `Energy` (clean decimal, e.g. `24.422`),
   `UserId` / `UserFullName` / `UserEmail`.
+- **`To` is an *exclusive* midnight bound** — it returns only sessions ending
+  before `To` at 00:00, so `To=2026-08-31` drops every 2026-08-31 session
+  (confirmed against prod capture 2026-09-01: 3 sessions missed). `ZaptecSync`
+  advances the caller's inclusive `date_to` by one day (`_chargehistory_to`)
+  before hitting the wire.
 - **`EnergyDetails`** — present with `DetailLevel=1`: `[{"Timestamp": "…+00:00",
   "Energy": <float>}]`, ~15-min cadence (not aligned to the quarter-hour), first
   and last points `0.0`, ~18 points for a 4-hour session. **Energy values carry

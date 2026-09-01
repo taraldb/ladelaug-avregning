@@ -8,6 +8,7 @@ interval data. Each call writes one ``sync_runs`` row (US-403 / US-1104).
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from typing import Any
 
 from ladelaug_avregning import clock
@@ -19,6 +20,23 @@ from ladelaug_avregning.domain.charging import ChargingRepo
 from ladelaug_avregning.domain.sync_runs import SyncRunRepo
 from ladelaug_avregning.errors import DomainError
 from ladelaug_avregning.zaptec.client import ZaptecClient
+
+
+def _chargehistory_to(date_to: str) -> str:
+    """Translate an *inclusive* last-day ``date_to`` into the exclusive ``To``
+    Zaptec's ``/api/chargehistory`` actually wants.
+
+    Zaptec treats ``To`` as an exclusive midnight bound (it returns only
+    sessions ending before ``To`` at 00:00), so ``To=2026-08-31`` silently
+    drops every session on 2026-08-31 — the whole last day of a month window.
+    Advancing it one day makes the caller's ``date_to`` inclusive as intended.
+    Verified against production capture on 2026-09-01: three 2026-08-31
+    sessions missing with ``To=2026-08-31`` were returned with ``To=2026-09-01``.
+    """
+    try:
+        return (date.fromisoformat(date_to) + timedelta(days=1)).isoformat()
+    except ValueError:  # pragma: no cover - defensive; callers pass YYYY-MM-DD
+        return date_to
 
 
 def require_enabled(config: AppConfig) -> None:
@@ -115,7 +133,7 @@ class ZaptecSync:
                 s
                 async for s in client.iter_sessions(
                     date_from=date_from,
-                    date_to=date_to,
+                    date_to=_chargehistory_to(date_to),
                     installation_id=self._config.zaptec.installation_id or None,
                 )
             ]
