@@ -133,10 +133,17 @@ async def change_my_password(
 
 @router.get("/balance")
 async def my_balance(
-    member_id: int = Depends(get_current_member), db: Database = Depends(get_db)
+    member_id: int = Depends(get_current_member),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
 ) -> dict[str, Any]:
     bal = LedgerRepo(db).balance(member_id)
-    return {"member_id": member_id, "balance_nok": str(bal), "balance_ore": nok_to_ore(bal)}
+    return {
+        "member_id": member_id,
+        "balance_nok": str(bal),
+        "balance_ore": nok_to_ore(bal),
+        "payment_account_number": config.payment.account_number,
+    }
 
 
 @router.get("/ledger")

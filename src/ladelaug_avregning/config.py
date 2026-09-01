@@ -43,6 +43,13 @@ class DatabaseConfig(BaseModel):
     path: str = "state/ladelaug.db"
 
 
+class PaymentConfig(BaseModel):
+    """Where members send their top-up payments. ``account_number`` is shown as
+    a hint under the balance tile on the member dashboard; blank hides it."""
+
+    account_number: str = ""
+
+
 class LoggingConfig(BaseModel):
     level: str = "INFO"
 
@@ -137,6 +144,7 @@ class EmailConfig(BaseModel):
 class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    payment: PaymentConfig = Field(default_factory=PaymentConfig)
     timezone: str = "Europe/Oslo"
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)

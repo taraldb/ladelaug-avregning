@@ -1243,6 +1243,7 @@ export const handlers = [
       member_id: member.id,
       balance_nok: oreToNok(ore),
       balance_ore: ore,
+      payment_account_number: "1234.56.78901",
     });
   }),
 

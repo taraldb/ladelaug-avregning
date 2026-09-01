@@ -275,6 +275,8 @@ export interface Balance {
   member_id: number;
   balance_nok: string;
   balance_ore: number;
+  /** Bank account members top up to (from server config); "" when unset. */
+  payment_account_number: string;
 }
 
 export interface LedgerPage {

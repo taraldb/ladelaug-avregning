@@ -69,6 +69,52 @@ export default function MyAccount() {
   const acc = access.data;
   const accessBlocked = acc?.status === "warned" || acc?.status === "disabled";
 
+  // Rendered next to Saldo on desktop, back in its own row on mobile — see the
+  // `hidden sm:block` / `sm:hidden` wrappers below.
+  const statusSection = (
+    <>
+      <h2 className="mb-2 text-sm font-semibold text-slate-100">Min status</h2>
+      {status.data ? (
+        <div className="space-y-1 text-sm text-slate-300">
+          <p>
+            Status:{" "}
+            <span className="text-slate-100">
+              {status.data.status === "active"
+                ? "Aktiv"
+                : status.data.status === "inactive"
+                  ? "Inaktiv"
+                  : "–"}
+            </span>
+          </p>
+          <p>
+            Deltar i avregning:{" "}
+            <span className="text-slate-100">
+              {status.data.participates == null
+                ? "–"
+                : status.data.participates
+                  ? "Ja"
+                  : "Nei"}
+            </span>
+          </p>
+          <ol className="mt-2 space-y-1">
+            {status.data.history.map((p) => (
+              <li
+                key={p.id}
+                className="border-l-2 border-slate-700 pl-3 text-slate-400"
+              >
+                {p.status === "active" ? "Aktiv" : "Inaktiv"} ·{" "}
+                {formatDate(p.effective_from)} –{" "}
+                {p.effective_to ? formatDate(p.effective_to) : "løpende"}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-400">Laster …</p>
+      )}
+    </>
+  );
+
   return (
     <section className="space-y-6">
       <h1 className="text-lg font-semibold text-slate-100">Min konto</h1>
@@ -119,11 +165,21 @@ export default function MyAccount() {
         </div>
       )}
 
-      <StatTile
-        label="Saldo"
-        value={balance.data ? formatNok(balance.data.balance_nok) : "…"}
-        tone={balance.data && balance.data.balance_ore < 0 ? "negative" : "positive"}
-      />
+      <div className="grid gap-6 sm:grid-cols-2">
+        <StatTile
+          className="self-start"
+          label="Saldo"
+          value={balance.data ? formatNok(balance.data.balance_nok) : "…"}
+          tone={balance.data && balance.data.balance_ore < 0 ? "negative" : "positive"}
+          sub={
+            balance.data?.payment_account_number
+              ? `Betal inn til kontonr ${balance.data.payment_account_number}, merk betaling med navn og husnr.`
+              : undefined
+          }
+        />
+
+        <div className="hidden sm:block">{statusSection}</div>
+      </div>
 
       <div>
         <h2 className="mb-2 text-sm font-semibold text-slate-100">
@@ -152,22 +208,6 @@ export default function MyAccount() {
               ? "Laster …"
               : "Ikke nok historikk til å lage en prognose ennå."}
           </p>
-        )}
-      </div>
-
-      <div>
-        <h2 className="mb-2 text-sm font-semibold text-slate-100">
-          Forbruk og kostnad
-        </h2>
-        {consumption.data && (
-          <p className="mb-3 text-sm text-slate-300">
-            {`${consumption.data.month}: ${consumption.data.consumption_kwh} kWh over ${consumption.data.session_count} ladeøkter.`}
-          </p>
-        )}
-        {history.data ? (
-          <UsageHistoryChart months={history.data.months} />
-        ) : (
-          <p className="text-sm text-slate-400">Laster …</p>
         )}
       </div>
 
@@ -272,43 +312,19 @@ export default function MyAccount() {
         })()}
       </div>
 
+      <div className="sm:hidden">{statusSection}</div>
+
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-slate-100">Min status</h2>
-        {status.data ? (
-          <div className="space-y-1 text-sm text-slate-300">
-            <p>
-              Status:{" "}
-              <span className="text-slate-100">
-                {status.data.status === "active"
-                  ? "Aktiv"
-                  : status.data.status === "inactive"
-                    ? "Inaktiv"
-                    : "–"}
-              </span>
-            </p>
-            <p>
-              Deltar i avregning:{" "}
-              <span className="text-slate-100">
-                {status.data.participates == null
-                  ? "–"
-                  : status.data.participates
-                    ? "Ja"
-                    : "Nei"}
-              </span>
-            </p>
-            <ol className="mt-2 space-y-1">
-              {status.data.history.map((p) => (
-                <li
-                  key={p.id}
-                  className="border-l-2 border-slate-700 pl-3 text-slate-400"
-                >
-                  {p.status === "active" ? "Aktiv" : "Inaktiv"} ·{" "}
-                  {formatDate(p.effective_from)} –{" "}
-                  {p.effective_to ? formatDate(p.effective_to) : "løpende"}
-                </li>
-              ))}
-            </ol>
-          </div>
+        <h2 className="mb-2 text-sm font-semibold text-slate-100">
+          Forbruk og kostnad
+        </h2>
+        {consumption.data && (
+          <p className="mb-3 text-sm text-slate-300">
+            {`${consumption.data.month}: ${consumption.data.consumption_kwh} kWh over ${consumption.data.session_count} ladeøkter.`}
+          </p>
+        )}
+        {history.data ? (
+          <UsageHistoryChart months={history.data.months} />
         ) : (
           <p className="text-sm text-slate-400">Laster …</p>
         )}

@@ -31,7 +31,9 @@ describe("MyAccount (member portal)", () => {
 
     expect(await screen.findByText(/1\s?500,00/)).toBeInTheDocument();
     expect(screen.getByText("Innbetaling")).toBeInTheDocument();
-    expect(screen.getByText(/Deltar i avregning:/)).toHaveTextContent("Ja");
+    // "Min status" renders twice (desktop column + mobile row), one hidden per
+    // breakpoint via CSS — jsdom has no layout, so match the first.
+    expect(screen.getAllByText(/Deltar i avregning:/)[0]).toHaveTextContent("Ja");
   });
 
   it("lists settlements with report and PDF links (invoices only inside the report)", async () => {
