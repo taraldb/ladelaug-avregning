@@ -10,14 +10,14 @@ from ladelaug_avregning.reports.settlement_report import _nok
 
 FETCH = {"X-Requested-With": "fetch"}
 MONTH = "2026-07"
-# nb-NO uses a non-breaking space as the thousands separator and before "kr".
+# nb-NO uses a non-breaking space as the thousands separator and after the "kr" prefix.
 NBSP = " "
 
 
 def test_nok_formats_norwegian():
-    assert _nok("1234.5") == f"1{NBSP}234,50{NBSP}kr"
-    assert _nok("-50") == f"-50,00{NBSP}kr"
-    assert _nok("1000000") == f"1{NBSP}000{NBSP}000,00{NBSP}kr"
+    assert _nok("1234.5") == f"kr{NBSP}1{NBSP}234,50"
+    assert _nok("-50") == f"kr{NBSP}-50,00"
+    assert _nok("1000000") == f"kr{NBSP}1{NBSP}000{NBSP}000,00"
 
 
 def _result_and_member():
@@ -129,8 +129,8 @@ def test_render_member_report_contains_key_figures():
     assert "Kari Nordmann" in page
     assert "A-07" in page
     assert "12,5 kWh" in page
-    assert f"450,00{NBSP}kr" in page
-    assert f"1{NBSP}050,00{NBSP}kr" in page  # balance after
+    assert f"kr{NBSP}450,00" in page
+    assert f"kr{NBSP}1{NBSP}050,00" in page  # balance after
     assert "<!doctype html>" in page
     # The 1B stub is gone; with no forecast a neutral footer stands in.
     assert _PLACEHOLDER not in page
@@ -143,10 +143,10 @@ def test_render_member_report_shows_settlement_calculation():
     page = render_member_report(result, member)
     assert "Avregningsgrunnlag" in page
     assert "Faste kostnader (delt likt)" in page
-    assert f"600,00{NBSP}kr" in page  # equal-cost total (60000 øre)
+    assert f"kr{NBSP}600,00" in page  # equal-cost total (60000 øre)
     assert "delt på 2 medlemmer" in page
     assert "Forbrukskostnader (etter kWh)" in page
-    assert f"1{NBSP}200,00{NBSP}kr" in page  # invoice + total charged
+    assert f"kr{NBSP}1{NBSP}200,00" in page  # invoice + total charged
     # my share of the metered energy: 12.5 of 50 kWh
     assert "Din andel av totalforbruk" in page
     assert "12,5 av 50 kWh (25,0 %)" in page
@@ -178,9 +178,9 @@ def test_render_member_report_forecast_section():
     assert "Prognose neste måned" in page
     assert "13.33 kWh" in page  # forecast kWh, quantised
     assert "Anbefalt saldo / innbetaling" in page
-    assert f"1{NBSP}066,66{NBSP}kr" in page  # recommended minimum balance
+    assert f"kr{NBSP}1{NBSP}066,66" in page  # recommended minimum balance
     assert "Anbefalt innbetaling for å nå anbefalt saldo" in page
-    assert f"666,66{NBSP}kr" in page  # recommended top-up
+    assert f"kr{NBSP}666,66" in page  # recommended top-up
 
 
 def test_render_member_report_forecast_unavailable_is_neutral():

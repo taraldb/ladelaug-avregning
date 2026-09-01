@@ -67,7 +67,7 @@ def _kwh(v: Any) -> str:
 
 
 def _nok(value: str | int) -> str:
-    """Format a NOK decimal string as ``1 234,56 kr`` (nb-NO)."""
+    """Format a NOK decimal string as ``kr 1 234,56`` (nb-NO — currency symbol first)."""
     s = str(value)
     neg = s.startswith("-")
     s = s.lstrip("-")
@@ -78,7 +78,7 @@ def _nok(value: str | int) -> str:
         groups.insert(0, whole[-3:])
         whole = whole[:-3]
     groups.insert(0, whole)
-    return ("-" if neg else "") + " ".join(groups) + f",{frac} kr"
+    return "kr " + ("-" if neg else "") + " ".join(groups) + f",{frac}"
 
 
 def _page(title: str, body: str) -> str:
@@ -239,7 +239,7 @@ def render_member_report(
         "<h2>Saldo</h2>"
         '<dl class="kv">'
         f"<dt>Saldo før avregning</dt><dd>{_nok(member['balance_before_nok'])}</dd>"
-        f"<dt>Belastet</dt><dd>-{_nok(member['charge_nok'])}</dd>"
+        f"<dt>Belastet</dt><dd>{_nok('-' + str(member['charge_nok']))}</dd>"
         f"<dt>Saldo etter avregning</dt><dd{after_cls}>{_nok(member['balance_after_nok'])}</dd>"
         "</dl>"
         f"{_forecast_section(forecast)}"

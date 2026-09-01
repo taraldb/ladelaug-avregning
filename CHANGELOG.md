@@ -4,6 +4,14 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Currency shown with the `kr` prefix** — every formatted amount now reads
+  `kr 1 234,56` instead of `1 234,56 kr`, matching Norwegian convention where the
+  currency symbol comes first. Centralised in `formatNok`/`formatOre` (frontend)
+  and `settlement_report._nok` (HTML/PDF reports); notification email bodies
+  (settlement report, correction, low-balance) updated to match. Every table
+  column that renders an amount is now right-aligned with tabular figures so the
+  øre line up regardless of magnitude (settlement list, forecast overview,
+  settlement preview).
 - **Members can edit their own profile and password** — new "Min profil" page
   (`/min-profil`, in the member nav). `PATCH /api/me` lets a member change their
   own name and contact email (andelsnummer / innmeldingsdato stay admin-only);

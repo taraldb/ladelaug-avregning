@@ -322,14 +322,14 @@ class NotificationRepo:
             delta_ore = int(m["delta_ore"])
             balance_nok = ore_to_nok(ledger.balance_ore(m["member_id"]))
             if delta_ore > 0:
-                movement = f"Du får {ore_to_nok(delta_ore)} kr tilbakeført."
+                movement = f"Du får kr {ore_to_nok(delta_ore)} tilbakeført."
             else:
-                movement = f"Du blir belastet {ore_to_nok(-delta_ore)} kr ekstra."
+                movement = f"Du blir belastet kr {ore_to_nok(-delta_ore)} ekstra."
             text = (
                 f"Hei {m['full_name']},\n\n"
                 f"Avregningen for {month} er korrigert (korrigering #{seq}). "
                 f"{movement}\n"
-                f"Ny saldo er {balance_nok} kr.\n\n"
+                f"Ny saldo er kr {balance_nok}.\n\n"
                 f"Se detaljene i portalen: {link}\n"
             )
             await self.enqueue(
@@ -416,13 +416,13 @@ class NotificationRepo:
         lines = [
             "Hei,",
             "",
-            f"Saldoen din i ladelauget er lav: {ore_to_nok(balance_ore)} kr.",
-            f"Anbefalt minstesaldo er {ore_to_nok(minimum_ore)} kr.",
-            f"Vi anbefaler at du betaler inn minst {ore_to_nok(topup_ore)} kr.",
+            f"Saldoen din i ladelauget er lav: kr {ore_to_nok(balance_ore)}.",
+            f"Anbefalt minstesaldo er kr {ore_to_nok(minimum_ore)}.",
+            f"Vi anbefaler at du betaler inn minst kr {ore_to_nok(topup_ore)}.",
         ]
         if severity == "critical":
             lines.append(
-                f"Saldoen dekker ikke neste måneds forventede kostnad på {ore_to_nok(cost_ore)} kr."
+                f"Saldoen dekker ikke neste måneds forventede kostnad på kr {ore_to_nok(cost_ore)}."
             )
         lines += ["", "Logg inn på Min konto i portalen for detaljer."]
         body_text = "\n".join(lines) + "\n"
@@ -452,7 +452,7 @@ class NotificationRepo:
                 entity_id=member_id,
                 summary=(
                     f"Low-balance warning ({severity}) queued for member {member_id}: "
-                    f"balance {ore_to_nok(balance_ore)} kr < minimum {ore_to_nok(minimum_ore)} kr"
+                    f"balance kr {ore_to_nok(balance_ore)} < minimum kr {ore_to_nok(minimum_ore)}"
                 ),
                 detail={
                     "member_id": member_id,

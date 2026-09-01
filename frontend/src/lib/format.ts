@@ -5,8 +5,9 @@
 const NBSP = " ";
 
 /**
- * Format a Decimal string as Norwegian kroner, e.g. `"1500.00"` -> `"1 500,00 kr"`,
- * `"-50.5"` -> `"-50,50 kr"`. Uses a plain space as the thousands separator.
+ * Format a Decimal string as Norwegian kroner, e.g. `"1500.00"` -> `"kr 1 500,00"`,
+ * `"-50.5"` -> `"kr -50,50"`. The currency symbol comes first (nb-NO), with a
+ * plain space as the thousands separator.
  */
 export function formatNok(value: string): string {
   const trimmed = (value ?? "").trim();
@@ -23,11 +24,11 @@ export function formatNok(value: string): string {
   const isZero = intPart === "0" && /^0*$/.test(frac);
   const sign = negative && !isZero ? "-" : "";
 
-  return `${sign}${grouped},${frac}${NBSP}kr`;
+  return `kr${NBSP}${sign}${grouped},${frac}`;
 }
 
 /**
- * Format an integer amount of øre as Norwegian kroner, e.g. `150000` -> `"1 500,00 kr"`.
+ * Format an integer amount of øre as Norwegian kroner, e.g. `150000` -> `"kr 1 500,00"`.
  * Some endpoints (forecast) hand back canonical integer øre rather than a Decimal
  * string; convert losslessly and hand off to `formatNok`.
  */

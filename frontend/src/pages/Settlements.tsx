@@ -21,6 +21,7 @@ const columns: Column<Settlement>[] = [
   {
     key: "invoice",
     header: "Fakturasum",
+    className: "text-right tabular-nums",
     render: (s) => (s.invoice_total_nok ? formatNok(s.invoice_total_nok) : "–"),
   },
   {

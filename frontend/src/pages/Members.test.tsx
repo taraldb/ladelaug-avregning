@@ -55,7 +55,7 @@ describe("Members (admin)", () => {
     const { user } = renderApp(<AppRouter />, { route: "/medlemmer" });
 
     const row = (await screen.findByText("Grace Hopper")).closest("tr")!;
-    expect(within(row).getByText("1 200,00 kr")).toBeInTheDocument();
+    expect(within(row).getByText("kr 1 200,00")).toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", { name: /Registrer innbetaling/ }),
@@ -65,7 +65,7 @@ describe("Members (admin)", () => {
     await user.type(within(dialog).getByLabelText("Beløp (kr)"), "300");
     await user.click(within(dialog).getByRole("button", { name: "Registrer" }));
 
-    expect(await within(row).findByText("1 500,00 kr")).toBeInTheDocument();
+    expect(await within(row).findByText("kr 1 500,00")).toBeInTheDocument();
   });
 
   it("redirects a member session away from /medlemmer", async () => {

@@ -998,12 +998,28 @@ function PreviewPanel({ preview }: { preview: SettlementPreview }) {
   const columns: Column<SettlementPreview["members"][number]>[] = [
     { key: "ref", header: "Ref.", render: (m) => m.member_reference },
     { key: "name", header: "Navn", render: (m) => m.full_name },
-    { key: "kwh", header: "kWh", render: (m) => m.consumption_kwh },
-    { key: "before", header: "Saldo før", render: (m) => formatNok(m.balance_before_nok) },
-    { key: "charge", header: "Belastes", render: (m) => formatNok(m.charge_nok) },
+    {
+      key: "kwh",
+      header: "kWh",
+      className: "text-right tabular-nums",
+      render: (m) => m.consumption_kwh,
+    },
+    {
+      key: "before",
+      header: "Saldo før",
+      className: "text-right tabular-nums",
+      render: (m) => formatNok(m.balance_before_nok),
+    },
+    {
+      key: "charge",
+      header: "Belastes",
+      className: "text-right tabular-nums",
+      render: (m) => formatNok(m.charge_nok),
+    },
     {
       key: "after",
       header: "Saldo etter",
+      className: "text-right tabular-nums",
       render: (m) => (
         <span className={m.balance_after_ore < 0 ? "text-rose-400" : undefined}>
           {formatNok(m.balance_after_nok)}

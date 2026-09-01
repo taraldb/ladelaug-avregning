@@ -135,17 +135,19 @@ export default function ForecastSettings() {
     {
       key: "kwh",
       header: "Prognose kWh",
+      className: "text-right tabular-nums",
       render: (r) => (r.available ? `${r.forecast_kwh} kWh` : "–"),
     },
     {
       key: "cost",
       header: "Månedskostnad",
+      className: "text-right tabular-nums",
       render: (r) => (r.available ? formatOre(r.forecast_monthly_cost_ore) : "–"),
     },
     {
       key: "balance",
       header: "Saldo",
-      className: "tabular-nums",
+      className: "text-right tabular-nums",
       render: (r) => (
         <span className={r.balance_ore < 0 ? "text-rose-400" : undefined}>
           {formatOre(r.balance_ore)}
@@ -155,6 +157,7 @@ export default function ForecastSettings() {
     {
       key: "min",
       header: "Anbefalt minstesaldo",
+      className: "text-right tabular-nums",
       render: (r) => (r.available ? formatOre(r.recommended_minimum_ore) : "–"),
     },
     {

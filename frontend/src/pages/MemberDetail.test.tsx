@@ -68,7 +68,7 @@ describe("MemberDetail (admin)", () => {
     await user.type(await screen.findByLabelText("Beløp (kr)"), "250,00");
     await user.click(screen.getByRole("button", { name: "Bokfør refusjon" }));
 
-    expect(await screen.findByText(/750,00\s?kr/)).toBeInTheDocument();
+    expect(await screen.findByText(/kr\s?750,00/)).toBeInTheDocument();
     expect(screen.getAllByText("Refusjon").length).toBeGreaterThan(1);
   });
 
