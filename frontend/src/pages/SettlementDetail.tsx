@@ -29,6 +29,7 @@ import {
   type SettlementPreview,
 } from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import Money from "../components/Money";
 import Table, { type Column } from "../components/Table";
 import { formatNok, formatOre, normalizeDecimalInput } from "../lib/format";
 
@@ -403,13 +404,13 @@ function CorrectionPanel({
                 <td className="py-1 text-right tabular-nums">
                   {m.consumption_kwh_after}
                 </td>
-                <td
-                  className={`py-1 text-right tabular-nums ${
-                    m.delta_ore > 0 ? "text-emerald-400" : "text-rose-400"
-                  }`}
-                >
-                  {m.delta_ore > 0 ? "+" : ""}
-                  {formatOre(m.delta_ore)}
+                <td className="py-1 text-right tabular-nums">
+                  <Money
+                    ore={m.delta_ore}
+                    className={
+                      m.delta_ore > 0 ? "text-emerald-400" : "text-rose-400"
+                    }
+                  />
                 </td>
               </tr>
             ))}
@@ -703,7 +704,7 @@ function LinesPanel({
                   <td className="py-1 text-slate-200">{l.description}</td>
                   <td className="py-1">{METHOD_LABEL[l.allocation_method]}</td>
                   <td className="py-1 text-right tabular-nums">
-                    {formatNok(l.amount_nok)}
+                    <Money value={l.amount_nok} />
                   </td>
                   <td className="py-1 text-right">
                     {editable && (
@@ -1008,22 +1009,23 @@ function PreviewPanel({ preview }: { preview: SettlementPreview }) {
       key: "before",
       header: "Saldo før",
       className: "text-right tabular-nums",
-      render: (m) => formatNok(m.balance_before_nok),
+      render: (m) => <Money value={m.balance_before_nok} />,
     },
     {
       key: "charge",
       header: "Belastes",
       className: "text-right tabular-nums",
-      render: (m) => formatNok(m.charge_nok),
+      render: (m) => <Money value={m.charge_nok} />,
     },
     {
       key: "after",
       header: "Saldo etter",
       className: "text-right tabular-nums",
       render: (m) => (
-        <span className={m.balance_after_ore < 0 ? "text-rose-400" : undefined}>
-          {formatNok(m.balance_after_nok)}
-        </span>
+        <Money
+          value={m.balance_after_nok}
+          className={m.balance_after_ore < 0 ? "text-rose-400" : undefined}
+        />
       ),
     },
   ];

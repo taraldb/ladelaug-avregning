@@ -6,6 +6,7 @@ python -m ladelaug_avregning create-admin     # create an administrator account
 python -m ladelaug_avregning low-balance-scan # enqueue low-balance warning emails
 python -m ladelaug_avregning drain-mail       # send queued emails (cron)
 python -m ladelaug_avregning run-job <name>   # run one scheduler job once
+python -m ladelaug_avregning regenerate-reports [--settlement ID]  # rewrite state/reports/*
 """
 
 from __future__ import annotations
@@ -215,6 +216,34 @@ def _cmd_drain_mail(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_regenerate_reports(args: argparse.Namespace) -> int:
+    from ladelaug_avregning.db import Database
+    from ladelaug_avregning.domain.settlement import SettlementRepo
+
+    config = _load_config_or_exit(args.config)
+    configure_logging(config.logging.level)
+    db = Database(config.database.path)
+    try:
+        repo = SettlementRepo(db, tz=config.timezone, state_dir=config.state_dir)
+        if args.settlement is not None:
+            targets = [args.settlement]
+        else:
+            targets = [s["id"] for s in repo.list() if s["status"] == "posted"]
+        if not targets:
+            print("No posted settlements to regenerate.")
+            return 0
+        for sid in targets:
+            out = repo.regenerate_reports(sid)
+            print(
+                f"Settlement {out['settlement_id']} ({out['period_month']}): "
+                f"wrote {len(out['files'])} files -> "
+                f"{config.state_dir}/reports/{out['period_month']}/"
+            )
+    finally:
+        db.close()
+    return 0
+
+
 def _cmd_run_job(args: argparse.Namespace) -> int:
     import asyncio
 
@@ -254,6 +283,17 @@ def build_parser() -> argparse.ArgumentParser:
     rj = sub.add_parser("run-job", help="run one in-process scheduler job once")
     rj.add_argument("name", help="drain_mail | low_balance_scan | zaptec_sync_sessions")
 
+    rr = sub.add_parser(
+        "regenerate-reports",
+        help="re-render state/reports/<period>/ for posted settlements (after a template change)",
+    )
+    rr.add_argument(
+        "--settlement",
+        type=int,
+        default=None,
+        help="only this settlement id (default: every posted settlement)",
+    )
+
     return parser
 
 
@@ -268,6 +308,7 @@ def main(argv: list[str] | None = None) -> int:
         "low-balance-scan": _cmd_low_balance_scan,
         "drain-mail": _cmd_drain_mail,
         "run-job": _cmd_run_job,
+        "regenerate-reports": _cmd_regenerate_reports,
     }[command]
     return handler(args)
 

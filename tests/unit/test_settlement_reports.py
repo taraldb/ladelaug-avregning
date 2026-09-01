@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from ladelaug_avregning.audit import AuditContext
 from ladelaug_avregning.domain.members import MemberRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
+from ladelaug_avregning.errors import DomainError
 from ladelaug_avregning.reports import render_member_report, render_summary_report
 from ladelaug_avregning.reports.settlement_report import _nok
 
@@ -14,10 +17,19 @@ MONTH = "2026-07"
 NBSP = " "
 
 
+def _money(number: str) -> str:
+    """The ``<span class="money">`` markup ``_nok`` wraps an amount in; ``number``
+    is the nb-NO digit string (NBSP-grouped, decimal comma)."""
+    return (
+        f'<span class="money"><span class="cur">kr</span>'
+        f'<span class="amt">{number}</span></span>'
+    )
+
+
 def test_nok_formats_norwegian():
-    assert _nok("1234.5") == f"kr{NBSP}1{NBSP}234,50"
-    assert _nok("-50") == f"kr{NBSP}-50,00"
-    assert _nok("1000000") == f"kr{NBSP}1{NBSP}000{NBSP}000,00"
+    assert _nok("1234.5") == _money(f"1{NBSP}234,50")
+    assert _nok("-50") == _money("-50,00")
+    assert _nok("1000000") == _money(f"1{NBSP}000{NBSP}000,00")
 
 
 def _result_and_member():
@@ -129,8 +141,8 @@ def test_render_member_report_contains_key_figures():
     assert "Kari Nordmann" in page
     assert "A-07" in page
     assert "12,5 kWh" in page
-    assert f"kr{NBSP}450,00" in page
-    assert f"kr{NBSP}1{NBSP}050,00" in page  # balance after
+    assert _money("450,00") in page
+    assert _money(f"1{NBSP}050,00") in page  # balance after
     assert "<!doctype html>" in page
     # The 1B stub is gone; with no forecast a neutral footer stands in.
     assert _PLACEHOLDER not in page
@@ -143,10 +155,10 @@ def test_render_member_report_shows_settlement_calculation():
     page = render_member_report(result, member)
     assert "Avregningsgrunnlag" in page
     assert "Faste kostnader (delt likt)" in page
-    assert f"kr{NBSP}600,00" in page  # equal-cost total (60000 øre)
+    assert _money("600,00") in page  # equal-cost total (60000 øre)
     assert "delt på 2 medlemmer" in page
     assert "Forbrukskostnader (etter kWh)" in page
-    assert f"kr{NBSP}1{NBSP}200,00" in page  # invoice + total charged
+    assert _money(f"1{NBSP}200,00") in page  # invoice + total charged
     # my share of the metered energy: 12.5 of 50 kWh
     assert "Din andel av totalforbruk" in page
     assert "12,5 av 50 kWh (25,0 %)" in page
@@ -178,9 +190,9 @@ def test_render_member_report_forecast_section():
     assert "Prognose neste måned" in page
     assert "13.33 kWh" in page  # forecast kWh, quantised
     assert "Anbefalt saldo / innbetaling" in page
-    assert f"kr{NBSP}1{NBSP}066,66" in page  # recommended minimum balance
+    assert _money(f"1{NBSP}066,66") in page  # recommended minimum balance
     assert "Anbefalt innbetaling for å nå anbefalt saldo" in page
-    assert f"kr{NBSP}666,66" in page  # recommended top-up
+    assert _money("666,66") in page  # recommended top-up
 
 
 def test_render_member_report_forecast_unavailable_is_neutral():
@@ -251,6 +263,29 @@ async def test_write_reports_persists_files_on_post(db, tmp_path):
     assert (report_dir / "sammendrag.html").is_file()
     assert (report_dir / f"medlem-{m1}.html").is_file()
     assert "Ada" in (report_dir / f"medlem-{m1}.html").read_text(encoding="utf-8")
+
+
+async def test_regenerate_reports_rewrites_stale_files(db, tmp_path):
+    repo, sid, m1 = await _posted(db, state_dir=tmp_path)
+    member_file = tmp_path / "reports" / MONTH / f"medlem-{m1}.html"
+    member_file.write_text("STALE", encoding="utf-8")
+
+    out = repo.regenerate_reports(sid)
+
+    assert out["settlement_id"] == sid
+    assert out["period_month"] == MONTH
+    assert f"medlem-{m1}.html" in out["files"] and "sammendrag.html" in out["files"]
+    fresh = member_file.read_text(encoding="utf-8")
+    assert "STALE" not in fresh
+    assert 'class="money"' in fresh and "Ada" in fresh
+
+
+async def test_regenerate_reports_rejects_draft(db, tmp_path):
+    repo = SettlementRepo(db, state_dir=tmp_path)
+    draft = await repo.create_draft("2026-09", actor=AuditContext.system())
+    with pytest.raises(DomainError) as exc:
+        repo.regenerate_reports(int(draft["id"]))
+    assert exc.value.code == "not_posted"
 
 
 # --- routes ------------------------------------------------------------

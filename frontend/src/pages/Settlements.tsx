@@ -8,8 +8,8 @@ import {
   listSettlements,
   type Settlement,
 } from "../api/client";
+import Money from "../components/Money";
 import Table, { type Column } from "../components/Table";
-import { formatNok } from "../lib/format";
 
 const columns: Column<Settlement>[] = [
   { key: "month", header: "Måned", render: (s) => s.period_month },
@@ -22,7 +22,8 @@ const columns: Column<Settlement>[] = [
     key: "invoice",
     header: "Fakturasum",
     className: "text-right tabular-nums",
-    render: (s) => (s.invoice_total_nok ? formatNok(s.invoice_total_nok) : "–"),
+    render: (s) =>
+      s.invoice_total_nok ? <Money value={s.invoice_total_nok} /> : "–",
   },
   {
     key: "frozen",

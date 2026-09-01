@@ -4,14 +4,26 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
-- **Currency shown with the `kr` prefix** — every formatted amount now reads
-  `kr 1 234,56` instead of `1 234,56 kr`, matching Norwegian convention where the
-  currency symbol comes first. Centralised in `formatNok`/`formatOre` (frontend)
-  and `settlement_report._nok` (HTML/PDF reports); notification email bodies
-  (settlement report, correction, low-balance) updated to match. Every table
-  column that renders an amount is now right-aligned with tabular figures so the
-  øre line up regardless of magnitude (settlement list, forecast overview,
-  settlement preview).
+- **Currency shown with the `kr` prefix, column-aligned** — every formatted
+  amount now reads `kr 1 234,56` instead of `1 234,56 kr`, matching Norwegian
+  convention where the currency symbol comes first. Centralised in
+  `formatNok`/`formatOre` (frontend) and `settlement_report._nok` (HTML/PDF
+  reports); notification email bodies (settlement report, correction,
+  low-balance) updated to match. In tables and reports the amount is rendered so
+  the `kr` sits a small constant gap left of the digits, which occupy a
+  fixed-width right-aligned box — so both the prefix *and* the øre line up down
+  the whole column (amounts past ~5 digits just nudge the `kr` left on that
+  row). New `<Money>` component (frontend) / `.money` span (reports) carries
+  this; every amount column was switched over (movements, member balances,
+  ledgers, settlement preview & invoice lines, forecast overview, usage history,
+  settlement list). The portal renders every settlement report live
+  (`render_member_report`/`render_summary_report` on each request), so it picks
+  up the new formatting immediately. The archived copies under
+  `state/reports/<period>/` are only rewritten at post time — new
+  `python -m ladelaug_avregning regenerate-reports [--settlement ID]`
+  (`SettlementRepo.regenerate_reports`) re-renders them for already-posted
+  settlements so the archive matches. PDF siblings are rewritten too where
+  WeasyPrint is installed.
 - **Members can edit their own profile and password** — new "Min profil" page
   (`/min-profil`, in the member nav). `PATCH /api/me` lets a member change their
   own name and contact email (andelsnummer / innmeldingsdato stay admin-only);

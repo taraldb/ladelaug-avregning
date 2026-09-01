@@ -11,9 +11,9 @@ import {
   type LowBalanceScanResult,
   type MemberForecast,
 } from "../api/client";
+import Money from "../components/Money";
 import Table, { type Column } from "../components/Table";
-import { normalizeDecimalInput } from "../lib/format";
-import { formatDateTime, formatOre } from "../lib/format";
+import { formatDateTime, normalizeDecimalInput } from "../lib/format";
 
 interface FormState {
   rate_override_ore_per_kwh: string;
@@ -142,23 +142,26 @@ export default function ForecastSettings() {
       key: "cost",
       header: "Månedskostnad",
       className: "text-right tabular-nums",
-      render: (r) => (r.available ? formatOre(r.forecast_monthly_cost_ore) : "–"),
+      render: (r) =>
+        r.available ? <Money ore={r.forecast_monthly_cost_ore} /> : "–",
     },
     {
       key: "balance",
       header: "Saldo",
       className: "text-right tabular-nums",
       render: (r) => (
-        <span className={r.balance_ore < 0 ? "text-rose-400" : undefined}>
-          {formatOre(r.balance_ore)}
-        </span>
+        <Money
+          ore={r.balance_ore}
+          className={r.balance_ore < 0 ? "text-rose-400" : undefined}
+        />
       ),
     },
     {
       key: "min",
       header: "Anbefalt minstesaldo",
       className: "text-right tabular-nums",
-      render: (r) => (r.available ? formatOre(r.recommended_minimum_ore) : "–"),
+      render: (r) =>
+        r.available ? <Money ore={r.recommended_minimum_ore} /> : "–",
     },
     {
       key: "badge",

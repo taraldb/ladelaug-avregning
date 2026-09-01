@@ -54,6 +54,6 @@ describe("Movements (admin)", () => {
     expect(
       await screen.findByRole("link", { name: "M-9 – Nina" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("kr 500,00")).toBeInTheDocument();
+    expect(screen.getByText("500,00")).toBeInTheDocument();
   });
 });

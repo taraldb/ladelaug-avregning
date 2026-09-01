@@ -80,7 +80,7 @@ describe("Settlement flow (admin)", () => {
 
     const row = (await within(linesPanel).findByText("Strøm")).closest("tr")!;
     expect(within(row).getByText("Forbruk")).toBeInTheDocument();
-    expect(within(row).getByText(/kr\s?1\s?200,00/)).toBeInTheDocument();
+    expect(within(row).getByText(/1\s?200,00/)).toBeInTheDocument();
 
     // edit — flip to "Likt" and set a negative (credit) amount
     await user.click(within(row).getByRole("button", { name: "Endre" }));
@@ -97,7 +97,7 @@ describe("Settlement flow (admin)", () => {
       await within(linesPanel).findByText("Strøm")
     ).closest("tr")!;
     expect(within(editedRow).getByText("Likt")).toBeInTheDocument();
-    expect(within(editedRow).getByText(/kr\s?-150,00/)).toBeInTheDocument();
+    expect(within(editedRow).getByText(/-150,00/)).toBeInTheDocument();
   });
 
   it("returns focus to Beskrivelse after adding a line", async () => {

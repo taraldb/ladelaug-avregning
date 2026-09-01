@@ -29,7 +29,7 @@ describe("MyAccount (member portal)", () => {
 
     renderApp(<AppRouter />, { route: "/" });
 
-    expect(await screen.findByText(/kr\s?1\s?500,00/)).toBeInTheDocument();
+    expect(await screen.findByText(/1\s?500,00/)).toBeInTheDocument();
     expect(screen.getByText("Innbetaling")).toBeInTheDocument();
     expect(screen.getByText(/Deltar i avregning:/)).toHaveTextContent("Ja");
   });
@@ -104,7 +104,7 @@ describe("MyAccount (member portal)", () => {
     const { container } = renderApp(<AppRouter />, { route: "/" });
 
     const settled = (await screen.findByText("2026-07")).closest("tr")!;
-    expect(within(settled).getByText(/kr\s?123,45/)).toBeInTheDocument();
+    expect(within(settled).getByText(/123,45/)).toBeInTheDocument();
 
     const unsettled = screen.getByText("2026-08").closest("tr")!;
     expect(within(unsettled).getByText("–")).toBeInTheDocument();

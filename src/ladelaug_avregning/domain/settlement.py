@@ -1016,9 +1016,17 @@ class SettlementRepo:
 
         posted = {**result, "status": "posted", "members_charged": posted_members}
 
-        # Forecast per member, computed *after* the ledger rows land so the
+        # Forecast per member is computed *after* the ledger rows land so the
         # report's balance reflects the just-posted charge (decision C10).
-        # Best-effort — a forecast failure must never break a post.
+        self._persist_reports(posted, settlement_id)
+        return posted
+
+    def _persist_reports(self, result: dict[str, Any], settlement_id: int) -> list[str]:
+        """Render the summary + per-member report files for a computed, posted
+        settlement into ``state/reports/<period>/`` and return the filenames.
+        Best-effort: a forecast failure falls back to no forecast section, and an
+        ``OSError`` writing the files is logged, not raised (a report write must
+        never break a post)."""
         forecasts: dict[int, dict[str, Any]] = {}
         with contextlib.suppress(Exception):
             from ladelaug_avregning.domain.forecast import ForecastRepo
@@ -1030,15 +1038,33 @@ class SettlementRepo:
         try:
             from ladelaug_avregning.reports import write_reports
 
-            write_reports(
-                posted,
+            return write_reports(
+                result,
                 self.snapshot_members(settlement_id),
-                self._state / "reports" / month,
+                self._state / "reports" / result["period_month"],
                 forecasts,
             )
         except OSError as exc:  # pragma: no cover - report write must not break a post
             log.warning("settlement %s: report write skipped: %s", settlement_id, exc)
-        return posted
+            return []
+
+    def regenerate_reports(self, settlement_id: int) -> dict[str, Any]:
+        """Re-render the on-disk report files for a posted settlement from the
+        current computation and templates. Use after a report-template change so
+        the archived ``state/reports/<period>/`` copies match what the portal
+        renders live. Raises ``not_posted`` for a draft."""
+        row = self._require(settlement_id)
+        if row["status"] != "posted":
+            raise DomainError(
+                "not_posted", "Only a posted settlement has reports to regenerate."
+            )
+        result = {**self.compute(settlement_id), "status": "posted"}
+        written = self._persist_reports(result, settlement_id)
+        return {
+            "settlement_id": settlement_id,
+            "period_month": result["period_month"],
+            "files": written,
+        }
 
     # --- internals -----------------------------------------------
 

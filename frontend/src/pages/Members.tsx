@@ -12,8 +12,9 @@ import DateField from "../components/DateField";
 import Modal from "../components/Modal";
 import PlusIcon from "../components/PlusIcon";
 import RecordPaymentModal from "../components/RecordPaymentModal";
+import Money from "../components/Money";
 import Table, { type Column } from "../components/Table";
-import { formatDate, formatNok } from "../lib/format";
+import { formatDate } from "../lib/format";
 
 const columns: Column<Member>[] = [
   { key: "ref", header: "Referanse", render: (m) => m.member_reference },
@@ -32,13 +33,12 @@ const columns: Column<Member>[] = [
       m.balance_nok == null ? (
         "–"
       ) : (
-        <span
+        <Money
+          value={m.balance_nok}
           className={
             (m.balance_ore ?? 0) < 0 ? "text-rose-400" : "text-emerald-400"
           }
-        >
-          {formatNok(m.balance_nok)}
-        </span>
+        />
       ),
   },
   {

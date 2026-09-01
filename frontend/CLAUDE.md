@@ -14,9 +14,14 @@ Tests: Vitest + Testing Library + MSW (jsdom).
 - Errors are always `{"detail": {"code", "message"}}` -> `ApiError { status, code, message }`.
 - Money is a Decimal **string** from the API. Never `Number()` it for display math —
   format via `src/lib/format.ts` (`formatNok`, `formatDate`, `formatDateTime`).
-  Free-text numeric inputs pass their value through `normalizeDecimalInput` before
-  the API call, so both `"123,45"` and `"123.45"` mean 123.45 (mirrors
-  `money.normalise_decimal_input` on the backend, which is the authority).
+  `formatNok`/`formatOre` render `kr` first (`kr 1 500,00`). In a **table cell**
+  use `<Money value={...}>` (or `<Money ore={...}>`) instead of raw `formatNok`:
+  in a right-aligned `tabular-nums` column it keeps `kr` a small constant gap
+  left of a fixed-width digit box, so both the `kr` and the øre line up down the
+  column. Keep raw `formatNok` for amounts in prose / stat tiles. Free-text numeric inputs pass their value through
+  `normalizeDecimalInput` before the API call, so both `"123,45"` and `"123.45"`
+  mean 123.45 (mirrors `money.normalise_decimal_input` on the backend, which is
+  the authority).
 - Auth state comes from `useAuth()` (SWR on `GET /api/auth/me`). `<RequireAuth>` sends
   unauthenticated users to `/login`; `<RequireAdmin>` sends `role=member` to `/` (the site
   root). Route paths are Norwegian and centralised in `src/routes.ts` (`ROUTES`):

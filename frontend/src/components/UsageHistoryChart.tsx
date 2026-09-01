@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { MemberHistoryMonth } from "../api/client";
 import { formatNok } from "../lib/format";
+import Money from "./Money";
 import Table, { type Column } from "./Table";
 
 /**
@@ -48,16 +49,18 @@ const columns: Column<MemberHistoryMonth>[] = [
     key: "charge",
     header: "Kostnad",
     className: "text-right tabular-nums",
-    render: (m) => (m.settled && m.charge_nok != null ? formatNok(m.charge_nok) : "–"),
+    render: (m) =>
+      m.settled && m.charge_nok != null ? <Money value={m.charge_nok} /> : "–",
   },
   {
     key: "balance",
     header: "Saldo",
     className: "text-right tabular-nums",
     render: (m) => (
-      <span className={m.balance_end_ore < 0 ? "text-rose-400" : "text-slate-200"}>
-        {formatNok(m.balance_end_nok)}
-      </span>
+      <Money
+        value={m.balance_end_nok}
+        className={m.balance_end_ore < 0 ? "text-rose-400" : "text-slate-200"}
+      />
     ),
   },
 ];

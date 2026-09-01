@@ -9,8 +9,9 @@ import {
 } from "../api/client";
 import PlusIcon from "../components/PlusIcon";
 import RecordPaymentModal from "../components/RecordPaymentModal";
+import Money from "../components/Money";
 import Table, { type Column } from "../components/Table";
-import { formatDate, formatNok, txnTypeLabel } from "../lib/format";
+import { formatDate, txnTypeLabel } from "../lib/format";
 
 const PAGE_SIZE = 50;
 
@@ -44,9 +45,10 @@ const columns: Column<LedgerTxnRow>[] = [
     header: "Beløp",
     className: "text-right tabular-nums",
     render: (t) => (
-      <span className={t.amount_ore < 0 ? "text-rose-400" : "text-emerald-400"}>
-        {formatNok(t.amount_nok)}
-      </span>
+      <Money
+        value={t.amount_nok}
+        className={t.amount_ore < 0 ? "text-rose-400" : "text-emerald-400"}
+      />
     ),
   },
   {

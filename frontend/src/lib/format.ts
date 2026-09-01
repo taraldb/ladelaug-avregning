@@ -40,6 +40,23 @@ export function formatOre(ore: number): string {
 }
 
 /**
+ * Split a formatted amount into its `"kr"` prefix and the numeric part, so a
+ * table cell can pin the prefix left and the digits right (see `<Money>`). Pass
+ * either a Decimal string (`value`) or canonical integer øre (`ore`). A blank
+ * input yields `{ symbol: "", amount: "–" }`.
+ */
+export function splitNok(input: { value?: string; ore?: number }): {
+  symbol: string;
+  amount: string;
+} {
+  const text =
+    input.ore != null ? formatOre(input.ore) : formatNok(input.value ?? "");
+  const i = text.indexOf(NBSP);
+  if (i === -1) return { symbol: "", amount: text };
+  return { symbol: text.slice(0, i), amount: text.slice(i + 1) };
+}
+
+/**
  * Normalise a human-typed number so the backend can parse it: accept both
  * `"123,45"` and `"123.45"` as 123.45, and tolerate space / point thousands
  * separators (`"1 234,56"`, `"1.234,56"`, `"1,234.56"`). Whichever of `.` or `,`

@@ -11,6 +11,7 @@ import {
   getMyStatus,
   type LedgerTxn,
 } from "../api/client";
+import Money from "../components/Money";
 import StatTile from "../components/StatTile";
 import Table, { type Column } from "../components/Table";
 import UsageHistoryChart from "../components/UsageHistoryChart";
@@ -24,9 +25,10 @@ const columns: Column<LedgerTxn>[] = [
     header: "Beløp",
     className: "text-right tabular-nums",
     render: (t) => (
-      <span className={t.amount_ore < 0 ? "text-rose-400" : "text-emerald-400"}>
-        {formatNok(t.amount_nok)}
-      </span>
+      <Money
+        value={t.amount_nok}
+        className={t.amount_ore < 0 ? "text-rose-400" : "text-emerald-400"}
+      />
     ),
   },
   {

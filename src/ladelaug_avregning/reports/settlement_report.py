@@ -35,6 +35,12 @@ tr.total td, .total td { font-weight: 600; border-top: 2px solid #ccc; border-bo
 .kv dt { color: #666; }
 .kv dt .sub { display: block; font-size: .85rem; }
 .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+/* Amounts: "kr" a fixed hair-space left of the digits, the digits in a
+   fixed-width right-aligned box, so both the prefix and the øre line up down
+   every (right-aligned) column with only a small constant gap between them. */
+.money { white-space: nowrap; }
+.money .cur { padding-right: .5ch; }
+.money .amt { display: inline-block; min-width: 9ch; text-align: right; }
 .neg { color: #b00020; }
 footer { margin-top: 2.5rem; font-size: .85rem; color: #888; }
 """
@@ -67,7 +73,11 @@ def _kwh(v: Any) -> str:
 
 
 def _nok(value: str | int) -> str:
-    """Format a NOK decimal string as ``kr 1 234,56`` (nb-NO — currency symbol first)."""
+    """Format a NOK decimal string as an aligned ``kr 1 234,56`` cell (nb-NO —
+    currency symbol first). Returns an HTML ``<span class="money">``: ``kr`` a
+    fixed hair-space left of a fixed-width, right-aligned digit box, so in a
+    right-aligned column both the prefix and the øre line up with only a small
+    constant gap between them."""
     s = str(value)
     neg = s.startswith("-")
     s = s.lstrip("-")
@@ -78,7 +88,11 @@ def _nok(value: str | int) -> str:
         groups.insert(0, whole[-3:])
         whole = whole[:-3]
     groups.insert(0, whole)
-    return "kr " + ("-" if neg else "") + " ".join(groups) + f",{frac}"
+    number = ("-" if neg else "") + " ".join(groups) + f",{frac}"
+    return (
+        f'<span class="money"><span class="cur">kr</span>'
+        f'<span class="amt">{number}</span></span>'
+    )
 
 
 def _page(title: str, body: str) -> str:
