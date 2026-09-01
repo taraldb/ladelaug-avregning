@@ -8,9 +8,10 @@ can only ever see their own record, balance, ledger, and status. A pure admin
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from ladelaug_avregning.audit import AuditContext, record_audit
@@ -21,21 +22,30 @@ from ladelaug_avregning.domain.charging import ChargingRepo
 from ladelaug_avregning.domain.forecast import ForecastRepo
 from ladelaug_avregning.domain.ledger import LedgerRepo
 from ladelaug_avregning.domain.members import MemberRepo
+from ladelaug_avregning.domain.notifications import NotificationRepo
+from ladelaug_avregning.domain.sessions import SessionRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
+from ladelaug_avregning.domain.users import UserRepo
 from ladelaug_avregning.errors import DomainError, NotFoundError
-from ladelaug_avregning.money import nok_to_ore
+from ladelaug_avregning.money import nok_to_ore, ore_to_nok
 from ladelaug_avregning.reports import html_to_pdf, render_member_report
 from ladelaug_avregning.webapp.deps import (
     get_audit_context,
     get_config,
     get_current_member,
+    get_current_user,
     get_db,
+    require_fetch,
 )
 from ladelaug_avregning.webapp.schemas import (
     LedgerTxnOut,
     MemberConsumptionOut,
     MemberForecastOut,
+    MemberHistoryMonthOut,
+    MemberHistoryOut,
     MemberOut,
+    MePasswordIn,
+    MeProfileIn,
     StatusPeriodOut,
 )
 
@@ -55,6 +65,70 @@ async def me(
         status=repo.current_status(member_id),
         participates=repo.effective_participation(member_id),
     )
+
+
+@router.patch("", dependencies=[Depends(require_fetch)])
+async def update_me(
+    body: MeProfileIn,
+    member_id: int = Depends(get_current_member),
+    db: Database = Depends(get_db),
+    actor: AuditContext = Depends(get_audit_context),
+) -> MemberOut:
+    """Let a member edit their own name / contact email (US-104). Same
+    ``MemberRepo.update`` + ``member.updated`` audit the admin PATCH uses;
+    ``member_reference`` / ``join_date`` are not accepted here."""
+    repo = MemberRepo(db)
+    row = await repo.update(member_id, actor=actor, **body.model_dump(exclude_unset=True))
+    return MemberOut.from_row(
+        row,
+        status=repo.current_status(member_id),
+        participates=repo.effective_participation(member_id),
+    )
+
+
+@router.post("/password", dependencies=[Depends(require_fetch)])
+async def change_my_password(
+    body: MePasswordIn,
+    request: Request,
+    member_id: int = Depends(get_current_member),
+    user: dict[str, Any] = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+    actor: AuditContext = Depends(get_audit_context),
+) -> dict[str, Any]:
+    """Set a new password for the caller's own login. No current-password check
+    (the live session is the proof of identity); every *other* session is
+    revoked and a heads-up email is queued."""
+    auth = config.auth
+    argon2 = (auth.argon2_time_cost, auth.argon2_memory_cost_kib, auth.argon2_parallelism)
+    user_id = int(user["id"])
+    await UserRepo(db).set_password(user_id, body.new_password, actor=actor, argon2=argon2)
+
+    token = request.cookies.get(auth.cookie_name)
+    if token:
+        await SessionRepo(db).revoke_all_for_user_except(user_id, token)
+
+    await record_audit(
+        db,
+        actor,
+        event_type="auth.password_changed",
+        entity_type="user",
+        entity_id=user_id,
+        summary=f"{user['email']} changed their own password; other sessions revoked",
+    )
+    if user["email"]:
+        await NotificationRepo(db).enqueue(
+            to_address=user["email"],
+            subject="Passordet ditt ble endret",
+            body_text=(
+                "Passordet til ladelaug-kontoen din ble nettopp endret. "
+                "Var det ikke deg, kontakt styret straks."
+            ),
+            template="password_changed",
+            related_entity_type="user",
+            related_entity_id=user_id,
+        )
+    return {"ok": True}
 
 
 @router.get("/balance")
@@ -135,6 +209,65 @@ async def my_consumption(
         consumption_kwh=str(charging.member_consumption(member_id, resolved)),
         session_count=charging.member_session_count(member_id, resolved),
     )
+
+
+@router.get("/history")
+async def my_history(
+    member_id: int = Depends(get_current_member),
+    months: int = Query(default=6, ge=1, le=24),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> MemberHistoryOut:
+    """Rolling per-month strip for the member dashboard: metered kWh + session
+    count for every month (works before a settlement exists), the kr charge for
+    months whose settlement is posted, and the running ledger balance at each
+    month's end."""
+    tz = config.timezone
+    to_month = periods.current_month(tz)
+    from_month = periods.add_month(to_month, -(months - 1))
+    window = periods.month_range(from_month, to_month)
+
+    charging = ChargingRepo(db, tz=tz)
+    settlements = SettlementRepo(db, tz=tz)
+    posted = {s["period_month"]: s for s in settlements.posted_for_member(member_id)}
+
+    running = LedgerRepo(db).running_balance_by_month(member_id)
+
+    def balance_end_ore(month: str) -> int:
+        value = 0
+        for ym, bal in running:
+            if ym <= month:
+                value = bal
+            else:
+                break
+        return value
+
+    out: list[MemberHistoryMonthOut] = []
+    for month in window:
+        charge_nok: str | None = None
+        charge_ore: int | None = None
+        settled = False
+        row = posted.get(month)
+        if row is not None:
+            entry = settlements.member_entry(int(row["id"]), member_id)
+            if entry is not None:
+                charge_nok = entry["member"]["charge_nok"]
+                charge_ore = nok_to_ore(Decimal(charge_nok))
+                settled = True
+        bal = balance_end_ore(month)
+        out.append(
+            MemberHistoryMonthOut(
+                month=month,
+                consumption_kwh=str(charging.member_consumption(member_id, month)),
+                session_count=charging.member_session_count(member_id, month),
+                charge_nok=charge_nok,
+                charge_ore=charge_ore,
+                settled=settled,
+                balance_end_nok=str(ore_to_nok(bal)),
+                balance_end_ore=bal,
+            )
+        )
+    return MemberHistoryOut(months=out)
 
 
 @router.get("/settlements")

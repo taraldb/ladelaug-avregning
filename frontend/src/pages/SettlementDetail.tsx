@@ -644,6 +644,7 @@ function LinesPanel({
   const [amount, setAmount] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const descriptionRef = useRef<HTMLInputElement>(null);
 
   async function add(e: FormEvent) {
     e.preventDefault();
@@ -658,6 +659,8 @@ function LinesPanel({
       setAmount("");
       setMethod("consumption");
       await onChange();
+      // Ready for the next line without reaching for the mouse.
+      descriptionRef.current?.focus();
     } catch (e2) {
       setErr(e2 instanceof ApiError ? e2.message : "Kunne ikke legge til linje.");
     }
@@ -739,6 +742,7 @@ function LinesPanel({
           <label>
             <span className="mb-1 block text-slate-400">Beskrivelse</span>
             <input
+              ref={descriptionRef}
               required
               value={description}
               onChange={(e) => setDescription(e.target.value)}

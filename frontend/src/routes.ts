@@ -7,6 +7,7 @@
  */
 export const ROUTES = {
   home: "/",
+  profile: "/min-profil",
   members: "/medlemmer",
   memberDetail: (id: string | number) => `/medlemmer/${id}`,
   users: "/brukere",

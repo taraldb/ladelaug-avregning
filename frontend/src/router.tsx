@@ -9,6 +9,7 @@ import Members from "./pages/Members";
 import MemberDetail from "./pages/MemberDetail";
 import Movements from "./pages/Movements";
 import MyAccount from "./pages/MyAccount";
+import MyProfile from "./pages/MyProfile";
 import SettlementDetail from "./pages/SettlementDetail";
 import Settlements from "./pages/Settlements";
 import SystemHealth from "./pages/SystemHealth";
@@ -97,9 +98,14 @@ function Layout() {
                 </>
               )}
               {!isAdmin && hasPortal && (
-                <NavLink to={ROUTES.home} end className={navLinkClass}>
-                  Min konto
-                </NavLink>
+                <>
+                  <NavLink to={ROUTES.home} end className={navLinkClass}>
+                    Min konto
+                  </NavLink>
+                  <NavLink to={ROUTES.profile} className={navLinkClass}>
+                    Min profil
+                  </NavLink>
+                </>
               )}
             </nav>
           </div>
@@ -145,6 +151,7 @@ export default function AppRouter() {
         }
       >
         <Route index element={<HomeOrAccount />} />
+        <Route path={ROUTES.profile} element={<MyProfile />} />
         <Route element={<RequireAdmin />}>
           <Route path={ROUTES.members} element={<Members />} />
           <Route path={ROUTES.memberDetail(":id")} element={<MemberDetail />} />

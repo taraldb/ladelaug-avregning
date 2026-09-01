@@ -8,6 +8,7 @@ import type {
   Member,
   MemberConsumption,
   MemberForecast,
+  MemberHistoryMonth,
   ParticipationPeriod,
   StatusPeriod,
   User,
@@ -275,6 +276,7 @@ interface ForecastMockState {
   settings: ForecastSettings;
   byMember: Map<number, MemberForecast>;
   consumption: Map<number, MemberConsumption>;
+  history: Map<number, MemberHistoryMonth[]>;
 }
 
 function freshForecast(): ForecastMockState {
@@ -289,6 +291,7 @@ function freshForecast(): ForecastMockState {
     },
     byMember: new Map(),
     consumption: new Map(),
+    history: new Map(),
   };
 }
 
@@ -366,6 +369,26 @@ export function seedConsumption(
   };
   forecast.consumption.set(memberId, merged);
   return merged;
+}
+
+/** Seed the rolling month strip returned by GET /api/me/history. Pass either
+ *  full rows or partials — partials are filled with zeros / unsettled. */
+export function seedMyHistory(
+  memberId: number,
+  months: Array<Partial<MemberHistoryMonth> & { month: string }>,
+): MemberHistoryMonth[] {
+  const rows: MemberHistoryMonth[] = months.map((m) => ({
+    month: m.month,
+    consumption_kwh: m.consumption_kwh ?? "0.00",
+    session_count: m.session_count ?? 0,
+    charge_nok: m.charge_nok ?? null,
+    charge_ore: m.charge_ore ?? null,
+    settled: m.settled ?? false,
+    balance_end_nok: m.balance_end_nok ?? "0.00",
+    balance_end_ore: m.balance_end_ore ?? 0,
+  }));
+  forecast.history.set(memberId, rows);
+  return rows;
 }
 
 // --- helpers ------------------------------------------------------
@@ -1153,6 +1176,65 @@ export const handlers = [
     return member instanceof Response ? member : HttpResponse.json(member);
   }),
 
+  http.patch("/api/me", async ({ request }) => {
+    const member = currentMemberOr403();
+    if (member instanceof Response) return member;
+    const body = (await request.json()) as {
+      full_name?: string;
+      email?: string | null;
+    };
+    const touched =
+      ("full_name" in body && body.full_name !== undefined) ||
+      ("email" in body && body.email !== undefined);
+    if (!touched) {
+      return HttpResponse.json(
+        errorBody("validation_error", "provide at least one field to update"),
+        { status: 422 },
+      );
+    }
+    if (body.email && !EMAIL_RE.test(body.email)) {
+      return HttpResponse.json(
+        errorBody("validation_error", "email: not a valid email address"),
+        { status: 422 },
+      );
+    }
+    const updated: Member = {
+      ...member,
+      ...(body.full_name !== undefined ? { full_name: body.full_name } : {}),
+      ...(body.email !== undefined ? { email: body.email || null } : {}),
+      updated_at: new Date().toISOString(),
+    };
+    state.members.set(member.id, updated);
+    recordAudit(
+      "member.updated",
+      "member",
+      String(member.id),
+      `Member ${updated.member_reference} updated`,
+    );
+    return HttpResponse.json(updated);
+  }),
+
+  http.post("/api/me/password", async ({ request }) => {
+    const member = currentMemberOr403();
+    if (member instanceof Response) return member;
+    const body = (await request.json()) as { new_password?: string };
+    const pw = body.new_password ?? "";
+    const weak = new Set(["0123456789", "password", "passord", "changeme"]);
+    if (pw.length < 10 || weak.has(pw.trim().toLowerCase())) {
+      return HttpResponse.json(
+        errorBody("validation_error", "that password is not allowed"),
+        { status: 422 },
+      );
+    }
+    recordAudit(
+      "auth.password_changed",
+      "user",
+      String(state.session?.id ?? ""),
+      "Password changed",
+    );
+    return HttpResponse.json({ ok: true });
+  }),
+
   http.get("/api/me/balance", () => {
     const member = currentMemberOr403();
     if (member instanceof Response) return member;
@@ -1789,6 +1871,12 @@ export const handlers = [
         session_count: 0,
       },
     );
+  }),
+
+  http.get("/api/me/history", () => {
+    const member = currentMemberOr403();
+    if (member instanceof Response) return member;
+    return HttpResponse.json({ months: forecast.history.get(member.id) ?? [] });
   }),
 
   http.get("/api/forecast/settings", () => {

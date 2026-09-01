@@ -57,6 +57,7 @@ _ME_PATHS = (
     "/api/me/status",
     "/api/me/forecast",
     "/api/me/consumption",
+    "/api/me/history",
 )
 
 

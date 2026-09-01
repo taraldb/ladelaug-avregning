@@ -5,6 +5,7 @@ import {
   getMyBalance,
   getMyConsumption,
   getMyForecast,
+  getMyHistory,
   getMyLedger,
   getMySettlements,
   getMyStatus,
@@ -12,6 +13,7 @@ import {
 } from "../api/client";
 import StatTile from "../components/StatTile";
 import Table, { type Column } from "../components/Table";
+import UsageHistoryChart from "../components/UsageHistoryChart";
 import { formatDate, formatNok, formatOre, txnTypeLabel } from "../lib/format";
 
 const columns: Column<LedgerTxn>[] = [
@@ -43,6 +45,7 @@ export default function MyAccount() {
   const settlements = useSWR("/api/me/settlements", () => getMySettlements());
   const forecast = useSWR("/api/me/forecast", () => getMyForecast());
   const consumption = useSWR("/api/me/consumption", () => getMyConsumption());
+  const history = useSWR("/api/me/history", () => getMyHistory(6));
   const access = useSWR("/api/me/access", () => getMyAccess());
 
   if (
@@ -152,12 +155,15 @@ export default function MyAccount() {
 
       <div>
         <h2 className="mb-2 text-sm font-semibold text-slate-100">
-          Forbruk denne måneden
+          Forbruk og kostnad
         </h2>
-        {consumption.data ? (
-          <p className="text-sm text-slate-300">
+        {consumption.data && (
+          <p className="mb-3 text-sm text-slate-300">
             {`${consumption.data.month}: ${consumption.data.consumption_kwh} kWh over ${consumption.data.session_count} ladeøkter.`}
           </p>
+        )}
+        {history.data ? (
+          <UsageHistoryChart months={history.data.months} />
         ) : (
           <p className="text-sm text-slate-400">Laster …</p>
         )}

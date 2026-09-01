@@ -14,7 +14,12 @@
   `disabled` on every request. Admin routers declare
   `APIRouter(dependencies=[Depends(require_admin)])` so new admin endpoints are gated by
   construction. Member-facing data is served **only** from `/api/me/*` (Phase F), each handler
-  taking `member_id = Depends(get_current_member)` — never a path/query id.
+  taking `member_id = Depends(get_current_member)` — never a path/query id. Members self-edit
+  via `PATCH /api/me` (`MemberRepo.update`, name + email only) and `POST /api/me/password`
+  (`UserRepo.set_password` + `SessionRepo.revoke_all_for_user_except` keeping the current
+  token + a `password_changed` email + `auth.password_changed` audit; no current-password
+  check). Password rules live in `security.password_policy_error` (length + a known-weak
+  blocklist), shared with the `__main__` bootstrap.
 
 - **Audit.** Every mutation writes exactly one `audit_events` row. Inside a repo that already
   holds `db._write()`, use `audit.write_audit_row(cur, ...)` (lock-free); for a stand-alone
@@ -39,7 +44,9 @@
 - **Ledger.** `LedgerRepo.list_all` is the cross-member movements read
   (`GET /api/ledger-transactions`, admin); `balance_ore_map` feeds the `balance_ore` /
   `balance_nok` fields on `MemberOut` for the member list/detail routes. Live balance is
-  still `SUM(amount_ore)` — never stored.
+  still `SUM(amount_ore)` — never stored. `running_balance_by_month` returns the
+  cumulative balance at each month's end (grouped on `substr(value_date,1,7)`), forward-
+  filled by the caller — feeds the dashboard's `GET /api/me/history`.
 
 - **Settlement invoices.** A settlement has many `settlement_attachments` rows
   (migration 0009; legacy `settlements.attachment_*` columns are dead). `SettlementRepo`
@@ -53,7 +60,8 @@
 - **Forecast (1C).** `ForecastRepo` is a pure read-model — it computes from posted settlements
   + the ledger and persists nothing except the `forecast_settings` singleton (audited via
   `update_settings`) and the `low_balance_notifications` history rows. Member-facing:
-  `/api/me/forecast`, `/api/me/consumption`. Admin: `/api/forecast/settings` (GET/PUT),
+  `/api/me/forecast`, `/api/me/consumption`, `/api/me/history` (rolling N-month strip:
+  per-month kWh + posted-settlement charge + month-end running balance). Admin: `/api/forecast/settings` (GET/PUT),
   `/api/forecast/members`. Money in `MemberForecastOut` is canonical integer øre; the object
   is always fully populated (`available: false` → zeros + a `reason`).
 

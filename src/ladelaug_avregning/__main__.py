@@ -16,10 +16,10 @@ from pathlib import Path
 
 from ladelaug_avregning.config import AppConfig, load_config
 from ladelaug_avregning.logging_setup import configure_logging
+from ladelaug_avregning.security import MIN_PASSWORD_LENGTH as _MIN_PASSWORD_LEN
+from ladelaug_avregning.security import WEAK_PASSWORDS as _WEAK_PASSWORDS
 
 _DEFAULT_CONFIG = Path("config/config.yaml")
-_MIN_PASSWORD_LEN = 10
-_WEAK_PASSWORDS = {"change-me-pls", "changeme", "change-me", "password", "admin", "secret"}
 
 
 def _load_config_or_exit(path: Path) -> AppConfig:

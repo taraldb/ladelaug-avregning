@@ -594,6 +594,23 @@ export function getMyMember(): Promise<Member> {
   return get<Member>("/api/me");
 }
 
+/** Self-edit of the caller's own member record — name and contact email only
+ * (`member_reference` / `join_date` stay admin-managed). */
+export interface MyProfileUpdate {
+  full_name?: string;
+  email?: string | null;
+}
+
+export function updateMyProfile(body: MyProfileUpdate): Promise<Member> {
+  return patch<Member>("/api/me", body);
+}
+
+/** Set a new password for the caller's own login. No current-password needed
+ * (the live session is the proof); other sessions are signed out server-side. */
+export function changeMyPassword(newPassword: string): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>("/api/me/password", { new_password: newPassword });
+}
+
 export function getMyBalance(): Promise<Balance> {
   return get<Balance>("/api/me/balance");
 }
@@ -618,6 +635,29 @@ export interface MyAccess {
 
 export function getMyAccess(): Promise<MyAccess> {
   return get<MyAccess>("/api/me/access");
+}
+
+/** One calendar month on the dashboard's rolling history strip. `charge_*` is
+ * set only once that month's settlement is posted; `balance_end_*` is the
+ * running ledger balance at the month's end. Money fields are Decimal strings /
+ * canonical integer øre — format via `lib/format`. */
+export interface MemberHistoryMonth {
+  month: string;
+  consumption_kwh: string;
+  session_count: number;
+  charge_nok: string | null;
+  charge_ore: number | null;
+  settled: boolean;
+  balance_end_nok: string;
+  balance_end_ore: number;
+}
+
+export interface MemberHistory {
+  months: MemberHistoryMonth[];
+}
+
+export function getMyHistory(months = 6): Promise<MemberHistory> {
+  return get<MemberHistory>(`/api/me/history?months=${months}`);
 }
 
 // --- chargers (admin, Epic 3) -----------------------------------

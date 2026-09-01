@@ -95,3 +95,14 @@ class SessionRepo:
     async def revoke_all_for_user(self, user_id: int) -> None:
         async with self._db._write() as cur:
             revoke_all_for_user_rows(cur, user_id, clock.now_utc().isoformat())
+
+    async def revoke_all_for_user_except(self, user_id: int, keep_token: str) -> None:
+        """Revoke every live session for the user apart from the one holding
+        ``keep_token`` — used when a member changes their own password so other
+        devices are signed out but the current one stays put."""
+        async with self._db._write() as cur:
+            cur.execute(
+                "UPDATE sessions SET revoked_at = ? "
+                "WHERE user_id = ? AND revoked_at IS NULL AND id != ?",
+                (clock.now_utc().isoformat(), user_id, security.hash_token(keep_token)),
+            )

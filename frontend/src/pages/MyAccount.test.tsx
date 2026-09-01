@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import AppRouter from "../router";
 import {
@@ -10,6 +10,7 @@ import {
   seedLedgerTxn,
   seedLowBalanceForecast,
   seedMember,
+  seedMyHistory,
   seedMySettlement,
   setSession,
 } from "../test/handlers";
@@ -79,6 +80,50 @@ describe("MyAccount (member portal)", () => {
       screen.getByText("2026-08: 42.75 kWh over 6 ladeøkter."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("renders the usage/cost history table newest-first with a hover tooltip", async () => {
+    setSession(MEMBER_USER);
+    const memberId = MEMBER_USER.member_id ?? 7;
+    seedMember({ id: memberId });
+    seedMyHistory(memberId, [
+      { month: "2026-06", consumption_kwh: "30.00", session_count: 3 },
+      {
+        month: "2026-07",
+        consumption_kwh: "50.00",
+        session_count: 4,
+        settled: true,
+        charge_nok: "123.45",
+        charge_ore: 12345,
+        balance_end_nok: "250.00",
+        balance_end_ore: 25000,
+      },
+      { month: "2026-08", consumption_kwh: "10.00", session_count: 1 },
+    ]);
+
+    const { container } = renderApp(<AppRouter />, { route: "/" });
+
+    const settled = (await screen.findByText("2026-07")).closest("tr")!;
+    expect(within(settled).getByText(/123,45\s?kr/)).toBeInTheDocument();
+
+    const unsettled = screen.getByText("2026-08").closest("tr")!;
+    expect(within(unsettled).getByText("–")).toBeInTheDocument();
+    expect(within(unsettled).getByText("10.00")).toBeInTheDocument();
+
+    // table is sorted newest month first
+    const table = settled.closest("table")!;
+    const bodyRows = within(table).getAllByRole("row").slice(1); // drop header
+    expect(bodyRows.map((r) => within(r).getByText(/2026-0\d/).textContent)).toEqual([
+      "2026-08",
+      "2026-07",
+      "2026-06",
+    ]);
+
+    // hovering a month in the combined chart reveals its numbers
+    const col = container.querySelector('rect[data-month="2026-08"]')!;
+    fireEvent.mouseEnter(col);
+    expect(await screen.findByText("ikke avregnet")).toBeInTheDocument();
+    expect(screen.getByText(/10\.00 kWh · 1 økter/)).toBeInTheDocument();
   });
 
   it("shows a low-balance banner for a below-minimum forecast", async () => {

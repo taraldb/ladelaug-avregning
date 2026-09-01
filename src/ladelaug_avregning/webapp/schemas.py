@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from ladelaug_avregning import security
 from ladelaug_avregning.money import normalise_decimal_input, ore_to_nok, parse_nok
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -191,6 +192,45 @@ class UserSetPasswordIn(BaseModel):
     def _v_password(cls, v: str) -> str:
         if len(v) < 10:
             raise ValueError("password must be at least 10 characters")
+        return v
+
+
+# --- member self-service (US-104) --------------------------------------
+
+
+class MeProfileIn(BaseModel):
+    """Partial self-edit of the caller's own member record. Only ``full_name``
+    and contact ``email`` — reference and join date stay admin-only."""
+
+    full_name: str | None = None
+    email: str | None = None
+
+    @field_validator("full_name")
+    @classmethod
+    def _v_name(cls, v: str | None) -> str | None:
+        return None if v is None else _required(v, "full_name")
+
+    @field_validator("email")
+    @classmethod
+    def _v_email(cls, v: str | None) -> str | None:
+        return _optional_email(v)
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> MeProfileIn:
+        if not self.model_fields_set:
+            raise ValueError("provide at least one field to update")
+        return self
+
+
+class MePasswordIn(BaseModel):
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _v_password(cls, v: str) -> str:
+        err = security.password_policy_error(v)
+        if err:
+            raise ValueError(err)
         return v
 
 
@@ -812,6 +852,25 @@ class MemberConsumptionOut(BaseModel):
     month: str
     consumption_kwh: str
     session_count: int
+
+
+class MemberHistoryMonthOut(BaseModel):
+    """One calendar month on the member dashboard's 6-month history strip.
+    ``charge_*`` is populated only when that month's settlement is posted;
+    ``balance_end_*`` is the running ledger balance at the month's end."""
+
+    month: str
+    consumption_kwh: str
+    session_count: int
+    charge_nok: str | None
+    charge_ore: int | None
+    settled: bool
+    balance_end_nok: str
+    balance_end_ore: int
+
+
+class MemberHistoryOut(BaseModel):
+    months: list[MemberHistoryMonthOut]
 
 
 # --- background jobs (in-process scheduler) ----------------------

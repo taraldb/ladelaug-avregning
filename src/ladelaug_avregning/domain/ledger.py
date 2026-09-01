@@ -106,6 +106,24 @@ class LedgerRepo:
         ).fetchall()
         return {int(r["member_id"]): int(r["bal"]) for r in rows}
 
+    def running_balance_by_month(self, member_id: int) -> list[tuple[str, int]]:
+        """``(YYYY-MM, cumulative balance in øre at that month's end)`` for the
+        member, ascending, one entry per month that has ledger activity.
+        ``value_date`` is a ``YYYY-MM-DD`` string, so its first 7 chars key the
+        local booking month. Callers forward-fill the gaps."""
+        rows = self._db.connection.execute(
+            "SELECT substr(value_date, 1, 7) AS ym, SUM(amount_ore) AS delta "
+            "FROM ledger_transactions WHERE member_id = ? "
+            "GROUP BY ym ORDER BY ym",
+            (member_id,),
+        ).fetchall()
+        out: list[tuple[str, int]] = []
+        running = 0
+        for r in rows:
+            running += int(r["delta"])
+            out.append((str(r["ym"]), running))
+        return out
+
     # --- mutations -------------------------------------------------------
 
     async def record_payment(

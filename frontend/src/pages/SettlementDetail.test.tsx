@@ -100,6 +100,27 @@ describe("Settlement flow (admin)", () => {
     expect(within(editedRow).getByText(/-150,00\s?kr/)).toBeInTheDocument();
   });
 
+  it("returns focus to Beskrivelse after adding a line", async () => {
+    setSession(ADMIN_USER);
+    const { user } = renderApp(<AppRouter />, { route: "/avregninger" });
+    await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
+    await screen.findByRole("heading", { name: /Avregning 20/ });
+
+    const linesPanel = (
+      await screen.findByRole("heading", { name: "Fakturalinjer" })
+    ).closest("div")!;
+    const description = within(linesPanel).getByLabelText(/Beskrivelse/);
+
+    await user.type(description, "Fastledd");
+    await user.type(within(linesPanel).getByLabelText(/Beløp/), "500");
+    await user.click(within(linesPanel).getByRole("button", { name: "Legg til" }));
+
+    await within(linesPanel).findByText("Fastledd");
+    // form cleared and the cursor is back in Beskrivelse for the next line
+    expect(description).toHaveValue("");
+    expect(description).toHaveFocus();
+  });
+
   it("assesses and books a correction on a posted settlement", async () => {
     setSession(ADMIN_USER);
     const { user } = renderApp(<AppRouter />, { route: "/avregninger" });

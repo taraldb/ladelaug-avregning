@@ -4,6 +4,30 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Members can edit their own profile and password** — new "Min profil" page
+  (`/min-profil`, in the member nav). `PATCH /api/me` lets a member change their
+  own name and contact email (andelsnummer / innmeldingsdato stay admin-only);
+  `POST /api/me/password` sets a new password with no current-password prompt —
+  the live session is the proof — enforcing a 10-char minimum plus a small
+  known-weak blocklist (`security.password_policy_error`, now shared with the
+  CLI bootstrap). A successful change revokes every *other* session for the
+  login (current device stays signed in), queues a `password_changed` email, and
+  writes an `auth.password_changed` audit row.
+- **Member dashboard — 6-month usage / cost / balance history** — "Min konto" no
+  longer shows only the current month's consumption. New
+  `GET /api/me/history?months=6` returns a rolling window ending with the current
+  Oslo month: per-month metered kWh + session count (available before any
+  settlement), the kr charge for months whose settlement is **posted** (blank
+  otherwise — no estimates), and the running ledger balance
+  (`LedgerRepo.running_balance_by_month`, `SUM(amount_ore)` grouped on
+  `substr(value_date,1,7)`, forward-filled) at each month's end. The dashboard's
+  new `UsageHistoryChart` draws one combined chart — grouped kWh/kr bars with the
+  balance line on top, a per-month hover tooltip — plus a data table (newest
+  month first). Fixes not being able to see last month's usage right after a
+  month rollover.
+- **Fakturalinjer — focus returns to Beskrivelse after "Legg til"** — on the admin
+  settlement page, adding an invoice line (Enter or the button) now puts the
+  cursor back in the Beskrivelse field so lines can be entered in a row.
 - **Zaptec session sync — last day of the window was dropped** — Zaptec's
   `GET /api/chargehistory` treats `To` as an *exclusive* midnight bound, so the
   monthly sync (which passed `To=<last day of month>`) never imported any
