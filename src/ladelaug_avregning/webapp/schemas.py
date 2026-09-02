@@ -875,8 +875,10 @@ class MemberHistoryOut(BaseModel):
 
 class ChargingHistoryMonthOut(BaseModel):
     """One calendar month on the admin "Forbruk" history strip. kWh figures are
-    Decimal strings; ``invoice_kwh`` / ``cost_per_kwh_nok`` are populated only for
-    months whose settlement is posted."""
+    Decimal strings; ``invoice_kwh`` / ``cost_per_kwh_nok`` /
+    ``consumption_cost_nok`` / ``fixed_cost_nok`` are populated only for months
+    whose settlement is posted (``consumption`` + ``fixed`` reconcile to
+    ``invoice_total_nok``)."""
 
     month: str
     assigned_kwh: str
@@ -886,6 +888,8 @@ class ChargingHistoryMonthOut(BaseModel):
     invoice_kwh: str | None
     invoice_total_nok: str | None
     cost_per_kwh_nok: str | None
+    consumption_cost_nok: str | None
+    fixed_cost_nok: str | None
     settled: bool
 
 

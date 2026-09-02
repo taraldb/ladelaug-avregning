@@ -1427,6 +1427,8 @@ export const handlers = [
         invoice_kwh: "82.00",
         invoice_total_nok: "1599.00",
         cost_per_kwh_nok: "1.9500",
+        consumption_cost_nok: "999.00",
+        fixed_cost_nok: "600.00",
         settled: true,
       },
       {
@@ -1438,6 +1440,8 @@ export const handlers = [
         invoice_kwh: "101.00",
         invoice_total_nok: "2121.00",
         cost_per_kwh_nok: "2.1000",
+        consumption_cost_nok: "1521.00",
+        fixed_cost_nok: "600.00",
         settled: true,
       },
       {
@@ -1449,10 +1453,77 @@ export const handlers = [
         invoice_kwh: null,
         invoice_total_nok: null,
         cost_per_kwh_nok: null,
+        consumption_cost_nok: null,
+        fixed_cost_nok: null,
         settled: false,
       },
     ];
     return HttpResponse.json({ months: all.slice(-months) });
+  }),
+
+  http.get("/api/charging/sessions/:zid", ({ params }) => {
+    const zid = String(params.zid);
+    const iv = (start: string, energy: string, period_month: string) => ({
+      charger_zaptec_id: "ZAP-1",
+      charger_id: 1,
+      member_id: 1,
+      period_month,
+      interval_start: start,
+      energy_kwh: energy,
+    });
+    const part = (
+      period_month: string,
+      energy_kwh: string,
+      split_method: "none" | "interval" | "duration",
+    ) => ({
+      id: 0,
+      zaptec_session_id: zid,
+      charger_id: 1,
+      charger_zaptec_id: "ZAP-1",
+      member_id: 1,
+      period_month,
+      started_at: `${period_month}-04T18:00:00+00:00`,
+      ended_at: `${period_month}-04T19:00:00+00:00`,
+      energy_kwh,
+      split_method,
+      user_full_name: "Kari Nordmann",
+      source: "zaptec",
+    });
+    const KNOWN: Record<
+      string,
+      {
+        parts: ReturnType<typeof part>[];
+        intervals: ReturnType<typeof iv>[];
+      }
+    > = {
+      "z-1": {
+        parts: [part("2026-06", "12.50", "none")],
+        intervals: [
+          iv("2026-06-04T18:00:00+00:00", "4.10", "2026-06"),
+          iv("2026-06-04T18:15:00+00:00", "5.20", "2026-06"),
+          iv("2026-06-04T18:30:00+00:00", "3.20", "2026-06"),
+        ],
+      },
+      // no interval data — exercises the fallback note
+      "z-2": { parts: [part("2026-06", "3.20", "none")], intervals: [] },
+      // crosses the March/April boundary
+      "z-3": {
+        parts: [part("2026-03", "9.20", "interval"), part("2026-04", "3.30", "interval")],
+        intervals: [
+          iv("2026-03-31T22:00:00+00:00", "4.60", "2026-03"),
+          iv("2026-03-31T22:15:00+00:00", "4.60", "2026-03"),
+          iv("2026-04-01T00:00:00+00:00", "1.65", "2026-04"),
+          iv("2026-04-01T00:15:00+00:00", "1.65", "2026-04"),
+        ],
+      },
+    };
+    const hit = KNOWN[zid];
+    if (!hit) {
+      return HttpResponse.json(errorBody("not_found", "unknown session"), {
+        status: 404,
+      });
+    }
+    return HttpResponse.json({ zaptec_session_id: zid, ...hit });
   }),
 
   http.get("/api/charging/sessions", ({ request }) => {

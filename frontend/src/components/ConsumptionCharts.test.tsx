@@ -9,6 +9,7 @@ import {
 import { renderApp } from "../test/utils";
 import ConsumptionByMemberChart from "./ConsumptionByMemberChart";
 import ConsumptionHistoryChart from "./ConsumptionHistoryChart";
+import CostSplitChart from "./CostSplitChart";
 import GridRateChart from "./GridRateChart";
 
 function thisMonth(): string {
@@ -30,6 +31,49 @@ describe("ConsumptionHistoryChart", () => {
     expect(within(june).getByText("95 kWh")).toBeInTheDocument();
     expect(within(june).getByText("5 kWh")).toBeInTheDocument();
     expect(within(june).getByText("100 kWh")).toBeInTheDocument();
+    // invoiced 101 kWh vs 100 metered -> +1 % drift on the right axis.
+    expect(within(june).getByText("+1 %")).toBeInTheDocument();
+  });
+});
+
+describe("CostSplitChart", () => {
+  it("reports the latest month's forbruk-vs-fast split in kr and %", async () => {
+    setSession(ADMIN_USER);
+    const { user } = renderApp(<CostSplitChart />);
+
+    // 2026-06 is the last settled fixture month: kr 1 521,00 consumption of
+    // kr 2 121,00 invoiced -> ~71,7 % consumption, ~28,3 % fixed.
+    expect(await screen.findByText(/kr\s?1\s?521,00 forbruk \(71,7 %\)/)).toBeInTheDocument();
+
+    await user.click(screen.getByText("Vis tall"));
+    const june = within(screen.getByRole("table")).getByRole("row", { name: /2026-06/ });
+    expect(within(june).getByText(/kr\s?1\s?521,00 · 71,7 %/)).toBeInTheDocument();
+    expect(within(june).getByText(/kr\s?600,00 · 28,3 %/)).toBeInTheDocument();
+  });
+
+  it("draws a consumption-share % line and no kr/% toggle", async () => {
+    setSession(ADMIN_USER);
+    renderApp(<CostSplitChart />);
+
+    // The % line only shows up in the legend (not a column header).
+    expect(await screen.findByText("Forbruksandel")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "%" })).not.toBeInTheDocument();
+  });
+
+  it("stacks faste kostnader below forbrukskostnader in the details table", async () => {
+    setSession(ADMIN_USER);
+    const { user } = renderApp(<CostSplitChart />);
+
+    await user.click(await screen.findByText("Vis tall"));
+    const headers = within(screen.getByRole("table"))
+      .getAllByRole("columnheader")
+      .map((h) => h.textContent);
+    expect(headers).toEqual([
+      "Måned",
+      "Faste kostnader",
+      "Forbrukskostnader",
+      "Sum faktura",
+    ]);
   });
 });
 

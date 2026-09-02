@@ -70,7 +70,7 @@ export default function GridRateChart() {
               } · ${perKwh(latest?.rate ?? null)}/kWh.`
       }
     >
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={260}>
         <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={GRID_STROKE} vertical={false} />
           <XAxis dataKey="month" tickFormatter={monthTick} tick={AXIS_TICK} />

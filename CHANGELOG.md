@@ -4,6 +4,31 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Charging-session drill-down** — clicking a row in the **Forbruk › Per medlem**
+  "Ladeøkter" table opens a modal showing the 15-minute energy curve inside that
+  session (from `charging_intervals`), with a dashed marker at every month
+  boundary and a table of how the total was quantised to each calendar month
+  (the per-month `charging_sessions` parts + their `split_method`). Falls back to
+  just the month table with an explanatory note when no interval data was
+  imported for the session. New `GET /api/charging/sessions/{zaptec_session_id}`
+  (admin; 404 `not_found`) → `{parts, intervals}`.
+
+- **Admin "Forbruk" page split into "Oversikt" / "Per medlem" views** — a
+  segmented control under the page title toggles between the aggregated grid-wide
+  trends and the per-member breakdown (this month's consumption by member + the
+  raw charging-session log). The **Per medlem** view has a single shared month
+  picker at the top that drives both sub-sections at once (the per-chart month
+  inputs are hidden while it is in control). The **Oversikt** view adds a new
+  **Kostnadsfordeling** chart: per posted month, how the supplier invoice divided
+  between *faste kostnader* (lines split equally, bottom bar segment, in kr) and
+  *forbrukskostnader* (lines allocated by kWh share, stacked on top), with the
+  consumption share drawn as a percentage line on a right-hand axis. The
+  **Nettforbruk over tid** chart gains a right-hand axis: the drift between
+  invoiced and metered kWh, `(faktura − måling) / måling`, as a percentage line.
+  New fields `consumption_cost_nok` / `fixed_cost_nok` on
+  `GET /api/charging/history` (populated for posted months with itemised lines;
+  they reconcile to `invoice_total_nok`).
+
 - **Admins can view the member portal "as" a member (read-only)** — a
   **Se som medlem** action on each row of the `/medlemmer` list drops the admin
   into that member's "Min konto" exactly as they see it (balance, prognosis,

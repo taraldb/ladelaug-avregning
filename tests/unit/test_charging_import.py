@@ -159,6 +159,45 @@ async def test_cross_month_split_prefers_interval_data(db):
     assert db.connection.execute("SELECT COUNT(*) FROM charging_intervals").fetchone()[0] == 2
 
 
+async def test_session_detail_returns_month_parts_and_intervals(db):
+    m1 = await _member(db, "M1")
+    c = await _charger(db, "C1", "z-1")
+    await ChargerRepo(db).assign(
+        c["id"], m1, effective_from="2026-01-01", actor=AuditContext.system()
+    )
+    repo = ChargingRepo(db, tz=TZ)
+
+    await repo.import_sessions(
+        [
+            _session(
+                "s-detail",
+                "z-1",
+                "2026-07-31T20:00:00+00:00",
+                "2026-08-01T04:00:00+00:00",
+                "10",
+                points=[
+                    ("2026-07-31T20:00:00+00:00", "3"),
+                    ("2026-08-01T00:00:00+00:00", "7"),
+                ],
+            )
+        ],
+        actor=AuditContext.system(),
+    )
+
+    detail = repo.session_detail("s-detail")
+    assert detail is not None
+    assert [p["period_month"] for p in detail["parts"]] == ["2026-07", "2026-08"]
+    assert all(p["split_method"] == "interval" for p in detail["parts"])
+    assert [i["interval_start"] for i in detail["intervals"]] == [
+        "2026-07-31T20:00:00+00:00",
+        "2026-08-01T00:00:00+00:00",
+    ]
+    assert detail["intervals"][0]["member_id"] == m1
+    assert detail["intervals"][0]["period_month"] == "2026-07"
+
+    assert repo.session_detail("no-such-session") is None
+
+
 async def test_cross_month_split_falls_back_to_duration(db):
     m1 = await _member(db, "M1")
     c = await _charger(db, "C1", "z-1")
@@ -313,5 +352,38 @@ def test_charging_routes(admin_client, make_member):
     assert admin_client.get("/api/charging/consumption?month=nope").status_code == 422
 
 
+async def test_session_detail_route(db, admin_client):
+    m1 = await _member(db, "M1")
+    c = await _charger(db, "C1", "z-1")
+    await ChargerRepo(db).assign(
+        c["id"], m1, effective_from="2026-01-01", actor=AuditContext.system()
+    )
+    await ChargingRepo(db, tz=TZ).import_sessions(
+        [
+            _session(
+                "s-route",
+                "z-1",
+                "2026-07-05T10:00:00+00:00",
+                "2026-07-05T12:00:00+00:00",
+                "8.4",
+                points=[
+                    ("2026-07-05T10:00:00+00:00", "4.4"),
+                    ("2026-07-05T11:00:00+00:00", "4.0"),
+                ],
+            )
+        ],
+        actor=AuditContext.system(),
+    )
+
+    body = admin_client.get("/api/charging/sessions/s-route").json()
+    assert body["zaptec_session_id"] == "s-route"
+    assert len(body["parts"]) == 1
+    assert len(body["intervals"]) == 2
+    assert sum(Decimal(i["energy_kwh"]) for i in body["intervals"]) == Decimal("8.4")
+
+    assert admin_client.get("/api/charging/sessions/does-not-exist").status_code == 404
+
+
 def test_charging_routes_require_admin(member_client):
     assert member_client.get("/api/charging/consumption?month=2026-07").status_code == 403
+    assert member_client.get("/api/charging/sessions/anything").status_code == 403

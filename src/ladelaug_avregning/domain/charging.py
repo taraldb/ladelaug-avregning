@@ -438,3 +438,36 @@ class ChargingRepo:
             (*args, limit, offset),
         ).fetchall()
         return [dict(r) for r in rows], int(total)
+
+    def session_detail(self, zaptec_session_id: str) -> dict[str, Any] | None:
+        """One Zaptec charging session in full: every per-month ``charging_sessions``
+        part (a session crossing a month boundary has more than one), oldest first,
+        plus the 15-minute ``charging_intervals`` points imported for it (present
+        only when the sync pulled ``EnergyDetails``). ``None`` when the id is
+        unknown."""
+        conn = self._db.connection
+        parts = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM charging_sessions WHERE zaptec_session_id = ? "
+                "ORDER BY period_month, started_at",
+                (zaptec_session_id,),
+            ).fetchall()
+        ]
+        if not parts:
+            return None
+        intervals = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT charger_zaptec_id, charger_id, member_id, period_month, "
+                "       interval_start, energy_kwh "
+                "FROM charging_intervals WHERE source_session_zaptec_id = ? "
+                "ORDER BY interval_start",
+                (zaptec_session_id,),
+            ).fetchall()
+        ]
+        return {
+            "zaptec_session_id": zaptec_session_id,
+            "parts": parts,
+            "intervals": intervals,
+        }

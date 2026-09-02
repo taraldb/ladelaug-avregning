@@ -6,6 +6,8 @@ interface ModalProps {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** Widen the dialog for charts / wide tables (max-w-2xl instead of max-w-lg). */
+  wide?: boolean;
 }
 
 export default function Modal({
@@ -14,6 +16,7 @@ export default function Modal({
   onClose,
   children,
   footer,
+  wide = false,
 }: ModalProps) {
   useEffect(() => {
     if (!open) return;
@@ -36,7 +39,9 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 shadow-xl"
+        className={`w-full rounded-xl border border-slate-800 bg-slate-900 shadow-xl ${
+          wide ? "max-w-2xl" : "max-w-lg"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3.5">

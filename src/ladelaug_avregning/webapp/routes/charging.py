@@ -17,7 +17,8 @@ from ladelaug_avregning.db import Database
 from ladelaug_avregning.domain import periods
 from ladelaug_avregning.domain.charging import ChargingRepo
 from ladelaug_avregning.domain.settlement import SettlementRepo
-from ladelaug_avregning.errors import DomainError
+from ladelaug_avregning.errors import DomainError, NotFoundError
+from ladelaug_avregning.money import ore_to_nok
 from ladelaug_avregning.webapp.deps import (
     get_audit_context,
     get_config,
@@ -52,6 +53,20 @@ async def list_sessions(
     return {"month": month, "total": total, "sessions": rows}
 
 
+@router.get("/sessions/{zaptec_session_id}")
+async def session_detail(
+    zaptec_session_id: str,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> dict[str, Any]:
+    """One charging session in full: its per-month parts + the 15-minute interval
+    energy points imported for it. Drives the "Ladeøkter" row drill-down."""
+    detail = ChargingRepo(db, tz=config.timezone).session_detail(zaptec_session_id)
+    if detail is None:
+        raise NotFoundError("charging session not found")
+    return detail
+
+
 @router.get("/consumption")
 async def consumption(
     month: str,
@@ -79,17 +94,17 @@ async def history(
 ) -> ChargingHistoryOut:
     """Rolling per-month strip for the admin "Forbruk" page: metered kWh split
     into assigned vs unassigned, the grid total, and — for months whose
-    settlement is posted — the supplier ``invoice_kwh`` and the effective
-    kr/kWh (``invoice_total_nok / invoice_kwh``)."""
+    settlement is posted — the supplier ``invoice_kwh``, the effective kr/kWh
+    (``invoice_total_nok / invoice_kwh``), and the invoiced cost split into
+    ``consumption``-allocated vs ``equal``-allocated (fixed) totals."""
     tz = config.timezone
     to_month = periods.current_month(tz)
     from_month = periods.add_month(to_month, -(months - 1))
     window = periods.month_range(from_month, to_month)
 
     charging = ChargingRepo(db, tz=tz)
-    posted = {
-        s["period_month"]: s for s in SettlementRepo(db, tz=tz).list() if s["status"] == "posted"
-    }
+    settlements = SettlementRepo(db, tz=tz)
+    posted = {s["period_month"]: s for s in settlements.list() if s["status"] == "posted"}
 
     def cost_per_kwh(row: dict[str, Any]) -> str | None:
         kwh, total = row.get("invoice_kwh"), row.get("invoice_total_nok")
@@ -100,10 +115,24 @@ async def history(
             return None
         return str((Decimal(total) / divisor).quantize(Decimal("0.0001")))
 
+    def cost_split(row: dict[str, Any]) -> tuple[str | None, str | None]:
+        """Split a posted settlement's invoice lines into ``consumption``-allocated
+        (forbrukskostnader) vs ``equal``-allocated (faste kostnader) totals.
+        ``(None, None)`` when the settlement carries no itemised lines."""
+        lines = settlements.lines(row["id"])
+        if not lines:
+            return None, None
+        consumption = sum(
+            int(ln["amount_ore"]) for ln in lines if ln["allocation_method"] == "consumption"
+        )
+        fixed = sum(int(ln["amount_ore"]) for ln in lines if ln["allocation_method"] == "equal")
+        return str(ore_to_nok(consumption)), str(ore_to_nok(fixed))
+
     out: list[ChargingHistoryMonthOut] = []
     for month in window:
         assigned = sum(charging.consumption_by_member(month).values(), Decimal("0.00"))
         row = posted.get(month)
+        consumption_cost_nok, fixed_cost_nok = cost_split(row) if row is not None else (None, None)
         out.append(
             ChargingHistoryMonthOut(
                 month=month,
@@ -122,6 +151,8 @@ async def history(
                     else None
                 ),
                 cost_per_kwh_nok=cost_per_kwh(row) if row is not None else None,
+                consumption_cost_nok=consumption_cost_nok,
+                fixed_cost_nok=fixed_cost_nok,
                 settled=row is not None,
             )
         )

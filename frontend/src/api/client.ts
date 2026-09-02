@@ -842,8 +842,9 @@ export function reresolveCharging(
 }
 
 /** One calendar month on the admin "Forbruk" history strip. kWh fields are
- * Decimal strings; `invoice_kwh` / `cost_per_kwh_nok` are set only for months
- * whose settlement is posted. */
+ * Decimal strings; `invoice_kwh` / `cost_per_kwh_nok` / `consumption_cost_nok` /
+ * `fixed_cost_nok` are set only for months whose settlement is posted
+ * (`consumption_cost_nok` + `fixed_cost_nok` reconcile to `invoice_total_nok`). */
 export interface ChargingHistoryMonth {
   month: string;
   assigned_kwh: string;
@@ -853,6 +854,10 @@ export interface ChargingHistoryMonth {
   invoice_kwh: string | null;
   invoice_total_nok: string | null;
   cost_per_kwh_nok: string | null;
+  /** Invoiced cost allocated by kWh share (forbrukskostnader). */
+  consumption_cost_nok: string | null;
+  /** Invoiced cost split equally across members (faste kostnader). */
+  fixed_cost_nok: string | null;
   settled: boolean;
 }
 
@@ -892,6 +897,33 @@ export function getChargingSessions(
   if (opts.offset != null) qs.set("offset", String(opts.offset));
   return get<{ month: string; total: number; sessions: ChargingSessionRow[] }>(
     `/api/charging/sessions?${qs.toString()}`,
+  );
+}
+
+/** A 15-minute `charging_intervals` point — the metered energy for that quarter
+ * hour. Present only when the Zaptec sync pulled `EnergyDetails`. */
+export interface ChargingInterval {
+  charger_zaptec_id: string;
+  charger_id: number | null;
+  member_id: number | null;
+  period_month: string;
+  interval_start: string;
+  energy_kwh: string;
+}
+
+/** One Zaptec charging session in full: its per-month `parts` (more than one when
+ * it crosses a month boundary) plus the 15-minute `intervals` imported for it. */
+export interface ChargingSessionDetail {
+  zaptec_session_id: string;
+  parts: ChargingSessionRow[];
+  intervals: ChargingInterval[];
+}
+
+export function getChargingSessionDetail(
+  zaptecSessionId: string,
+): Promise<ChargingSessionDetail> {
+  return get<ChargingSessionDetail>(
+    `/api/charging/sessions/${encodeURIComponent(zaptecSessionId)}`,
   );
 }
 

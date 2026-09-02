@@ -42,6 +42,41 @@ describe("SessionHistory", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens a drill-down modal with the intra-session month split", async () => {
+    setSession(ADMIN_USER);
+    seedMember({ id: 1, member_reference: "M-1", full_name: "Kari Nordmann" });
+
+    const { user } = renderApp(<SessionHistory />);
+    // Newest row first = the cross-month session "z-3".
+    await user.click((await screen.findAllByText("Kari Nordmann"))[0]);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Fordelt på måned")).toBeInTheDocument();
+    // It crosses a boundary, so the month-shift marker note shows.
+    expect(within(dialog).getByText(/månedsskifte/)).toBeInTheDocument();
+
+    const partsTable = within(dialog).getByRole("table");
+    expect(within(partsTable).getByText("2026-03")).toBeInTheDocument();
+    expect(within(partsTable).getByText("2026-04")).toBeInTheDocument();
+    expect(
+      within(partsTable).getAllByText("delt etter intervaller"),
+    ).toHaveLength(2);
+  });
+
+  it("notes when a session has no imported interval data", async () => {
+    setSession(ADMIN_USER);
+    seedMember({ id: 1, member_reference: "M-1", full_name: "Kari Nordmann" });
+
+    const { user } = renderApp(<SessionHistory />);
+    // The unassigned row is session "z-2", which has no intervals.
+    await user.click(await screen.findByText("Ikke tilordnet"));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/Ingen intervalldata importert/),
+    ).toBeInTheDocument();
+  });
+
   it("shows an empty table when the member has no sessions", async () => {
     setSession(ADMIN_USER);
     seedMember({ id: 1, member_reference: "M-1", full_name: "Kari Nordmann" });

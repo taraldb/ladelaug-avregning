@@ -21,9 +21,12 @@ import {
 
 /**
  * Per-member metered kWh for one month, tallest first, with unattributed
- * consumption as its own bar. Month is picked with a native `<input type=month>`
- * (same pattern as `Settlements` / `SystemHealth`). Fed by
- * `GET /api/charging/consumption` + member names from `GET /api/members`.
+ * consumption as its own bar. Fed by `GET /api/charging/consumption` + member
+ * names from `GET /api/members`.
+ *
+ * Month is normally picked here with a native `<input type=month>` (same pattern
+ * as `Settlements` / `SystemHealth`). Pass a `month` prop to drive it from a
+ * shared picker instead — the built-in one is then hidden.
  */
 
 function thisMonth(): string {
@@ -34,8 +37,17 @@ const UNASSIGNED = "__unassigned__";
 
 const kwh = (v: number) => `${v.toLocaleString("nb-NO", { maximumFractionDigits: 2 })} kWh`;
 
-export default function ConsumptionByMemberChart() {
-  const [month, setMonth] = useState(thisMonth());
+export default function ConsumptionByMemberChart({
+  month: monthProp,
+  onMonthChange,
+}: {
+  month?: string;
+  onMonthChange?: (month: string) => void;
+} = {}) {
+  const [monthState, setMonthState] = useState(thisMonth());
+  const controlled = monthProp != null;
+  const month = controlled ? monthProp : monthState;
+  const setMonth = onMonthChange ?? setMonthState;
 
   const { data, error, isLoading } = useSWR(
     ["/api/charging/consumption", month] as const,
@@ -71,17 +83,22 @@ export default function ConsumptionByMemberChart() {
       title="Forbruk per medlem"
       hint={
         <span className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5">
-            <span>Måned</span>
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
-            />
-          </label>
+          {!controlled && (
+            <label className="flex items-center gap-1.5">
+              <span>Måned</span>
+              <input
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
+              />
+            </label>
+          )}
           {!isLoading && !error && (
-            <span>· {kwh(total)} målt totalt i {month}</span>
+            <span>
+              {controlled ? "" : "· "}
+              {kwh(total)} målt totalt i {month}
+            </span>
           )}
         </span>
       }

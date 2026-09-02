@@ -41,12 +41,29 @@ def _seed_session(
     conn.commit()
 
 
-def _seed_posted_settlement(conn, *, month: str, invoice_kwh: str, invoice_total_nok: str) -> None:
-    conn.execute(
+def _seed_posted_settlement(conn, *, month: str, invoice_kwh: str, invoice_total_nok: str) -> int:
+    cur = conn.execute(
         "INSERT INTO settlements (period_month, status, grid_kwh, invoice_kwh, "
         "invoice_total_nok, created_at, usage_frozen_at, posted_at) "
         "VALUES (?, 'posted', ?, ?, ?, ?, ?, ?)",
         (month, invoice_kwh, invoice_kwh, invoice_total_nok, _NOW, _NOW, _NOW),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def _seed_line(conn, *, settlement_id: int, method: str, amount_nok: str) -> None:
+    conn.execute(
+        "INSERT INTO settlement_invoice_lines (settlement_id, description, "
+        "allocation_method, amount_ore, amount_nok, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            settlement_id,
+            f"{method} line",
+            method,
+            round(float(amount_nok) * 100),
+            amount_nok,
+            _NOW,
+        ),
     )
     conn.commit()
 
@@ -112,6 +129,42 @@ def test_history_settled_month_carries_invoice_and_rate(frozen_now, db, admin_cl
     assert rows["2026-08"]["settled"] is False
     assert rows["2026-08"]["invoice_total_nok"] is None
     assert rows["2026-08"]["cost_per_kwh_nok"] is None
+
+
+def test_history_settled_month_splits_consumption_vs_fixed_cost(
+    frozen_now, db, admin_client, make_member
+):
+    make_member(member_reference="H4")
+    sid = _seed_posted_settlement(
+        db.connection, month="2026-07", invoice_kwh="100.00", invoice_total_nok="1000.00"
+    )
+    _seed_line(db.connection, settlement_id=sid, method="consumption", amount_nok="620.00")
+    _seed_line(db.connection, settlement_id=sid, method="consumption", amount_nok="30.00")
+    _seed_line(db.connection, settlement_id=sid, method="equal", amount_nok="350.00")
+
+    rows = _by_month(admin_client.get("/api/charging/history?months=3").json())
+    jul = rows["2026-07"]
+    assert jul["consumption_cost_nok"] == "650.00"
+    assert jul["fixed_cost_nok"] == "350.00"
+    # the split reconciles to the invoiced total
+    assert jul["consumption_cost_nok"] != jul["invoice_total_nok"]
+
+    # unsettled and line-less months carry no split
+    assert rows["2026-06"]["consumption_cost_nok"] is None
+    assert rows["2026-06"]["fixed_cost_nok"] is None
+
+
+def test_history_posted_settlement_without_lines_has_no_split(
+    frozen_now, db, admin_client, make_member
+):
+    make_member(member_reference="H5")
+    _seed_posted_settlement(
+        db.connection, month="2026-07", invoice_kwh="100.00", invoice_total_nok="250.00"
+    )
+    jul = _by_month(admin_client.get("/api/charging/history?months=3").json())["2026-07"]
+    assert jul["settled"] is True
+    assert jul["consumption_cost_nok"] is None
+    assert jul["fixed_cost_nok"] is None
 
 
 def test_history_months_out_of_bounds_is_422(admin_client):

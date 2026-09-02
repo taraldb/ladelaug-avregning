@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import {
   getChargingSessions,
@@ -14,6 +14,7 @@ import {
   GRID_STROKE,
   TOOLTIP_PROPS,
 } from "./chartTheme";
+import SessionDetailModal from "./SessionDetailModal";
 import Table, { type Column } from "./Table";
 import {
   Bar,
@@ -30,6 +31,10 @@ import {
  * sparkline over the whole month, then a filterable, paginated table. Fed by the
  * existing `GET /api/charging/sessions` (raw rows); member and charger names are
  * joined client-side.
+ *
+ * Month is normally picked here. Pass a `month` prop to drive it from a shared
+ * picker instead — the built-in month input is then hidden (the member filter
+ * stays local).
  */
 
 const PAGE_SIZE = 25;
@@ -95,10 +100,23 @@ function SessionSizeSparkline({ month }: { month: string }) {
   );
 }
 
-export default function SessionHistory() {
-  const [month, setMonth] = useState(thisMonth());
+export default function SessionHistory({
+  month: monthProp,
+  onMonthChange,
+}: {
+  month?: string;
+  onMonthChange?: (month: string) => void;
+} = {}) {
+  const [monthState, setMonthState] = useState(thisMonth());
+  const controlled = monthProp != null;
+  const month = controlled ? monthProp : monthState;
+  const setMonth = onMonthChange ?? setMonthState;
   const [memberId, setMemberId] = useState("");
   const [page, setPage] = useState(0);
+  const [openSession, setOpenSession] = useState<ChargingSessionRow | null>(null);
+
+  // A month change from any source resets pagination.
+  useEffect(() => setPage(0), [month]);
 
   const { data: membersData } = useSWR("/api/members", () => listMembers());
   const { data: chargersData } = useSWR("/api/chargers", () => listChargers());
@@ -108,6 +126,14 @@ export default function SessionHistory() {
   const chargerName = new Map(
     (chargersData?.chargers ?? []).map((c) => [c.id, c.name]),
   );
+
+  const memberLabel = (s: ChargingSessionRow) =>
+    s.member_id != null
+      ? (memberName.get(s.member_id) ?? `#${s.member_id}`)
+      : (s.user_full_name ?? "Ikke tilordnet");
+  const chargerLabel = (s: ChargingSessionRow) =>
+    (s.charger_id != null && chargerName.get(s.charger_id)) ||
+    s.charger_zaptec_id;
 
   const { data, isLoading } = useSWR(
     ["/api/charging/sessions", month, memberId, page] as const,
@@ -125,21 +151,8 @@ export default function SessionHistory() {
 
   const columns: Column<ChargingSessionRow>[] = [
     { key: "start", header: "Start", render: (s) => formatDateTime(s.started_at) },
-    {
-      key: "member",
-      header: "Medlem",
-      render: (s) =>
-        s.member_id != null
-          ? (memberName.get(s.member_id) ?? `#${s.member_id}`)
-          : (s.user_full_name ?? "Ikke tilordnet"),
-    },
-    {
-      key: "charger",
-      header: "Lader",
-      render: (s) =>
-        (s.charger_id != null && chargerName.get(s.charger_id)) ||
-        s.charger_zaptec_id,
-    },
+    { key: "member", header: "Medlem", render: memberLabel },
+    { key: "charger", header: "Lader", render: chargerLabel },
     {
       key: "kwh",
       header: "kWh",
@@ -164,18 +177,17 @@ export default function SessionHistory() {
       title="Ladeøkter"
       hint={
         <span className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1.5">
-            <span>Måned</span>
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => {
-                setMonth(e.target.value);
-                setPage(0);
-              }}
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
-            />
-          </label>
+          {!controlled && (
+            <label className="flex items-center gap-1.5">
+              <span>Måned</span>
+              <input
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
+              />
+            </label>
+          )}
           <label className="flex items-center gap-1.5">
             <span>Medlem</span>
             <select
@@ -199,12 +211,25 @@ export default function SessionHistory() {
     >
       <SessionSizeSparkline month={month} />
 
+      <p className="mb-1 text-xs text-slate-500">
+        Klikk en rad for energi- og månedsfordeling inne i økten.
+      </p>
       <Table
         columns={columns}
         rows={rows}
         rowKey={(s) => s.id}
+        onRowClick={setOpenSession}
         empty={isLoading ? "Laster …" : `Ingen ladeøkter i ${month}`}
       />
+
+      {openSession && (
+        <SessionDetailModal
+          session={openSession}
+          memberName={memberLabel(openSession)}
+          chargerName={chargerLabel(openSession)}
+          onClose={() => setOpenSession(null)}
+        />
+      )}
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-400">
         <span>{total} ladeøkter</span>
