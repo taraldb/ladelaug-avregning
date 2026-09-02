@@ -296,7 +296,7 @@ async def test_equal_and_consumption_allocation_sums_to_invoice(db):
     assert sum(charges.values()) == 125000
 
 
-async def test_rounding_residual_lands_on_first_equal_member(db):
+async def test_rounding_residual_spread_across_first_equal_members(db):
     m1 = await _member(db, "M1")
     m2 = await _member(db, "M2")
     m3 = await _member(db, "M3")
@@ -305,8 +305,10 @@ async def test_rounding_residual_lands_on_first_equal_member(db):
     repo, sid = await _draft_with_lines(db, equal_nok="100.01")  # 10001 øre / 3
     await repo.freeze(sid, actor=AuditContext.system())
     charges = {m["member_id"]: m["charge_ore"] for m in repo.preview(sid)["members"]}
-    assert sorted(charges.values()) == [3333, 3333, 3335]
-    assert charges[m1] == 3335
+    # 3333.67 each -> floors 3333/3333/3333 = 9999; the 2 leftover øre go one
+    # each to the first two members (equal remainders, tie broken by order)
+    assert sorted(charges.values()) == [3333, 3334, 3334]
+    assert charges[m1] == 3334 and charges[m2] == 3334 and charges[m3] == 3333
     assert sum(charges.values()) == 10001
 
 

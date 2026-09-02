@@ -7,12 +7,15 @@ invoice PDF -> ``freeze`` (snapshot participation + consumption + balances) ->
 
 Allocation (US-606 / US-607 / US-610):
 
-* ``equal`` lines split across members flagged ``participates_equal`` in the
+* each ``equal`` line splits across members flagged ``participates_equal`` in the
   frozen snapshot;
-* ``consumption`` lines split across every snapshot member by their kWh share
-  (a member who did not charge pays 0);
-* every line's øre are apportioned by :func:`money.allocate_by_weights`, which
-  is total-preserving — the residual øre land on the largest weight.
+* all ``consumption`` lines are pooled into a single bucket that splits across
+  every snapshot member by their kWh share (a member who did not charge pays 0),
+  so the per-member charge does not depend on how the supplier costs are itemised;
+* the øre are apportioned by :func:`money.allocate_by_weights`, which is
+  total-preserving — leftover øre from flooring are spread one per member to the
+  largest fractional remainders. Pooling the consumption lines means that
+  rounding step runs once, not once per line.
 
 Corrections (Epic 7): once posted, a settlement can be *corrected* —
 ``assess_correction`` recomputes it from the month's current imported
@@ -47,6 +50,11 @@ log = logging.getLogger(__name__)
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _UNSET: Any = object()
+
+# Every ``consumption`` invoice line is pooled into one bucket and divided by kWh
+# share exactly once, so the per-member charge does not depend on how the supplier
+# costs happen to be itemised. This is the label for that single pooled row.
+CONSUMPTION_LINE_LABEL = "Forbrukskostnader"
 
 
 def _ore_nok(ore: int) -> tuple[int, str]:
@@ -521,25 +529,21 @@ class SettlementRepo:
         per_member_lines: dict[int, list[dict[str, Any]]] = {mid: [] for mid in all_ids}
         line_breakdown: list[dict[str, Any]] = []
 
-        for ln in lines:
-            if ln["allocation_method"] == "equal":
-                targets = equal_ids
-                weights: list[Decimal] = [Decimal(1)] * len(targets)
-            else:
-                targets = all_ids
-                weights = [Decimal(members_by_id[mid]["consumption_kwh"]) for mid in targets]
-            if not targets:
-                shares: list[int] = []
-            else:
-                shares = allocate_by_weights(int(ln["amount_ore"]), weights)
-            for mid, share in zip(targets, shares, strict=True):
-                if share == 0 and ln["allocation_method"] == "consumption":
-                    continue
+        # ``equal`` lines are split one at a time. Every ``consumption`` line is
+        # pooled into a single bucket and divided by kWh share exactly once, so
+        # the per-member charge is independent of how the supplier costs are
+        # itemised and the øre rounding drift is applied only once (US-610).
+        for ln in (x for x in lines if x["allocation_method"] == "equal"):
+            weights: list[Decimal] = [Decimal(1)] * len(equal_ids)
+            shares: list[int] = (
+                allocate_by_weights(int(ln["amount_ore"]), weights) if equal_ids else []
+            )
+            for mid, share in zip(equal_ids, shares, strict=True):
                 per_member_lines[mid].append(
                     {
                         "invoice_line_id": ln["id"],
                         "description": ln["description"],
-                        "kind": ln["allocation_method"],
+                        "kind": "equal",
                         "amount_ore": share,
                         "amount_nok": str(ore_to_nok(share)),
                     }
@@ -548,8 +552,36 @@ class SettlementRepo:
                 {
                     "line_id": ln["id"],
                     "description": ln["description"],
-                    "kind": ln["allocation_method"],
+                    "kind": "equal",
                     "amount_ore": int(ln["amount_ore"]),
+                    "allocated_ore": sum(shares),
+                    "recipients": len([s for s in shares if s != 0]),
+                }
+            )
+
+        consumption_lines = [x for x in lines if x["allocation_method"] == "consumption"]
+        if consumption_lines:
+            bucket_ore = sum(int(ln["amount_ore"]) for ln in consumption_lines)
+            weights = [Decimal(members_by_id[mid]["consumption_kwh"]) for mid in all_ids]
+            shares = allocate_by_weights(bucket_ore, weights) if all_ids else []
+            for mid, share in zip(all_ids, shares, strict=True):
+                if share == 0:
+                    continue
+                per_member_lines[mid].append(
+                    {
+                        "invoice_line_id": None,
+                        "description": CONSUMPTION_LINE_LABEL,
+                        "kind": "consumption",
+                        "amount_ore": share,
+                        "amount_nok": str(ore_to_nok(share)),
+                    }
+                )
+            line_breakdown.append(
+                {
+                    "line_id": None,
+                    "description": CONSUMPTION_LINE_LABEL,
+                    "kind": "consumption",
+                    "amount_ore": bucket_ore,
                     "allocated_ore": sum(shares),
                     "recipients": len([s for s in shares if s != 0]),
                 }
@@ -741,24 +773,26 @@ class SettlementRepo:
     def _allocate_charges(
         member_rows: list[dict[str, Any]], lines: list[dict[str, Any]]
     ) -> dict[int, int]:
-        """Same allocation as :meth:`compute` (equal lines over
-        ``participates_equal`` members, consumption lines kWh-weighted over
-        everyone), returning ``{member_id: charge_ore}``. Used to recompute a
-        posted settlement from current usage against its frozen invoice lines."""
+        """Same allocation as :meth:`compute`: each equal line split over
+        ``participates_equal`` members, and every consumption line pooled into one
+        bucket divided by kWh share over everyone. Returns ``{member_id:
+        charge_ore}``. Used to recompute a posted settlement from current usage
+        against its frozen invoice lines."""
         by_id = {m["member_id"]: m for m in member_rows}
         equal_ids = [m["member_id"] for m in member_rows if m["participates_equal"]]
         all_ids = [m["member_id"] for m in member_rows]
         charge: dict[int, int] = {mid: 0 for mid in all_ids}
-        for ln in lines:
-            if ln["allocation_method"] == "equal":
-                targets = equal_ids
-                weights: list[Decimal] = [Decimal(1)] * len(targets)
-            else:
-                targets = all_ids
-                weights = [Decimal(by_id[mid]["consumption_kwh"]) for mid in targets]
-            if not targets:
+        for ln in (x for x in lines if x["allocation_method"] == "equal"):
+            if not equal_ids:
                 continue
-            for mid, share in zip(targets, allocate_by_weights(int(ln["amount_ore"]), weights)):
+            weights: list[Decimal] = [Decimal(1)] * len(equal_ids)
+            for mid, share in zip(equal_ids, allocate_by_weights(int(ln["amount_ore"]), weights)):
+                charge[mid] += share
+        consumption_lines = [x for x in lines if x["allocation_method"] == "consumption"]
+        if consumption_lines and all_ids:
+            bucket_ore = sum(int(ln["amount_ore"]) for ln in consumption_lines)
+            weights = [Decimal(by_id[mid]["consumption_kwh"]) for mid in all_ids]
+            for mid, share in zip(all_ids, allocate_by_weights(bucket_ore, weights)):
                 charge[mid] += share
         return charge
 

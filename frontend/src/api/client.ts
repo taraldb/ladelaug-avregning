@@ -1046,7 +1046,9 @@ export interface SettlementPreview {
   total_charged_ore: number;
   members: PreviewMemberRow[];
   lines: {
-    line_id: number;
+    // null for the single pooled "Forbrukskostnader" row (all consumption
+    // invoice lines are divided together, once)
+    line_id: number | null;
     description: string;
     kind: AllocationMethod;
     amount_ore: number;

@@ -8,11 +8,11 @@ import pytest
 from ladelaug_avregning.money import allocate_by_weights
 
 
-def test_equal_split_puts_whole_residual_on_first():
+def test_equal_split_spreads_residual_one_ore_each():
+    # US-610: leftover øre from flooring are handed out one per entry; with
+    # equal weights (equal remainders) that is the first entries in order.
     assert allocate_by_weights(100, [1, 1, 1]) == [34, 33, 33]
-    # US-610: the leftover øre all land on the largest weight; with equal
-    # weights that is index 0.
-    assert allocate_by_weights(10, [1, 1, 1, 1]) == [4, 2, 2, 2]
+    assert allocate_by_weights(10, [1, 1, 1, 1]) == [3, 3, 2, 2]
 
 
 def test_exact_division_has_no_residual():
@@ -26,12 +26,21 @@ def test_weighted_by_consumption():
     assert sum(out) == 1000
 
 
-def test_residual_goes_to_largest_weight():
-    # floors: 1 øre * 10/30, 1*... actually pick a messy ratio
+def test_residual_goes_to_largest_remainder():
     out = allocate_by_weights(100, [Decimal(10), Decimal(11), Decimal(9)])
     assert sum(out) == 100
-    # 30 total weight -> 33.33, 36.67, 30.0 -> floors 33, 36, 30 = 99; residual 1 -> largest weight idx 1
+    # 30 total weight -> 33.33, 36.67, 30.0 -> floors 33, 36, 30 = 99;
+    # the 1 leftover øre goes to the largest fractional remainder (idx 1, .67)
     assert out == [33, 37, 30]
+
+
+def test_residual_spread_never_moves_an_entry_more_than_one_ore():
+    # 100 øre by 100:1:1:1:1 -> exact 96.15 / 0.96 * 4; floors 96,0,0,0,0 = 96;
+    # 4 leftover øre go one each to the four small entries (remainder .96),
+    # NOT all piled on the big one.
+    out = allocate_by_weights(100, [Decimal(100), Decimal(1), Decimal(1), Decimal(1), Decimal(1)])
+    assert out == [96, 1, 1, 1, 1]
+    assert sum(out) == 100
 
 
 def test_single_entry_takes_everything():
