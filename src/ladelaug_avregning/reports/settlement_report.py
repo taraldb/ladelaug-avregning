@@ -143,26 +143,17 @@ def _forecast_section(forecast: dict[str, Any] | None) -> str:
 
 
 def _basis(result: dict[str, Any], member: dict[str, Any]) -> dict[str, Any]:
-    """Settlement-wide aggregates a member is entitled to see: the fixed vs.
-    consumption cost split, participant counts, and the member's share of the
-    total metered energy."""
-    breakdown = result.get("lines") or []
-    equal_ore = sum(int(ln["amount_ore"]) for ln in breakdown if ln["kind"] == "equal")
-    consumption_ore = sum(int(ln["amount_ore"]) for ln in breakdown if ln["kind"] == "consumption")
+    """What the member's "Ditt forbruk" and "Kostnadsfordeling" sections need:
+    the per-line cost breakdown and the member's share of the total metered
+    energy."""
     members = result.get("members") or []
-    equal_members = sum(1 for m in members if m.get("participates_equal"))
     total_kwh = sum(_dec(m.get("consumption_kwh")) for m in members)
     my_kwh = _dec(member.get("consumption_kwh"))
     return {
-        "equal_ore": equal_ore,
-        "equal_nok": str(ore_to_nok(equal_ore)),
-        "equal_members": equal_members,
-        "consumption_ore": consumption_ore,
-        "consumption_nok": str(ore_to_nok(consumption_ore)),
         "total_kwh": total_kwh,
         "my_kwh": my_kwh,
         "my_kwh_pct": _pct(my_kwh, total_kwh),
-        "breakdown": breakdown,
+        "breakdown": result.get("lines") or [],
     }
 
 
@@ -234,10 +225,8 @@ def render_member_report(
         '<dl class="kv">'
         f"<dt>Målt energi (Zaptec)</dt>"
         f"<dd>{_kwh(result['grid_kwh']) if result.get('grid_kwh') else '–'} kWh</dd>"
-        f"<dt>Faste kostnader (delt likt)"
-        f'<span class="sub">delt på {b["equal_members"]} medlemmer</span></dt>'
-        f"<dd>{_nok(b['equal_nok'])}</dd>"
-        f"<dt>Forbrukskostnader (etter kWh)</dt><dd>{_nok(b['consumption_nok'])}</dd>"
+        # The fixed vs. consumption split is itemised per line in
+        # "Kostnadsfordeling" below, so it is not repeated here.
         + (
             f"<dt>Sum fakturagrunnlag</dt><dd>{_nok(invoice_total_nok)}</dd>"
             if invoice_total_nok is not None

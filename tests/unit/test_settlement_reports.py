@@ -153,11 +153,12 @@ def test_render_member_report_shows_settlement_calculation():
     result, member = _result_and_member()
     page = render_member_report(result, member)
     assert "Avregningsgrunnlag" in page
-    assert "Faste kostnader (delt likt)" in page
-    assert _money("600,00") in page  # equal-cost total (60000 øre)
-    assert "delt på 2 medlemmer" in page
-    assert "Forbrukskostnader (etter kWh)" in page
-    assert _money(f"1{NBSP}200,00") in page  # invoice + total charged
+    assert _money(f"1{NBSP}200,00") in page  # Sum fakturagrunnlag + total charged
+    # the fixed/consumption split is no longer summarised in Avregningsgrunnlag;
+    # it is itemised per line in Kostnadsfordeling instead
+    assert "Faste kostnader (delt likt)" not in page
+    assert "Forbrukskostnader (etter kWh)" not in page
+    assert _money("600,00") in page  # "Fastledd" line total (60000 øre) in the table
     # my share of the metered energy: 12.5 of 50 kWh
     assert "Din andel av totalforbruk" in page
     assert "12,5 av 50 kWh (25,0 %)" in page
