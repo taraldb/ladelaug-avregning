@@ -40,7 +40,7 @@ function EventDetail({ id, onClose }: { id: number; onClose: () => void }) {
   const e = data?.event;
 
   return (
-    <section className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4 text-sm">
+    <section className="space-y-3 border-l-2 border-emerald-500/40 bg-slate-900/40 p-4 text-sm">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-slate-100">Hendelse #{id}</h2>
         <button
@@ -193,13 +193,15 @@ export default function AuditLog() {
         columns={columns}
         rows={events}
         rowKey={(e) => e.id}
-        onRowClick={(e) => setSelectedId(e.id)}
+        onRowClick={(e) =>
+          setSelectedId((cur) => (cur === e.id ? null : e.id))
+        }
+        isExpanded={(e) => e.id === selectedId}
+        renderExpanded={(e) => (
+          <EventDetail id={e.id} onClose={() => setSelectedId(null)} />
+        )}
         empty={isLoading ? "Laster …" : "Ingen hendelser"}
       />
-
-      {selectedId != null && (
-        <EventDetail id={selectedId} onClose={() => setSelectedId(null)} />
-      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-400">
         <span>

@@ -873,6 +873,26 @@ class MemberHistoryOut(BaseModel):
     months: list[MemberHistoryMonthOut]
 
 
+class ChargingHistoryMonthOut(BaseModel):
+    """One calendar month on the admin "Forbruk" history strip. kWh figures are
+    Decimal strings; ``invoice_kwh`` / ``cost_per_kwh_nok`` are populated only for
+    months whose settlement is posted."""
+
+    month: str
+    assigned_kwh: str
+    unassigned_kwh: str
+    grid_kwh: str
+    session_count: int
+    invoice_kwh: str | None
+    invoice_total_nok: str | None
+    cost_per_kwh_nok: str | None
+    settled: bool
+
+
+class ChargingHistoryOut(BaseModel):
+    months: list[ChargingHistoryMonthOut]
+
+
 # --- background jobs (in-process scheduler) ----------------------
 
 

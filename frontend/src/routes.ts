@@ -10,6 +10,7 @@ export const ROUTES = {
   profile: "/min-profil",
   members: "/medlemmer",
   memberDetail: (id: string | number) => `/medlemmer/${id}`,
+  consumption: "/forbruk",
   users: "/brukere",
   chargers: "/ladere",
   settlements: "/avregninger",

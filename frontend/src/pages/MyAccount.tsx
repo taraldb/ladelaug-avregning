@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import useSWR from "swr";
 import {
   ApiError,
@@ -14,8 +15,10 @@ import {
 import Money from "../components/Money";
 import StatTile from "../components/StatTile";
 import Table, { type Column } from "../components/Table";
-import UsageHistoryChart from "../components/UsageHistoryChart";
 import { formatDate, formatNok, formatOre, txnTypeLabel } from "../lib/format";
+
+// Lazy so Recharts stays out of the member dashboard's initial bundle.
+const UsageHistoryChart = lazy(() => import("../components/UsageHistoryChart"));
 
 const columns: Column<LedgerTxn>[] = [
   { key: "date", header: "Valørdato", render: (t) => formatDate(t.value_date) },
@@ -47,7 +50,7 @@ export default function MyAccount() {
   const settlements = useSWR("/api/me/settlements", () => getMySettlements());
   const forecast = useSWR("/api/me/forecast", () => getMyForecast());
   const consumption = useSWR("/api/me/consumption", () => getMyConsumption());
-  const history = useSWR("/api/me/history", () => getMyHistory(6));
+  const history = useSWR("/api/me/history", () => getMyHistory(12));
   const access = useSWR("/api/me/access", () => getMyAccess());
 
   if (
@@ -324,7 +327,11 @@ export default function MyAccount() {
           </p>
         )}
         {history.data ? (
-          <UsageHistoryChart months={history.data.months} />
+          <Suspense
+            fallback={<p className="text-sm text-slate-400">Laster graf …</p>}
+          >
+            <UsageHistoryChart months={history.data.months} />
+          </Suspense>
         ) : (
           <p className="text-sm text-slate-400">Laster …</p>
         )}

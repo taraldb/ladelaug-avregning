@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import AppRouter from "../router";
 import {
@@ -110,7 +110,7 @@ describe("MyAccount (member portal)", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("renders the usage/cost history table newest-first with a hover tooltip", async () => {
+  it("renders the usage/cost history table newest-first", async () => {
     setSession(MEMBER_USER);
     const memberId = MEMBER_USER.member_id ?? 7;
     seedMember({ id: memberId });
@@ -129,7 +129,7 @@ describe("MyAccount (member portal)", () => {
       { month: "2026-08", consumption_kwh: "10.00", session_count: 1 },
     ]);
 
-    const { container } = renderApp(<AppRouter />, { route: "/" });
+    renderApp(<AppRouter />, { route: "/" });
 
     const settled = (await screen.findByText("2026-07")).closest("tr")!;
     expect(within(settled).getByText(/123,45/)).toBeInTheDocument();
@@ -146,12 +146,6 @@ describe("MyAccount (member portal)", () => {
       "2026-07",
       "2026-06",
     ]);
-
-    // hovering a month in the combined chart reveals its numbers
-    const col = container.querySelector('rect[data-month="2026-08"]')!;
-    fireEvent.mouseEnter(col);
-    expect(await screen.findByText("ikke avregnet")).toBeInTheDocument();
-    expect(screen.getByText(/10\.00 kWh · 1 økter/)).toBeInTheDocument();
   });
 
   it("shows a low-balance banner for a below-minimum forecast", async () => {

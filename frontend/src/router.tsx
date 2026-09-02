@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import {
   NavLink,
   Navigate,
@@ -24,6 +25,9 @@ import Settlements from "./pages/Settlements";
 import SystemHealth from "./pages/SystemHealth";
 import Users from "./pages/Users";
 import { ROUTES, SYSTEM_TAB_PATHS } from "./routes";
+
+// Lazy so Recharts lands in its own chunk and never loads for the other pages.
+const Consumption = lazy(() => import("./pages/Forbruk"));
 
 function FullPageMessage({ children }: { children: React.ReactNode }) {
   return (
@@ -102,6 +106,9 @@ function Layout() {
                   <NavLink to={ROUTES.members} className={navLinkClass}>
                     Medlemmer
                   </NavLink>
+                  <NavLink to={ROUTES.consumption} className={navLinkClass}>
+                    Forbruk
+                  </NavLink>
                   <NavLink to={ROUTES.settlements} className={navLinkClass}>
                     Avregninger
                   </NavLink>
@@ -166,7 +173,11 @@ function Layout() {
         </div>
       )}
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-        <Outlet />
+        <Suspense
+          fallback={<p className="text-sm text-slate-400">Laster …</p>}
+        >
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );
@@ -200,6 +211,7 @@ export default function AppRouter() {
         <Route element={<RequireAdmin />}>
           <Route path={ROUTES.members} element={<Members />} />
           <Route path={ROUTES.memberDetail(":id")} element={<MemberDetail />} />
+          <Route path={ROUTES.consumption} element={<Consumption />} />
           <Route path={ROUTES.users} element={<Users />} />
           <Route path={ROUTES.chargers} element={<Chargers />} />
           <Route path={ROUTES.settlements} element={<Settlements />} />

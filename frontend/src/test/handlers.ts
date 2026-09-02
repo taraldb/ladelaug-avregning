@@ -1413,6 +1413,112 @@ export const handlers = [
     return HttpResponse.json({ month, sessions_changed: had });
   }),
 
+  http.get("/api/charging/history", ({ request }) => {
+    const months = Number(
+      new URL(request.url).searchParams.get("months") ?? "12",
+    );
+    const all = [
+      {
+        month: "2026-05",
+        assigned_kwh: "80.00",
+        unassigned_kwh: "0.00",
+        grid_kwh: "80.00",
+        session_count: 12,
+        invoice_kwh: "82.00",
+        invoice_total_nok: "1599.00",
+        cost_per_kwh_nok: "1.9500",
+        settled: true,
+      },
+      {
+        month: "2026-06",
+        assigned_kwh: "95.00",
+        unassigned_kwh: "5.00",
+        grid_kwh: "100.00",
+        session_count: 15,
+        invoice_kwh: "101.00",
+        invoice_total_nok: "2121.00",
+        cost_per_kwh_nok: "2.1000",
+        settled: true,
+      },
+      {
+        month: "2026-07",
+        assigned_kwh: "110.00",
+        unassigned_kwh: "0.00",
+        grid_kwh: "110.00",
+        session_count: 18,
+        invoice_kwh: null,
+        invoice_total_nok: null,
+        cost_per_kwh_nok: null,
+        settled: false,
+      },
+    ];
+    return HttpResponse.json({ months: all.slice(-months) });
+  }),
+
+  http.get("/api/charging/sessions", ({ request }) => {
+    const url = new URL(request.url);
+    const month = url.searchParams.get("month") ?? "";
+    const memberId = url.searchParams.get("member_id");
+    const limit = Number(url.searchParams.get("limit") ?? "100");
+    const offset = Number(url.searchParams.get("offset") ?? "0");
+    const all = [
+      {
+        id: 1,
+        zaptec_session_id: "z-1",
+        charger_id: 1,
+        charger_zaptec_id: "ZAP-1",
+        member_id: 1,
+        period_month: month,
+        started_at: `${month}-04T18:00:00+00:00`,
+        ended_at: `${month}-04T20:30:00+00:00`,
+        energy_kwh: "12.50",
+        split_method: "none" as const,
+        user_full_name: "Kari Nordmann",
+        source: "zaptec",
+      },
+      {
+        id: 2,
+        zaptec_session_id: "z-2",
+        charger_id: 1,
+        charger_zaptec_id: "ZAP-1",
+        member_id: null,
+        period_month: month,
+        started_at: `${month}-11T08:00:00+00:00`,
+        ended_at: `${month}-11T09:15:00+00:00`,
+        energy_kwh: "3.20",
+        split_method: "interval" as const,
+        user_full_name: null,
+        source: "zaptec",
+      },
+      {
+        id: 3,
+        zaptec_session_id: "z-3",
+        charger_id: 1,
+        charger_zaptec_id: "ZAP-1",
+        member_id: 1,
+        period_month: month,
+        started_at: `${month}-19T22:00:00+00:00`,
+        ended_at: `${month}-20T06:00:00+00:00`,
+        energy_kwh: "41.00",
+        split_method: "none" as const,
+        user_full_name: "Kari Nordmann",
+        source: "zaptec",
+      },
+    ];
+    const filtered = (
+      memberId != null
+        ? all.filter((s) => s.member_id === Number(memberId))
+        : all
+    )
+      .slice()
+      .sort((a, b) => b.started_at.localeCompare(a.started_at)); // newest first
+    return HttpResponse.json({
+      month,
+      total: filtered.length,
+      sessions: filtered.slice(offset, offset + limit),
+    });
+  }),
+
   http.get("/api/zaptec/status", () =>
     HttpResponse.json({
       enabled: false,

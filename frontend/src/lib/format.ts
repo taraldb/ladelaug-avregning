@@ -99,6 +99,24 @@ export function formatDateTime(value: string | null | undefined): string {
   return `${formatDate(value)} ${hh}:${mm}`;
 }
 
+/**
+ * Format the gap between two ISO datetimes as `"1 t 23 min"` (nb-NO). Returns
+ * `"–"` when the end is missing or the range is not parseable / negative.
+ */
+export function formatDuration(
+  startISO: string | null | undefined,
+  endISO: string | null | undefined,
+): string {
+  if (!startISO || !endISO) return "–";
+  const ms = new Date(endISO).getTime() - new Date(startISO).getTime();
+  if (Number.isNaN(ms) || ms < 0) return "–";
+  const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m} min`;
+  return `${h} t ${String(m).padStart(2, "0")} min`;
+}
+
 /** Human label for a ledger transaction type. */
 export function txnTypeLabel(type: string): string {
   switch (type) {

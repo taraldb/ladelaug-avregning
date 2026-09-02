@@ -841,6 +841,60 @@ export function reresolveCharging(
   );
 }
 
+/** One calendar month on the admin "Forbruk" history strip. kWh fields are
+ * Decimal strings; `invoice_kwh` / `cost_per_kwh_nok` are set only for months
+ * whose settlement is posted. */
+export interface ChargingHistoryMonth {
+  month: string;
+  assigned_kwh: string;
+  unassigned_kwh: string;
+  grid_kwh: string;
+  session_count: number;
+  invoice_kwh: string | null;
+  invoice_total_nok: string | null;
+  cost_per_kwh_nok: string | null;
+  settled: boolean;
+}
+
+export function getChargingHistory(
+  months = 12,
+): Promise<{ months: ChargingHistoryMonth[] }> {
+  return get<{ months: ChargingHistoryMonth[] }>(
+    `/api/charging/history?months=${months}`,
+  );
+}
+
+/** A raw `charging_sessions` row as returned by `GET /api/charging/sessions`.
+ * One row per (Zaptec session, calendar month) — a session crossing a month
+ * boundary is split. `member_id` null = unassigned consumption. */
+export interface ChargingSessionRow {
+  id: number;
+  zaptec_session_id: string;
+  charger_id: number | null;
+  charger_zaptec_id: string;
+  member_id: number | null;
+  period_month: string;
+  started_at: string;
+  ended_at: string | null;
+  energy_kwh: string;
+  split_method: "none" | "interval" | "duration";
+  user_full_name: string | null;
+  source: string;
+}
+
+export function getChargingSessions(
+  month: string,
+  opts: { memberId?: number | null; limit?: number; offset?: number } = {},
+): Promise<{ month: string; total: number; sessions: ChargingSessionRow[] }> {
+  const qs = new URLSearchParams({ month });
+  if (opts.memberId != null) qs.set("member_id", String(opts.memberId));
+  if (opts.limit != null) qs.set("limit", String(opts.limit));
+  if (opts.offset != null) qs.set("offset", String(opts.offset));
+  return get<{ month: string; total: number; sessions: ChargingSessionRow[] }>(
+    `/api/charging/sessions?${qs.toString()}`,
+  );
+}
+
 // --- settlement engine (admin, Epic 6) ------------------------
 
 export type SettlementStatus = "draft" | "posted";

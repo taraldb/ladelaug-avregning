@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 export interface Column<T> {
   key: string;
@@ -13,6 +13,10 @@ interface TableProps<T> {
   rowKey: (row: T) => string | number;
   empty?: ReactNode;
   onRowClick?: (row: T) => void;
+  /** When set together with `isExpanded`, a full-width row is rendered directly
+   *  beneath any row for which `isExpanded` returns true. */
+  renderExpanded?: (row: T) => ReactNode;
+  isExpanded?: (row: T) => boolean;
 }
 
 export default function Table<T>({
@@ -21,6 +25,8 @@ export default function Table<T>({
   rowKey,
   empty = "Ingen rader",
   onRowClick,
+  renderExpanded,
+  isExpanded,
 }: TableProps<T>) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-800">
@@ -45,23 +51,36 @@ export default function Table<T>({
               </td>
             </tr>
           ) : (
-            rows.map((row) => (
-              <tr
-                key={rowKey(row)}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={
-                  onRowClick
-                    ? "cursor-pointer text-slate-200 hover:bg-slate-800/50"
-                    : "text-slate-200"
-                }
-              >
-                {columns.map((c) => (
-                  <td key={c.key} className={`px-3 py-2 ${c.className ?? ""}`}>
-                    {c.render(row)}
-                  </td>
-                ))}
-              </tr>
-            ))
+            rows.map((row) => {
+              const expanded = renderExpanded != null && (isExpanded?.(row) ?? false);
+              return (
+                <Fragment key={rowKey(row)}>
+                  <tr
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    className={
+                      onRowClick
+                        ? `cursor-pointer text-slate-200 hover:bg-slate-800/50 ${
+                            expanded ? "bg-slate-800/40" : ""
+                          }`
+                        : "text-slate-200"
+                    }
+                  >
+                    {columns.map((c) => (
+                      <td key={c.key} className={`px-3 py-2 ${c.className ?? ""}`}>
+                        {c.render(row)}
+                      </td>
+                    ))}
+                  </tr>
+                  {expanded && (
+                    <tr className="bg-slate-900/40">
+                      <td colSpan={columns.length} className="p-0">
+                        {renderExpanded(row)}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })
           )}
         </tbody>
       </table>

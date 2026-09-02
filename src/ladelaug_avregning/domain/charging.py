@@ -378,6 +378,15 @@ class ChargingRepo:
             ).fetchone()[0]
         )
 
+    def session_count(self, month: str) -> int:
+        """Grid-wide session-row count for the month (assigned + unassigned)."""
+        return int(
+            self._db.connection.execute(
+                "SELECT COUNT(*) FROM charging_sessions WHERE period_month = ?",
+                (month,),
+            ).fetchone()[0]
+        )
+
     def total_kwh(self, month: str) -> Decimal:
         rows = self._db.connection.execute(
             "SELECT energy_kwh FROM charging_sessions WHERE period_month = ?", (month,)
@@ -424,8 +433,8 @@ class ChargingRepo:
             f"SELECT COUNT(*) FROM charging_sessions WHERE {where}", args
         ).fetchone()[0]
         rows = conn.execute(
-            f"SELECT * FROM charging_sessions WHERE {where} ORDER BY started_at, id "
-            "LIMIT ? OFFSET ?",
+            f"SELECT * FROM charging_sessions WHERE {where} "
+            "ORDER BY started_at DESC, id DESC LIMIT ? OFFSET ?",
             (*args, limit, offset),
         ).fetchall()
         return [dict(r) for r in rows], int(total)
