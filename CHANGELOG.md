@@ -4,6 +4,18 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Settlement list chips for corrections / consumption drift** — the
+  **Avregninger** table now flags the "something changed since this settlement
+  was built" cases per row: a **posted** settlement whose current imported usage
+  no longer matches the frozen snapshot shows *"Endret forbruk – korrigering
+  tilgjengelig"*, a **frozen draft** whose usage moved after the freeze shows
+  *"Forbruk endret – frys på nytt"*, and a posted settlement with corrections
+  already booked shows *"Korrigert"* (with a `×N` count). The **Status** column
+  also separates a shared draft (*"Utkast · delt"*) from an ordinary
+  (unshared) one (*"Utkast"*). `GET /api/settlement` gains derived
+  `correction_pending` / `correction_count` / `consumption_changed` /
+  `draft_shared` fields per row.
+
 - **Charging-session drill-down** — clicking a row in the **Forbruk › Per medlem**
   "Ladeøkter" table opens a modal showing the 15-minute energy curve inside that
   session (from `charging_intervals`), with a dashed marker at every month

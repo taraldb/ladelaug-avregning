@@ -170,6 +170,29 @@ async def test_equal_line_is_frozen_across_a_correction(db):
     assert by_id[m2]["corrected_charge_ore"] == 32000
 
 
+async def test_list_flags_posted_correction_pending_then_counted(db):
+    m1 = await _member(db, "M1")
+    m2 = await _member(db, "M2")
+    _add_consumption(db, member_id=m1, kwh=10)
+    _add_consumption(db, member_id=m2, kwh=10)
+    repo, sid = await _posted(db, consumption_nok="1000", invoice_kwh="20")
+
+    row = next(s for s in repo.list() if s["id"] == sid)
+    assert row["correction_pending"] is False
+    assert row["correction_count"] == 0
+    assert row["consumption_changed"] is False  # only ever set for a frozen draft
+
+    # a late session lands after posting -> a correction becomes available
+    _add_consumption(db, member_id=m1, kwh=10, sid="s-late")
+    row = next(s for s in repo.list() if s["id"] == sid)
+    assert row["correction_pending"] is True
+
+    await repo.post_correction(sid, actor=SYS)
+    row = next(s for s in repo.list() if s["id"] == sid)
+    assert row["correction_pending"] is False
+    assert row["correction_count"] == 1
+
+
 async def test_second_correction_does_not_double_count(db):
     m1 = await _member(db, "M1")
     m2 = await _member(db, "M2")

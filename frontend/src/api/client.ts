@@ -947,6 +947,17 @@ export interface Settlement {
   posted_at: string | null;
   /** Set once the board has shared this frozen draft with members for preview. */
   draft_shared_at: string | null;
+  /** `draft_shared_at != null` — a frozen draft published to members. Lets the
+   *  list separate a shared draft from an ordinary (unshared) one. */
+  draft_shared: boolean;
+  /** Frozen **draft** whose imported usage moved after the freeze — must be
+   *  re-frozen before it is shared or posted. */
+  consumption_changed: boolean;
+  /** **Posted** settlement whose current imported usage no longer matches the
+   *  frozen snapshot: a correction can be assessed and booked. */
+  correction_pending: boolean;
+  /** How many corrections have already been booked against a posted settlement. */
+  correction_count: number;
 }
 
 export interface InvoiceLine {

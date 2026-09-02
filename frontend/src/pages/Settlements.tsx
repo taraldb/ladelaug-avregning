@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import useSWR from "swr";
 import { ROUTES } from "../routes";
@@ -11,12 +11,74 @@ import {
 import Money from "../components/Money";
 import Table, { type Column } from "../components/Table";
 
+function Chip({
+  tone,
+  children,
+}: {
+  tone: "emerald" | "amber" | "slate";
+  children: ReactNode;
+}) {
+  const cls = {
+    emerald: "bg-emerald-500/20 text-emerald-300",
+    amber: "bg-amber-500/20 text-amber-300",
+    slate: "bg-slate-700/40 text-slate-300",
+  }[tone];
+  return (
+    <span
+      className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${cls}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** The status of a settlement, with a shared draft called out separately from
+ *  an ordinary (unshared) one. */
+function StatusChip({ s }: { s: Settlement }) {
+  if (s.status === "posted") return <Chip tone="emerald">Bokført</Chip>;
+  if (s.draft_shared) return <Chip tone="amber">Utkast · delt</Chip>;
+  return <Chip tone="slate">Utkast</Chip>;
+}
+
+/** Zero or more chips for the "changes since this settlement was built" cases:
+ *  a posted settlement whose usage drifted (correction available), a frozen
+ *  draft whose usage drifted (re-freeze needed), and how many corrections have
+ *  already been booked. */
+function FlagChips({ s }: { s: Settlement }) {
+  const chips: ReactNode[] = [];
+  if (s.correction_pending)
+    chips.push(
+      <Chip key="pending" tone="amber">
+        Endret forbruk – korrigering tilgjengelig
+      </Chip>,
+    );
+  if (s.consumption_changed)
+    chips.push(
+      <Chip key="stale" tone="amber">
+        Forbruk endret – frys på nytt
+      </Chip>,
+    );
+  if (s.correction_count > 0)
+    chips.push(
+      <Chip key="corrected" tone="slate">
+        Korrigert{s.correction_count > 1 ? ` ×${s.correction_count}` : ""}
+      </Chip>,
+    );
+  if (chips.length === 0) return <span className="text-slate-600">–</span>;
+  return <div className="flex flex-wrap gap-1">{chips}</div>;
+}
+
 const columns: Column<Settlement>[] = [
   { key: "month", header: "Måned", render: (s) => s.period_month },
   {
     key: "status",
     header: "Status",
-    render: (s) => (s.status === "posted" ? "Bokført" : "Utkast"),
+    render: (s) => <StatusChip s={s} />,
+  },
+  {
+    key: "flags",
+    header: "Merknad",
+    render: (s) => <FlagChips s={s} />,
   },
   {
     key: "invoice",

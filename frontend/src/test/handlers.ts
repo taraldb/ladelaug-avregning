@@ -1625,6 +1625,10 @@ export const handlers = [
       created_at: "2026-08-01T00:00:00+00:00",
       posted_at: null,
       draft_shared_at: null,
+      draft_shared: false,
+      consumption_changed: false,
+      correction_pending: false,
+      correction_count: 0,
     };
     mock1b.settlements.push(settlement);
     mock1b.details.set(settlement.id, {
@@ -1744,12 +1748,18 @@ export const handlers = [
   }),
   http.post("/api/settlement/:id/share-draft", ({ params }) => {
     const d = mock1b.details.get(Number(params.id));
-    if (d) d.settlement.draft_shared_at = "2026-08-02T09:00:00+00:00";
+    if (d) {
+      d.settlement.draft_shared_at = "2026-08-02T09:00:00+00:00";
+      d.settlement.draft_shared = true;
+    }
     return HttpResponse.json(d);
   }),
   http.delete("/api/settlement/:id/share-draft", ({ params }) => {
     const d = mock1b.details.get(Number(params.id));
-    if (d) d.settlement.draft_shared_at = null;
+    if (d) {
+      d.settlement.draft_shared_at = null;
+      d.settlement.draft_shared = false;
+    }
     return HttpResponse.json(d);
   }),
   http.get("/api/settlement/:id/preview", ({ params }) =>
@@ -2197,6 +2207,10 @@ interface Mock1bState {
     created_at: string;
     posted_at: string | null;
     draft_shared_at: string | null;
+    draft_shared: boolean;
+    consumption_changed: boolean;
+    correction_pending: boolean;
+    correction_count: number;
   }[];
   details: Map<
     number,
@@ -2285,6 +2299,33 @@ export function seedMySettlement(
     report_url: overrides.report_url ?? `/api/me/settlements/${id}/report`,
   };
   mock1b.mySettlements.push(entry);
+  return entry;
+}
+
+export function seedSettlement(
+  overrides: Partial<Mock1bState["settlements"][number]> = {},
+): Mock1bState["settlements"][number] {
+  const id = overrides.id ?? nextId();
+  const entry: Mock1bState["settlements"][number] = {
+    id,
+    period_month: overrides.period_month ?? "2026-07",
+    status: overrides.status ?? "draft",
+    invoice_kwh: overrides.invoice_kwh ?? null,
+    invoice_total_nok: overrides.invoice_total_nok ?? null,
+    grid_kwh: overrides.grid_kwh ?? null,
+    attachment_filename: overrides.attachment_filename ?? null,
+    attachment_path: overrides.attachment_path ?? null,
+    note: overrides.note ?? null,
+    usage_frozen_at: overrides.usage_frozen_at ?? null,
+    created_at: overrides.created_at ?? "2026-08-01T00:00:00+00:00",
+    posted_at: overrides.posted_at ?? null,
+    draft_shared_at: overrides.draft_shared_at ?? null,
+    draft_shared: overrides.draft_shared ?? overrides.draft_shared_at != null,
+    consumption_changed: overrides.consumption_changed ?? false,
+    correction_pending: overrides.correction_pending ?? false,
+    correction_count: overrides.correction_count ?? 0,
+  };
+  mock1b.settlements.push(entry);
   return entry;
 }
 

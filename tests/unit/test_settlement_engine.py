@@ -359,6 +359,40 @@ async def test_usage_stale_warning_when_unassigned_appears_after_freeze(db):
     assert any(w["code"] == "usage_stale" for w in repo.preview(sid)["warnings"])
 
 
+async def test_list_flags_draft_shared_and_consumption_changed(db):
+    sys = AuditContext.system()
+    repo = SettlementRepo(db)
+
+    # a bare draft carries every chip flag off
+    bare = await repo.create_draft("2026-05", actor=sys)
+    row = next(s for s in repo.list() if s["id"] == bare["id"])
+    assert (row["draft_shared"], row["consumption_changed"]) == (False, False)
+    assert (row["correction_pending"], row["correction_count"]) == (False, 0)
+
+    # freeze the MONTH draft and share it with members
+    m1 = await _member(db, "M1")
+    _add_consumption(db, member_id=m1, kwh=10)
+    db.connection.execute("UPDATE charging_sessions SET updated_at = '2000-01-01T00:00:00+00:00'")
+    db.connection.commit()
+    _, sid = await _draft_with_lines(db, equal_nok="100")
+    await repo.freeze(sid, actor=sys)
+    await repo.share_draft(sid, actor=sys)
+
+    row = next(s for s in repo.list() if s["id"] == sid)
+    assert row["draft_shared"] is True
+    assert row["consumption_changed"] is False
+
+    # a session for the month changes after the freeze -> re-freeze needed
+    db.connection.execute(
+        "UPDATE charging_sessions SET updated_at = '2999-01-01T00:00:00+00:00' "
+        "WHERE period_month = ?",
+        (MONTH,),
+    )
+    db.connection.commit()
+    row = next(s for s in repo.list() if s["id"] == sid)
+    assert row["consumption_changed"] is True
+
+
 # --- post -------------------------------------------------------
 
 

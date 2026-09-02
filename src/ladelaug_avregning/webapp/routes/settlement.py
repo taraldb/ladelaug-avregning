@@ -86,8 +86,10 @@ async def suggested_participants(
 
 
 @router.get("")
-async def list_settlements(db: Database = Depends(get_db)) -> dict[str, Any]:
-    return {"settlements": SettlementRepo(db).list()}
+async def list_settlements(
+    db: Database = Depends(get_db), config: AppConfig = Depends(get_config)
+) -> dict[str, Any]:
+    return {"settlements": _repo(db, config).list()}
 
 
 @router.post("/drafts", status_code=201, dependencies=[Depends(require_fetch)])

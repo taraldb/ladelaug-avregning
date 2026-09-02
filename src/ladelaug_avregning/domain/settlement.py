@@ -118,10 +118,49 @@ class SettlementRepo:
         return dict(row) if row else None
 
     def list(self) -> list[dict[str, Any]]:
+        """Every settlement, newest month first. Each row carries the raw
+        ``settlements`` columns plus a few derived flags the list UI renders as
+        chips:
+
+        * ``draft_shared`` — a frozen draft the board has published to its
+          members for preview (mirrors ``draft_shared_at`` being set); lets the
+          list tell a shared draft apart from an ordinary one.
+        * ``consumption_changed`` — a frozen *draft* whose imported usage moved
+          after the freeze (new / re-resolved sessions, or fresh unassigned
+          kWh); it must be re-frozen before it is shared or posted.
+        * ``correction_pending`` — a *posted* settlement whose current imported
+          usage no longer matches the frozen snapshot, so a correction can be
+          assessed and booked (Epic 7).
+        * ``correction_count`` — how many corrections have already been booked
+          against a posted settlement.
+        """
         rows = self._db.connection.execute(
             "SELECT * FROM settlements ORDER BY period_month DESC"
         ).fetchall()
-        return [dict(r) for r in rows]
+        correction_counts = self._correction_counts()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            row = dict(r)
+            sid = int(row["id"])
+            frozen_at = row["usage_frozen_at"]
+            row["draft_shared"] = row["draft_shared_at"] is not None
+            row["correction_count"] = correction_counts.get(sid, 0)
+            if row["status"] == "posted":
+                row["consumption_changed"] = False
+                row["correction_pending"] = self.has_pending_correction(sid)
+            else:
+                row["consumption_changed"] = bool(frozen_at) and self._usage_changed_since(
+                    row["period_month"], frozen_at
+                )
+                row["correction_pending"] = False
+            out.append(row)
+        return out
+
+    def _correction_counts(self) -> dict[int, int]:
+        rows = self._db.connection.execute(
+            "SELECT settlement_id, COUNT(*) AS n FROM settlement_corrections GROUP BY settlement_id"
+        ).fetchall()
+        return {int(r["settlement_id"]): int(r["n"]) for r in rows}
 
     def lines(self, settlement_id: int) -> list[dict[str, Any]]:
         rows = self._db.connection.execute(
