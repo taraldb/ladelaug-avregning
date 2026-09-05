@@ -90,9 +90,20 @@ async def test_single_month_session_resolves_member_and_is_idempotent(db):
     assert Decimal(row["energy_kwh"]) == Decimal("8.400")
     assert row["split_method"] == "none"
 
+    before = db.connection.execute("SELECT updated_at FROM charging_sessions").fetchone()[0]
     r2 = await repo.import_sessions([s], actor=AuditContext.system())
-    assert r2["rows_inserted"] == 0 and r2["rows_updated"] == 1
+    # an unchanged re-import is a no-op: the row is not rewritten, so ``updated_at``
+    # (which ``_usage_changed_since`` reads to spot post-freeze usage drift) holds.
+    assert r2["rows_inserted"] == 0 and r2["rows_updated"] == 0 and r2["rows_unchanged"] == 1
     assert db.connection.execute("SELECT COUNT(*) FROM charging_sessions").fetchone()[0] == 1
+    assert db.connection.execute("SELECT updated_at FROM charging_sessions").fetchone()[0] == before
+
+    # a real change (energy revised by Zaptec) does rewrite the row and bump updated_at
+    s2 = _session("s-1", "z-1", "2026-07-05T10:00:00+00:00", "2026-07-05T12:00:00+00:00", "9.1")
+    r3 = await repo.import_sessions([s2], actor=AuditContext.system())
+    assert r3["rows_updated"] == 1 and r3["rows_unchanged"] == 0
+    after = db.connection.execute("SELECT updated_at, energy_kwh FROM charging_sessions").fetchone()
+    assert after["updated_at"] > before and Decimal(after["energy_kwh"]) == Decimal("9.100")
 
 
 async def test_session_energy_rounds_half_up_like_the_zaptec_report(db):

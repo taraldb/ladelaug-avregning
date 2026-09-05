@@ -1,9 +1,11 @@
 """Imported charging data — sessions and 15-minute intervals (Epic 4).
 
 ``import_sessions`` takes parsed :class:`ZaptecSession` objects and writes them
-idempotently (keyed by Zaptec id + local month). Sessions that cross a month
-boundary are split (US-405): interval data first, pro-rata by duration as the
-fallback. Each session part is attributed to the member holding the charger's
+idempotently (keyed by Zaptec id + local month) — a re-import whose payload
+matches the stored row leaves it (and its ``updated_at``) untouched, so it never
+looks like the usage moved after a settlement freeze. Sessions that cross a
+month boundary are split (US-405): interval data first, pro-rata by duration as
+the fallback. Each session part is attributed to the member holding the charger's
 assignment on the part's start date; an unresolved part has ``member_id`` NULL
 and counts as *unassigned consumption* (US-304).
 """
@@ -124,7 +126,7 @@ class ChargingRepo:
         charger_id_for, member_for = self._resolver(chargers)
 
         now = clock.now_utc().isoformat()
-        inserted = updated = interval_rows = split_sessions = 0
+        inserted = updated = unchanged = interval_rows = split_sessions = 0
         touched_months: set[str] = set()
 
         async with self._db._write() as cur:
@@ -140,7 +142,8 @@ class ChargingRepo:
                     member_id = member_for(charger_id, pstart.date().isoformat())
                     energy_str = str(_q(energy))
                     row = cur.execute(
-                        "SELECT id, energy_kwh, member_id, ended_at FROM charging_sessions "
+                        "SELECT id, charger_id, member_id, started_at, ended_at, energy_kwh, "
+                        "split_method, user_full_name, raw_json FROM charging_sessions "
                         "WHERE zaptec_session_id = ? AND period_month = ?",
                         (s.session_id, month),
                     ).fetchone()
@@ -169,24 +172,53 @@ class ChargingRepo:
                         )
                         inserted += 1
                     else:
-                        cur.execute(
-                            "UPDATE charging_sessions SET charger_id = ?, member_id = ?, "
-                            "started_at = ?, ended_at = ?, energy_kwh = ?, split_method = ?, "
-                            "user_full_name = ?, raw_json = ?, updated_at = ? WHERE id = ?",
-                            (
-                                charger_id,
-                                member_id,
-                                pstart.isoformat(),
-                                pend.isoformat(),
-                                energy_str,
-                                method,
-                                s.user_full_name,
-                                payload,
-                                now,
-                                row["id"],
-                            ),
+                        # Only touch the row — and bump ``updated_at`` — when the
+                        # imported data actually differs. A re-import with an
+                        # unchanged payload (the daily sync re-pulls the previous
+                        # month's last day to catch boundary sessions) must not
+                        # move ``updated_at``, or it looks like the usage changed
+                        # after a settlement freeze (``_usage_changed_since``).
+                        current = (
+                            row["charger_id"],
+                            row["member_id"],
+                            row["started_at"],
+                            row["ended_at"],
+                            row["energy_kwh"],
+                            row["split_method"],
+                            row["user_full_name"],
+                            row["raw_json"],
                         )
-                        updated += 1
+                        incoming = (
+                            charger_id,
+                            member_id,
+                            pstart.isoformat(),
+                            pend.isoformat(),
+                            energy_str,
+                            method,
+                            s.user_full_name,
+                            payload,
+                        )
+                        if current == incoming:
+                            unchanged += 1
+                        else:
+                            cur.execute(
+                                "UPDATE charging_sessions SET charger_id = ?, member_id = ?, "
+                                "started_at = ?, ended_at = ?, energy_kwh = ?, split_method = ?, "
+                                "user_full_name = ?, raw_json = ?, updated_at = ? WHERE id = ?",
+                                (
+                                    charger_id,
+                                    member_id,
+                                    pstart.isoformat(),
+                                    pend.isoformat(),
+                                    energy_str,
+                                    method,
+                                    s.user_full_name,
+                                    payload,
+                                    now,
+                                    row["id"],
+                                ),
+                            )
+                            updated += 1
 
                 for pt in s.energy_details:
                     imonth = periods.month_key(pt.timestamp, self._tz)
@@ -218,13 +250,14 @@ class ChargingRepo:
                 entity_type="charging_import",
                 entity_id=None,
                 summary=(
-                    f"Imported {inserted} new / {updated} updated session rows "
-                    f"across {sorted(touched_months)}"
+                    f"Imported {inserted} new / {updated} updated / {unchanged} unchanged "
+                    f"session rows across {sorted(touched_months)}"
                 ),
                 detail={
                     "sessions_in": len(sessions),
                     "rows_inserted": inserted,
                     "rows_updated": updated,
+                    "rows_unchanged": unchanged,
                     "cross_month_sessions": split_sessions,
                     "interval_rows_inserted": interval_rows,
                     "months": sorted(touched_months),
@@ -235,6 +268,7 @@ class ChargingRepo:
             "sessions_in": len(sessions),
             "rows_inserted": inserted,
             "rows_updated": updated,
+            "rows_unchanged": unchanged,
             "cross_month_sessions": split_sessions,
             "interval_rows_inserted": interval_rows,
             "months": sorted(touched_months),

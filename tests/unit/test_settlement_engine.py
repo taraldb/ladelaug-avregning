@@ -393,6 +393,45 @@ async def test_list_flags_draft_shared_and_consumption_changed(db):
     assert row["consumption_changed"] is True
 
 
+async def test_noop_reimport_does_not_flip_consumption_changed(db):
+    """The daily Zaptec sync re-pulls the previous month's last day to catch
+    boundary sessions. A re-import that carries no new data must not touch
+    ``charging_sessions.updated_at`` — otherwise a frozen draft is wrongly
+    flagged "Forbruk endret – frys på nytt" every sync run."""
+    from ladelaug_avregning.domain.chargers import ChargerRepo
+    from ladelaug_avregning.domain.charging import ChargingRepo
+    from ladelaug_avregning.zaptec.client import ZaptecSession
+
+    sys = AuditContext.system()
+    repo = SettlementRepo(db)
+    m1 = await _member(db, "M1")
+    c = await ChargerRepo(db).create(name="C1", zaptec_id="z-1", actor=sys)
+    await ChargerRepo(db).assign(c["id"], m1, effective_from="2026-01-01", actor=sys)
+    charging = ChargingRepo(db, tz="Europe/Oslo")
+
+    sess = ZaptecSession(
+        session_id="s-1",
+        charger_zaptec_id="z-1",
+        device_id="d",
+        started_at=f"{MONTH}-10T10:00:00+00:00",
+        ended_at=f"{MONTH}-10T12:00:00+00:00",
+        energy_kwh=Decimal(10),
+        user_id="u",
+        user_full_name="Kari",
+        energy_details=[],
+        raw={"Id": "s-1"},
+    )
+    await charging.import_sessions([sess], actor=sys)
+
+    _, sid = await _draft_with_lines(db, equal_nok="100")
+    await repo.freeze(sid, actor=sys)
+    assert next(s for s in repo.list() if s["id"] == sid)["consumption_changed"] is False
+
+    res = await charging.import_sessions([sess], actor=sys)
+    assert (res["rows_updated"], res["rows_unchanged"]) == (0, 1)
+    assert next(s for s in repo.list() if s["id"] == sid)["consumption_changed"] is False
+
+
 # --- post -------------------------------------------------------
 
 
