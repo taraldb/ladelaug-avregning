@@ -8,6 +8,7 @@ can only ever see their own record, balance, ledger, and status. A pure admin
 
 from __future__ import annotations
 
+import mimetypes
 from decimal import Decimal
 from typing import Any
 
@@ -369,7 +370,13 @@ async def my_settlement_invoice(
         summary=f"Member downloaded invoice {row['filename']!r} for settlement {settlement_id}",
         detail={"member_id": member_id, "attachment_id": attachment_id, "draft": is_draft},
     )
-    return FileResponse(path, media_type="application/pdf", filename=row["filename"])
+    media_type = mimetypes.guess_type(row["filename"])[0] or "application/octet-stream"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=row["filename"],
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/settlements/{settlement_id}/report", response_class=HTMLResponse)

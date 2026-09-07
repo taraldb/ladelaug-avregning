@@ -6,6 +6,7 @@ engine. Router-level ``require_admin``; mutating routes add ``require_fetch``.
 
 from __future__ import annotations
 
+import mimetypes
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, UploadFile
@@ -215,7 +216,13 @@ async def download_attachment(
         summary=f"Attachment {row['filename']!r} downloaded from settlement {settlement_id}",
         detail={"attachment_id": attachment_id, "filename": row["filename"]},
     )
-    return FileResponse(path, media_type="application/pdf", filename=row["filename"])
+    media_type = mimetypes.guess_type(row["filename"])[0] or "application/octet-stream"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=row["filename"],
+        content_disposition_type="inline",
+    )
 
 
 @router.delete(

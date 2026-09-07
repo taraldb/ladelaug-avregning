@@ -163,7 +163,9 @@ def _invoice_section(invoices: list[dict[str, str]] | None) -> str:
     if not invoices:
         return ""
     items = "".join(
-        f'<li><a href="{_esc(i["href"])}">{_esc(i["filename"])}</a></li>' for i in invoices
+        f'<li><a href="{_esc(i["href"])}" target="_blank" rel="noopener">'
+        f"{_esc(i['filename'])}</a></li>"
+        for i in invoices
     )
     return (
         "<h2>Faktura fra strømleverandør</h2>"
