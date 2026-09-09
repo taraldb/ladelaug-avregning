@@ -24,6 +24,7 @@ function thisMonth(): string {
 const JOB_LABELS: Record<string, string> = {
   drain_mail: "Send e-postkø",
   low_balance_scan: "Lavsaldo-varsling",
+  gmail_token_check: "Gmail-token-sjekk",
   zaptec_sync_sessions: "Zaptec-import (ladeøkter)",
 };
 

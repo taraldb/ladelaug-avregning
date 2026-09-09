@@ -281,7 +281,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("drain-mail", help="send queued emails (wire to cron)")
 
     rj = sub.add_parser("run-job", help="run one in-process scheduler job once")
-    rj.add_argument("name", help="drain_mail | low_balance_scan | zaptec_sync_sessions")
+    rj.add_argument(
+        "name", help="drain_mail | low_balance_scan | gmail_token_check | zaptec_sync_sessions"
+    )
 
     rr = sub.add_parser(
         "regenerate-reports",

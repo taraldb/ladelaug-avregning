@@ -141,3 +141,52 @@ async def test_token_refresh_failure_raises(respx_mock):
         sender = EmailSender(_cfg(), http=http)
         with pytest.raises(RuntimeError, match="Gmail token refresh failed"):
             await sender.send(to="a@example.com", subject="s", text="t")
+
+
+@respx.mock
+async def test_check_gmail_credentials_ok(respx_mock):
+    token = respx_mock.post(TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+    )
+    send = respx_mock.post(SEND_URL)
+
+    async with httpx.AsyncClient() as http:
+        out = await EmailSender(_cfg(), http=http).check_gmail_credentials()
+
+    assert out["ok"] is True
+    assert out["sender"] == "coop@gmail.com"
+    assert b"grant_type=refresh_token" in token.calls.last.request.read()
+    assert not send.called  # a probe never sends a message
+
+
+@respx.mock
+async def test_check_gmail_credentials_bypasses_the_cache(respx_mock):
+    token = respx_mock.post(TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+    )
+
+    async with httpx.AsyncClient() as http:
+        sender = EmailSender(_cfg(), http=http)
+        sender._gmail_token = "cached"
+        sender._gmail_token_expiry = clock.now_utc() + timedelta(hours=1)
+        await sender.check_gmail_credentials()
+
+    assert token.call_count == 1  # went to Google despite a live cached token
+
+
+@respx.mock
+async def test_check_gmail_credentials_raises_on_revoked_token(respx_mock):
+    respx_mock.post(TOKEN_URL).mock(
+        return_value=httpx.Response(400, json={"error": "invalid_grant"})
+    )
+
+    async with httpx.AsyncClient() as http:
+        sender = EmailSender(_cfg(), http=http)
+        with pytest.raises(RuntimeError, match="Gmail token refresh failed"):
+            await sender.check_gmail_credentials()
+
+
+async def test_check_gmail_credentials_skips_non_gmail_backend():
+    cfg = EmailConfig(backend="console", from_address="ladelaug@example.com")
+    out = await EmailSender(cfg).check_gmail_credentials()
+    assert out == {"skipped": "backend_not_gmail", "backend": "console"}

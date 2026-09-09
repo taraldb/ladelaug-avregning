@@ -121,10 +121,10 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 
 ### Background jobs (in-process scheduler, admin)
 
-- `GET /api/system/jobs` -> `{jobs:JobSchedule[]}` (the three seeded rows).
+- `GET /api/system/jobs` -> `{jobs:JobSchedule[]}` (the four seeded rows).
 - `PUT /api/system/jobs/{name}` (admin, `X-Requested-With`) partial `{enabled?:boolean,cron?:string}` -> `JobSchedule`. Empty body 422 `validation_error`; unknown `name` 422 `unknown_job`; invalid 5-field cron 422 `bad_cron`. Disabling clears `next_run_at`.
 - `POST /api/system/jobs/{name}/run` (admin, `X-Requested-With`) -> `{name,status:"ok"|"error",error:string|null,duration_ms:number,summary:object}`; runs the job now with the same bookkeeping. 422 `unknown_job`.
-- `JobSchedule = {name:"drain_mail"|"low_balance_scan"|"zaptec_sync_sessions",enabled:boolean,cron:string,last_run_at:string|null,last_status:"ok"|"error"|"running"|null,last_error:string|null,last_duration_ms:number|null,next_run_at:string|null,updated_at:string|null,updated_by_user_id:number|null}`. `cron` is UTC. Missed slots are not replayed.
+- `JobSchedule = {name:"drain_mail"|"low_balance_scan"|"gmail_token_check"|"zaptec_sync_sessions",enabled:boolean,cron:string,last_run_at:string|null,last_status:"ok"|"error"|"running"|null,last_error:string|null,last_duration_ms:number|null,next_run_at:string|null,updated_at:string|null,updated_by_user_id:number|null}`. `cron` is UTC. Missed slots are not replayed.
 
 ### Types
 

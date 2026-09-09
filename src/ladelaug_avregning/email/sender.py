@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from email.message import EmailMessage
 from email.utils import make_msgid
 from pathlib import Path
+from typing import Any
 
 import anyio
 import httpx
@@ -127,6 +128,34 @@ class EmailSender:
             )
         if resp.status_code >= 300:
             raise RuntimeError(f"Gmail send failed ({resp.status_code}): {resp.text[:500]}")
+
+    async def check_gmail_credentials(self) -> dict[str, Any]:
+        """Force a fresh ``refresh_token`` grant and report the outcome.
+
+        Google silently revokes a refresh token minted while the OAuth app is in
+        "Testing" status 7 days after it is issued; a revoked token means every
+        queued email fails at send time. Probing on a schedule (the
+        ``gmail_token_check`` job) surfaces a dead token as a failed job on
+        ``GET /api/system/health`` before the next real send hits it. Raises
+        ``RuntimeError`` when the token is rejected (``invalid_grant``) or the
+        request fails; returns a summary dict otherwise."""
+        if self._cfg.backend != "gmail":
+            return {"skipped": "backend_not_gmail", "backend": self._cfg.backend}
+        # Bypass the in-memory cache so this is a real round-trip to Google.
+        self._gmail_token = None
+        self._gmail_token_expiry = None
+        if self._http is not None:
+            await self._gmail_access_token(self._http)
+        else:
+            async with httpx.AsyncClient(timeout=30) as http:
+                await self._gmail_access_token(http)
+        expiry = self._gmail_token_expiry
+        return {
+            "ok": True,
+            "backend": "gmail",
+            "sender": self._cfg.gmail_sender.strip() or self._cfg.from_address,
+            "access_token_expiry": expiry.isoformat() if expiry is not None else None,
+        }
 
     async def _gmail_access_token(self, http: httpx.AsyncClient) -> str:
         now = clock.now_utc()

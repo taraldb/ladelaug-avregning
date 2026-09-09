@@ -16,7 +16,12 @@ def test_jobs_list_member_403(member_client: Any) -> None:
 def test_jobs_list_admin(admin_client: Any) -> None:
     body = admin_client.get("/api/system/jobs").json()
     names = [j["name"] for j in body["jobs"]]
-    assert names == ["drain_mail", "low_balance_scan", "zaptec_sync_sessions"]
+    assert names == [
+        "drain_mail",
+        "gmail_token_check",
+        "low_balance_scan",
+        "zaptec_sync_sessions",
+    ]
     assert all(j["enabled"] is False for j in body["jobs"])
 
 
@@ -80,6 +85,7 @@ def test_health_reports_scheduler(admin_client: Any) -> None:
     assert body["scheduler"]["enabled"] is False
     assert [j["name"] for j in body["scheduler"]["jobs"]] == [
         "drain_mail",
+        "gmail_token_check",
         "low_balance_scan",
         "zaptec_sync_sessions",
     ]

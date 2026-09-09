@@ -4,6 +4,15 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **`gmail_token_check` background job** — probes the Gmail OAuth refresh token
+  (a real `refresh_token` grant, cache bypassed) on an admin-tunable cron
+  (default `0 7 * * *`, ships disabled). Google silently revokes a refresh token
+  7 days after issue while the OAuth app is in *Testing* status; a rejected
+  token now fails the job, so `GET /api/system/health` `ok` flips to false
+  before the next queued email fails at send time. No-op unless
+  `email.backend: gmail`. New `EmailSender.check_gmail_credentials()`;
+  `run-job gmail_token_check` / migration 0016.
+
 - **Settlement list chips for corrections / consumption drift** — the
   **Avregninger** table now flags the "something changed since this settlement
   was built" cases per row: a **posted** settlement whose current imported usage

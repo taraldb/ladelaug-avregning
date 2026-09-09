@@ -17,16 +17,22 @@ def _audit_count(db, event_type: str = "system.job_schedule_updated") -> int:
     ).fetchone()[0]
 
 
-def test_migration_seeds_three_disabled_jobs(db) -> None:
+def test_migration_seeds_disabled_jobs(db) -> None:
     rows = JobScheduleRepo(db).list()
     assert [r["name"] for r in rows] == [
         "drain_mail",
+        "gmail_token_check",
         "low_balance_scan",
         "zaptec_sync_sessions",
     ]
     assert all(r["enabled"] is False for r in rows)
     assert all(r["next_run_at"] is None for r in rows)
-    assert {r["cron"] for r in rows} == {"*/10 * * * *", "0 * * * *", "30 3 * * *"}
+    assert {r["cron"] for r in rows} == {
+        "*/10 * * * *",
+        "0 * * * *",
+        "0 7 * * *",
+        "30 3 * * *",
+    }
 
 
 async def test_enable_sets_next_run_at_and_audits(frozen_now, db) -> None:

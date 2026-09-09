@@ -124,8 +124,9 @@ into per-member charges.
 - **System health** — `GET /api/system/health`: Zaptec sync state, email queue
   stats, background-job schedules + last run, failed jobs, versions.
 - **Background jobs** — an optional in-process scheduler runs `drain_mail`,
-  `low_balance_scan`, and `zaptec_sync_sessions` on an admin-tunable cron
-  (`scheduler.enabled`, `/api/system/jobs`). One at a time; missed slots skipped.
+  `low_balance_scan`, `gmail_token_check`, and `zaptec_sync_sessions` on an
+  admin-tunable cron (`scheduler.enabled`, `/api/system/jobs`). One at a time;
+  missed slots skipped.
 
 </details>
 
@@ -186,8 +187,9 @@ python -m ladelaug_avregning drain-mail        # send queued emails
 python -m ladelaug_avregning run-job <name>    # run one scheduler job once
 ```
 
-`run-job` takes `drain_mail`, `low_balance_scan`, or `zaptec_sync_sessions` — the
-same bodies the in-process scheduler runs (see **Background jobs** below). The
+`run-job` takes `drain_mail`, `low_balance_scan`, `gmail_token_check`, or
+`zaptec_sync_sessions` — the same bodies the in-process scheduler runs (see
+**Background jobs** below). The
 `low-balance-scan` / `drain-mail` commands are kept for existing crontabs.
 
 `create-admin` is idempotent-ish: a second run with an existing email exits
@@ -244,9 +246,10 @@ crontab required:
 |---|---|---|
 | `drain_mail` | `*/10 * * * *` | send everything queued in `email_messages` |
 | `low_balance_scan` | `0 * * * *` | enqueue low-balance warning emails |
+| `gmail_token_check` | `0 7 * * *` | probe the Gmail OAuth refresh token; a rejected token fails the job (no-op unless `email.backend: gmail`) |
 | `zaptec_sync_sessions` | `30 3 * * *` | import the current month's charging (no-op while `zaptec.enabled` is false) |
 
-All three ship **disabled**; per-job on/off and cron (UTC, 5-field) are edited at
+All ship **disabled**; per-job on/off and cron (UTC, 5-field) are edited at
 runtime under **System → Bakgrunnsjobber** (`GET`/`PUT /api/system/jobs`), or
 fired once with `POST /api/system/jobs/{name}/run`. One job runs at a time on the
 serving process; missed slots are **not** replayed — the next run recomputes from
@@ -297,6 +300,14 @@ Sends through the Gmail REST API with an OAuth2 refresh token (scope
    `.env`, set `email.backend: gmail` and (optionally) `email.gmail_sender` in
    `config.yaml`. Access tokens refresh automatically; a send failure leaves the
    message queued for retry.
+
+**Keep the refresh token alive.** Google revokes a refresh token 7 days after
+issue while the OAuth app is in *Testing* status — **Publish app** on the OAuth
+consent screen so it stops expiring (a single `gmail.send` user does not need
+verification). Enable the `gmail_token_check` job (**System → Bakgrunnsjobber**,
+or `python -m ladelaug_avregning run-job gmail_token_check`): it probes the token
+daily and, if Google has rejected it, fails the job so `GET /api/system/health`
+`ok` flips to false before the next settlement send does.
 
 ### Reports
 

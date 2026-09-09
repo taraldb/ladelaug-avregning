@@ -88,6 +88,7 @@ const freshJobs = (): JobScheduleRow[] =>
   [
     ["drain_mail", "*/10 * * * *"],
     ["low_balance_scan", "0 * * * *"],
+    ["gmail_token_check", "0 7 * * *"],
     ["zaptec_sync_sessions", "30 3 * * *"],
   ].map(([name, cron]) => ({
     name,

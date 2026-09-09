@@ -31,6 +31,14 @@ async def low_balance_scan(db: Database, config: AppConfig) -> dict[str, Any]:
     return await NotificationRepo(db).scan_low_balances(actor=AuditContext.system())
 
 
+async def gmail_token_check(db: Database, config: AppConfig) -> dict[str, Any]:
+    """Probe the Gmail OAuth refresh token so an expired one flips
+    ``GET /api/system/health`` ``ok`` to false before the next send fails.
+    No-op unless ``email.backend`` is ``gmail``."""
+    sender = build_sender(config.email, state_dir=config.state_dir)
+    return await sender.check_gmail_credentials()
+
+
 async def zaptec_sync_sessions(db: Database, config: AppConfig) -> dict[str, Any]:
     if not config.zaptec.enabled:
         return {"skipped": "zaptec_disabled"}
@@ -45,6 +53,7 @@ async def zaptec_sync_sessions(db: Database, config: AppConfig) -> dict[str, Any
 JOBS: dict[str, JobFn] = {
     "drain_mail": drain_mail,
     "low_balance_scan": low_balance_scan,
+    "gmail_token_check": gmail_token_check,
     "zaptec_sync_sessions": zaptec_sync_sessions,
 }
 
