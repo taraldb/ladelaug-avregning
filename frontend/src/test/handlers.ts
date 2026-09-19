@@ -1462,6 +1462,53 @@ export const handlers = [
     return HttpResponse.json({ months: all.slice(-months) });
   }),
 
+  http.get("/api/charging/usage", ({ request }) => {
+    const params = new URL(request.url).searchParams;
+    const month = params.get("month");
+    const [base, count] = month
+      ? (() => {
+          const [y, m] = month.split("-").map(Number);
+          const start = Date.UTC(y, m - 1, 1);
+          const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+          return [start, days * 24] as const;
+        })()
+      : (() => {
+          const hours = Number(params.get("hours") ?? "168");
+          const end = params.get("end");
+          // Fixture's "now": 7d before it is 2026-08-30T00:00Z, matching the
+          // old fixed default start so the common (7d, no `end`) case is unchanged.
+          const liveEnd = Date.UTC(2026, 8, 6, 0, 0, 0);
+          const boundary = end ? Date.parse(end) : liveEnd;
+          return [boundary - hours * 3_600_000, hours] as const;
+        })();
+    const rows = Array.from({ length: count }, (_, i) => {
+      const charging = i % 4 === 0 ? 1 : 0;
+      return {
+        hour: new Date(base + i * 3_600_000).toISOString(),
+        avg_power_kw: charging ? "7.20" : "0.00",
+        charging_sessions: charging,
+        idle_sessions: i % 4 === 1 ? 1 : 0,
+      };
+    });
+    return HttpResponse.json({ hours: rows });
+  }),
+
+  http.get("/api/charging/peak-hours", ({ request }) => {
+    const params = new URL(request.url).searchParams;
+    const month = params.get("month") ?? "2026-08";
+    const limit = Number(params.get("limit") ?? "10");
+    const all =
+      month === "2026-08"
+        ? Array.from({ length: 12 }, (_, i) => ({
+            hour: `2026-08-09T${String(20 - i).padStart(2, "0")}:00:00+02:00`,
+            avg_power_kw: (7.5 - i * 0.3).toFixed(2),
+            charging_sessions: 1,
+            idle_sessions: 0,
+          }))
+        : [];
+    return HttpResponse.json({ month, hours: all.slice(0, limit) });
+  }),
+
   http.get("/api/charging/sessions/:zid", ({ params }) => {
     const zid = String(params.zid);
     const iv = (start: string, energy: string, period_month: string) => ({

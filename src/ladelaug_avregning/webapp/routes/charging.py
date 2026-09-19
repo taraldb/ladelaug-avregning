@@ -6,6 +6,7 @@ recomputes member attribution after an assignment gap is filled.
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -26,7 +27,12 @@ from ladelaug_avregning.webapp.deps import (
     require_admin,
     require_fetch,
 )
-from ladelaug_avregning.webapp.schemas import ChargingHistoryMonthOut, ChargingHistoryOut
+from ladelaug_avregning.webapp.schemas import (
+    ChargingHistoryMonthOut,
+    ChargingHistoryOut,
+    TopHoursOut,
+    UsageOut,
+)
 
 router = APIRouter(prefix="/api/charging", dependencies=[Depends(require_admin)], tags=["charging"])
 
@@ -157,6 +163,51 @@ async def history(
             )
         )
     return ChargingHistoryOut(months=out)
+
+
+def _end_or_400(end: str) -> str:
+    try:
+        datetime.fromisoformat(end.strip())
+    except ValueError as exc:
+        raise DomainError("bad_end", "end must be an ISO-8601 datetime") from exc
+    return end
+
+
+@router.get("/usage")
+async def usage(
+    hours: int = Query(default=168, ge=1, le=720),
+    end: str | None = None,
+    month: str | None = None,
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> UsageOut:
+    """Hourly usage for the admin "Bruk" chart: average power delivered and
+    active-charging vs. plugged-in-idle session counts. Either the trailing
+    ``hours`` (default: ending now) or, when ``month`` is given, one full local
+    calendar month — ``month`` wins if both are present. ``end`` pages the
+    trailing window back through history — pass an earlier ``hour`` value from
+    a previous response to shift the window; ignored when ``month`` is set."""
+    repo = ChargingRepo(db, tz=config.timezone)
+    if month is not None:
+        return UsageOut(hours=repo.usage_for_month(_month_or_400(month)))
+    return UsageOut(
+        hours=repo.usage_timeseries(hours=hours, end=_end_or_400(end) if end is not None else None)
+    )
+
+
+@router.get("/peak-hours")
+async def peak_hours(
+    month: str | None = None,
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Database = Depends(get_db),
+    config: AppConfig = Depends(get_config),
+) -> TopHoursOut:
+    """The busiest ``limit`` hours in one local calendar month (default: the
+    current month) for the admin "Bruk" page's top-hours list."""
+    tz = config.timezone
+    m = _month_or_400(month) if month is not None else periods.current_month(tz)
+    repo = ChargingRepo(db, tz=tz)
+    return TopHoursOut(month=m, hours=repo.top_hours(m, limit=limit))
 
 
 @router.get("/unassigned")

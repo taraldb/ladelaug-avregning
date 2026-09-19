@@ -897,6 +897,29 @@ class ChargingHistoryOut(BaseModel):
     months: list[ChargingHistoryMonthOut]
 
 
+class UsageHourOut(BaseModel):
+    """One hourly bucket on the admin "Bruk" usage chart. ``avg_power_kw`` is the
+    grid's average delivered power that hour (kWh summed over the hour == kW
+    average); the session counts are distinct Zaptec sessions overlapping the
+    hour, split into actively charging vs. merely plugged in."""
+
+    hour: str
+    avg_power_kw: str
+    charging_sessions: int
+    idle_sessions: int
+
+
+class UsageOut(BaseModel):
+    hours: list[UsageHourOut]
+
+
+class TopHoursOut(BaseModel):
+    """The busiest hours in one calendar month, highest power first."""
+
+    month: str
+    hours: list[UsageHourOut]
+
+
 # --- background jobs (in-process scheduler) ----------------------
 
 

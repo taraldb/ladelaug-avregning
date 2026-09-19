@@ -13,9 +13,10 @@ and counts as *unassigned consumption* (US-304).
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ladelaug_avregning import clock
 from ladelaug_avregning.audit import AuditContext, write_audit_row
@@ -505,3 +506,102 @@ class ChargingRepo:
             "parts": parts,
             "intervals": intervals,
         }
+
+    def _hourly_usage(self, bucket_start: datetime, bucket_end: datetime) -> list[dict[str, Any]]:
+        """Shared bucketing core for :meth:`usage_timeseries` and
+        :meth:`peak_hours_by_month`: hourly usage over ``[bucket_start,
+        bucket_end)`` (local, hour-aligned instants) — average power delivered
+        that hour, and how many sessions were actively charging vs. merely
+        plugged in.
+
+        Zaptec's ``EnergyDetails`` only emits a point when the delivered energy
+        changes — a long idle stretch is one gap, not a run of zero rows — so a
+        session counts as *charging* in an hour when a ``charging_intervals``
+        point with energy > 0 lands in it, and *idle* when its
+        ``[started_at, ended_at)`` merely overlaps the hour with no such point.
+        Summing interval energy per hour doubles as average power in that hour
+        (kWh delivered over a 1-hour bucket = kW average). A session synced
+        without interval data (pre-``DetailLevel=1`` imports) can't be split and
+        counts as idle for its whole span."""
+        hours = round((bucket_end - bucket_start) / timedelta(hours=1))
+        buckets = [bucket_start + timedelta(hours=i) for i in range(hours)]
+
+        window_start_utc = bucket_start.astimezone(UTC).isoformat()
+        window_end_utc = bucket_end.astimezone(UTC).isoformat()
+
+        energy_kwh = [Decimal(0)] * hours
+        charging_sessions: list[set[str]] = [set() for _ in range(hours)]
+        occupied_sessions: list[set[str]] = [set() for _ in range(hours)]
+
+        conn = self._db.connection
+        for r in conn.execute(
+            "SELECT interval_start, energy_kwh, source_session_zaptec_id "
+            "FROM charging_intervals WHERE interval_start >= ? AND interval_start < ?",
+            (window_start_utc, window_end_utc),
+        ).fetchall():
+            local = periods.local_dt(r["interval_start"], self._tz)
+            idx = int((local - bucket_start) / timedelta(hours=1))
+            if idx < 0 or idx >= hours:
+                continue
+            e = Decimal(r["energy_kwh"])
+            energy_kwh[idx] += e
+            if e > 0:
+                charging_sessions[idx].add(r["source_session_zaptec_id"])
+
+        now_local = clock.now_utc().astimezone(bucket_start.tzinfo)
+        for r in conn.execute(
+            "SELECT zaptec_session_id, started_at, ended_at FROM charging_sessions "
+            "WHERE started_at < ? AND (ended_at IS NULL OR ended_at >= ?)",
+            (window_end_utc, window_start_utc),
+        ).fetchall():
+            s = periods.local_dt(r["started_at"], self._tz)
+            e = periods.local_dt(r["ended_at"], self._tz) if r["ended_at"] else now_local
+            start_idx = max(0, int((s - bucket_start) / timedelta(hours=1)))
+            # ceil((e - bucket_start) / 1h), clamped into [0, hours]
+            end_idx = min(hours, -(-int((e - bucket_start).total_seconds()) // 3600))
+            for idx in range(start_idx, max(start_idx, end_idx)):
+                occupied_sessions[idx].add(r["zaptec_session_id"])
+
+        out = []
+        for i, b in enumerate(buckets):
+            idle = occupied_sessions[i] - charging_sessions[i]
+            out.append(
+                {
+                    "hour": b.isoformat(),
+                    "avg_power_kw": str(_q(energy_kwh[i])),
+                    "charging_sessions": len(charging_sessions[i]),
+                    "idle_sessions": len(idle),
+                }
+            )
+        return out
+
+    def usage_timeseries(self, *, hours: int = 168, end: str | None = None) -> list[dict[str, Any]]:
+        """Hourly usage over ``hours`` ending at ``end`` (local calendar hours,
+        floored to the hour) — see :meth:`_hourly_usage`. ``end`` defaults to
+        now, with the current partial hour included as the last bucket; pass an
+        earlier ``end`` (an hour boundary from a previous call's own ``hour``
+        values) to page back through history."""
+        zone = ZoneInfo(self._tz)
+        if end is not None:
+            bucket_end = periods.local_dt(end, self._tz).replace(minute=0, second=0, microsecond=0)
+        else:
+            now_local = clock.now_utc().astimezone(zone)
+            bucket_end = now_local.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        bucket_start = bucket_end - timedelta(hours=hours)
+        return self._hourly_usage(bucket_start, bucket_end)
+
+    def usage_for_month(self, month: str) -> list[dict[str, Any]]:
+        """Hourly usage for one full local calendar month — see
+        :meth:`_hourly_usage`."""
+        zone = ZoneInfo(self._tz)
+        start_utc, end_utc = periods.month_bounds(month, self._tz)
+        return self._hourly_usage(start_utc.astimezone(zone), end_utc.astimezone(zone))
+
+    def top_hours(self, month: str, *, limit: int = 10) -> list[dict[str, Any]]:
+        """The ``limit`` busiest hours in one local calendar month, highest
+        average power first (ties broken by the earlier hour). Hours with no
+        charging at all are excluded, so a quiet month can return fewer than
+        ``limit`` rows."""
+        rows = [r for r in self.usage_for_month(month) if Decimal(r["avg_power_kw"]) > 0]
+        rows.sort(key=lambda r: (-Decimal(r["avg_power_kw"]), r["hour"]))
+        return rows[:limit]

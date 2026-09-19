@@ -869,6 +869,42 @@ export function getChargingHistory(
   );
 }
 
+/** One hourly bucket on the admin "Bruk" usage chart. `avg_power_kw` is the
+ * grid's average delivered power that hour (a Decimal string); the session
+ * counts are distinct Zaptec sessions overlapping the hour. */
+export interface UsageHour {
+  hour: string;
+  avg_power_kw: string;
+  charging_sessions: number;
+  idle_sessions: number;
+}
+
+/** Either a trailing window (`hours`, default 168 — `end` pages it back to an
+ * earlier instant instead of always trailing from now) or one full local
+ * calendar month (`month`, e.g. `"2026-08"`) — `month` wins if both are given. */
+export function getChargingUsage(
+  window: { hours?: number; end?: string; month?: string } = {},
+): Promise<{ hours: UsageHour[] }> {
+  const params = new URLSearchParams();
+  if (window.month) {
+    params.set("month", window.month);
+  } else {
+    params.set("hours", String(window.hours ?? 168));
+    if (window.end) params.set("end", window.end);
+  }
+  return get<{ hours: UsageHour[] }>(`/api/charging/usage?${params}`);
+}
+
+/** The busiest hours in one calendar month, highest power first. */
+export function getTopHours(
+  month: string,
+  limit = 10,
+): Promise<{ month: string; hours: UsageHour[] }> {
+  return get<{ month: string; hours: UsageHour[] }>(
+    `/api/charging/peak-hours?month=${encodeURIComponent(month)}&limit=${limit}`,
+  );
+}
+
 /** A raw `charging_sessions` row as returned by `GET /api/charging/sessions`.
  * One row per (Zaptec session, calendar month) — a session crossing a month
  * boundary is split. `member_id` null = unassigned consumption. */

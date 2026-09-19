@@ -3,7 +3,9 @@ import ConsumptionByMemberChart from "../components/ConsumptionByMemberChart";
 import ConsumptionHistoryChart from "../components/ConsumptionHistoryChart";
 import CostSplitChart from "../components/CostSplitChart";
 import GridRateChart from "../components/GridRateChart";
+import PeakHoursList from "../components/PeakHoursList";
 import SessionHistory from "../components/SessionHistory";
+import UsageChart from "../components/UsageChart";
 
 type View = "overview" | "per-member";
 
@@ -60,6 +62,10 @@ export default function Forbruk() {
             <CostSplitChart />
             <GridRateChart />
           </div>
+
+          <UsageChart />
+
+          <PeakHoursList />
         </>
       ) : (
         <>

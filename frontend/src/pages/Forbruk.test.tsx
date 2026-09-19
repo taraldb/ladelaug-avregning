@@ -70,6 +70,27 @@ describe("Forbruk (admin page)", () => {
     expect(await screen.findByText(/målt totalt i 2026-03/)).toBeInTheDocument();
   });
 
+  it("gives Bruk over tid and Travleste timer their own independent pickers", async () => {
+    setSession(ADMIN_USER);
+    seedMember({ id: 1, member_reference: "M-1", full_name: "Kari Nordmann" });
+
+    renderApp(<AppRouter />, { route: "/forbruk" });
+
+    await screen.findByText("Bruk over tid");
+    await screen.findByText("Travleste timer");
+    // Bruk over tid pages with arrows (no month `<input>`); only Travleste
+    // timer's own picker shows up here.
+    expect(screen.getAllByLabelText("Måned")).toHaveLength(1);
+
+    fireEvent.change(screen.getByLabelText("Måned"), {
+      target: { value: "2026-03" },
+    });
+
+    // Only Travleste timer's fetch key moves — Bruk over tid is unaffected.
+    expect(await screen.findByDisplayValue("2026-03")).toBeInTheDocument();
+    expect(screen.getByText("Bruk over tid")).toBeInTheDocument();
+  });
+
   it("is reachable from the admin nav", async () => {
     setSession(ADMIN_USER);
     renderApp(<AppRouter />, { route: "/medlemmer" });

@@ -12,6 +12,7 @@ export const CHART_COLORS = {
   balance: "#fcd34d", // amber-300 — running ledger balance line
   negative: "#fb7185", // rose-400 — balance below zero
   reference: "#94a3b8", // slate-400 — invoice / axis / grid
+  power: "#a78bfa", // violet-400 — average power (kW)
 } as const;
 
 export const AXIS_TICK = { fill: "#94a3b8", fontSize: 11 } as const;
