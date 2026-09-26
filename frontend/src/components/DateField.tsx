@@ -1,3 +1,4 @@
+import { inputClass } from "../lib/ui";
 interface DateFieldProps {
   label: string;
   value: string;
@@ -24,7 +25,7 @@ export default function DateField({
         required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+        className={inputClass}
       />
       {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
     </label>

@@ -14,6 +14,7 @@ import {
 } from "../api/client";
 import Money from "../components/Money";
 import StatTile from "../components/StatTile";
+import { useIsNarrow } from "../hooks/useMediaQuery";
 import Table, { type Column } from "../components/Table";
 import { formatDate, formatNok, formatOre, txnTypeLabel } from "../lib/format";
 
@@ -21,7 +22,7 @@ import { formatDate, formatNok, formatOre, txnTypeLabel } from "../lib/format";
 const UsageHistoryChart = lazy(() => import("../components/UsageHistoryChart"));
 
 const columns: Column<LedgerTxn>[] = [
-  { key: "date", header: "Valørdato", render: (t) => formatDate(t.value_date) },
+  { key: "date", card: "title", header: "Valørdato", render: (t) => formatDate(t.value_date) },
   { key: "type", header: "Type", render: (t) => txnTypeLabel(t.txn_type) },
   {
     key: "amount",
@@ -44,6 +45,10 @@ const columns: Column<LedgerTxn>[] = [
 const isForbidden = (err: unknown) => err instanceof ApiError && err.status === 403;
 
 export default function MyAccount() {
+  // "Min status" sits beside the balance tile on desktop but below the
+  // settlements list on a phone. It moves in and out of a grid, so CSS `order`
+  // can't do it — and rendering it twice would duplicate it for screen readers.
+  const narrow = useIsNarrow();
   const balance = useSWR("/api/me/balance", () => getMyBalance());
   const ledger = useSWR("/api/me/ledger", () => getMyLedger());
   const status = useSWR("/api/me/status", () => getMyStatus());
@@ -181,7 +186,7 @@ export default function MyAccount() {
           }
         />
 
-        <div className="hidden sm:block">{statusSection}</div>
+        {!narrow && <div>{statusSection}</div>}
       </div>
 
       <div>
@@ -315,7 +320,7 @@ export default function MyAccount() {
         })()}
       </div>
 
-      <div className="sm:hidden">{statusSection}</div>
+      {narrow && <div>{statusSection}</div>}
 
       <div>
         <h2 className="mb-2 text-sm font-semibold text-slate-100">

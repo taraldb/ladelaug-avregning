@@ -17,11 +17,12 @@ import RecordPaymentModal from "../components/RecordPaymentModal";
 import Money from "../components/Money";
 import Table, { type Column } from "../components/Table";
 import { formatDate } from "../lib/format";
+import { btnPrimary, btnRow, btnSecondary, inputClass } from "../lib/ui";
 
 const columns: Column<Member>[] = [
   { key: "ref", header: "Referanse", render: (m) => m.member_reference },
-  { key: "name", header: "Navn", render: (m) => m.full_name },
-  { key: "email", header: "Reserve-e-post", render: (m) => m.email ?? "–" },
+  { key: "name", card: "title", header: "Navn", render: (m) => m.full_name },
+  { key: "email", card: "hidden", header: "Reserve-e-post", render: (m) => m.email ?? "–" },
   {
     key: "join",
     header: "Innmeldt",
@@ -84,7 +85,7 @@ export default function Members() {
   const columnsWithActions: Column<Member>[] = [
     ...columns,
     {
-      key: "actions",
+      key: "actions", card: "footer",
       header: "",
       className: "text-right",
       render: (m) => (
@@ -94,7 +95,7 @@ export default function Members() {
             e.stopPropagation();
             void viewAsMember(m);
           }}
-          className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+          className={btnRow}
         >
           Se som medlem
         </button>
@@ -106,7 +107,7 @@ export default function Members() {
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-slate-100">Medlemmer</h1>
-        <div className="flex gap-2">
+        <div className="flex w-full gap-2 sm:w-auto [&>*]:flex-1 sm:[&>*]:flex-none">
           <button
             type="button"
             onClick={() => setPayOpen(true)}
@@ -117,7 +118,7 @@ export default function Members() {
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+            className={btnPrimary}
           >
             Nytt medlem
           </button>
@@ -140,6 +141,7 @@ export default function Members() {
       ) : (
         <Table
           columns={columnsWithActions}
+          tableMinWidth="min-w-[60rem]"
           rows={data?.members ?? []}
           rowKey={(m) => m.id}
           onRowClick={(m) => navigate(ROUTES.memberDetail(m.id))}
@@ -230,7 +232,7 @@ function NewMemberModal({
               reset();
               onClose();
             }}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Avbryt
           </button>
@@ -238,7 +240,7 @@ function NewMemberModal({
             type="submit"
             form="new-member-form"
             disabled={submitting}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            className={btnPrimary}
           >
             Opprett
           </button>
@@ -252,7 +254,7 @@ function NewMemberModal({
             required
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         <label className="block text-sm">
@@ -261,7 +263,7 @@ function NewMemberModal({
             required
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         <label className="block text-sm">
@@ -272,7 +274,7 @@ function NewMemberModal({
             type="text"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
           <span className="mt-1 block text-xs text-slate-500">
             Brukes kun for varsler til medlemmer uten aktiv pålogging.

@@ -4,11 +4,10 @@ import { ApiError, listMembers, recordPayment } from "../api/client";
 import { normalizeDecimalInput } from "../lib/format";
 import DateField from "./DateField";
 import Modal from "./Modal";
+import { btnPrimary, btnSecondary, inputClass } from "../lib/ui";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-const inputClass =
-  "w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none";
 
 /**
  * Record an incoming payment. When `memberId` is given the member is fixed
@@ -93,7 +92,7 @@ export default function RecordPaymentModal({
           <button
             type="button"
             onClick={close}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Avbryt
           </button>
@@ -101,7 +100,7 @@ export default function RecordPaymentModal({
             type="submit"
             form="record-payment-form"
             disabled={saving || amount.trim() === "" || (needsPicker && !memberChoice)}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            className={btnPrimary}
           >
             Registrer
           </button>

@@ -17,8 +17,10 @@ import {
   zaptecStatus,
   type Charger,
 } from "../api/client";
+import ConfirmModal from "../components/ConfirmModal";
 import Modal from "../components/Modal";
 import Table, { type Column } from "../components/Table";
+import { btnPrimary, btnSecondary } from "../lib/ui";
 
 function thisMonth(): string {
   return new Date().toISOString().slice(0, 7);
@@ -35,6 +37,7 @@ export default function Chargers() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Charger | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Charger | null>(null);
 
   async function doReresolve() {
     setMsg(null);
@@ -47,14 +50,11 @@ export default function Chargers() {
     }
   }
 
+  // A native window.confirm blocks the whole page (and on a phone it is a
+  // system sheet you cannot style); use the app's own dialog.
   async function doDelete(c: Charger) {
-    if (
-      !window.confirm(
-        `Slette laderen «${c.name}»? Tildelingshistorikken for laderen fjernes også.`,
-      )
-    )
-      return;
     setMsg(null);
+    setDeleting(null);
     try {
       await deleteCharger(c.id);
       await chargers.mutate();
@@ -80,7 +80,7 @@ export default function Chargers() {
   }
 
   const columns: Column<Charger>[] = [
-    { key: "name", header: "Navn", render: (c) => c.name },
+    { key: "name", card: "title", header: "Navn", render: (c) => c.name },
     { key: "serial", header: "Serienr.", render: (c) => c.serial_no ?? "–" },
     {
       key: "zaptec",
@@ -89,7 +89,7 @@ export default function Chargers() {
     },
     { key: "member", header: "Tildelt", render: (c) => memberName(c.assigned_member_id) },
     {
-      key: "actions",
+      key: "actions", card: "footer",
       header: "",
       render: (c) => (
         <div className="flex items-center gap-3">
@@ -111,7 +111,7 @@ export default function Chargers() {
           {c.deletable && (
             <button
               type="button"
-              onClick={() => void doDelete(c)}
+              onClick={() => setDeleting(c)}
               className="text-xs text-rose-400 hover:text-rose-300"
             >
               Slett
@@ -134,7 +134,7 @@ export default function Chargers() {
             <button
               type="button"
               onClick={() => void doSync()}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+              className={btnSecondary}
             >
               Synk fra Zaptec
             </button>
@@ -142,7 +142,7 @@ export default function Chargers() {
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+            className={btnPrimary}
           >
             Ny lader
           </button>
@@ -205,6 +205,14 @@ export default function Chargers() {
           await chargers.mutate();
           setEditing(null);
         }}
+      />
+
+      <ConfirmModal
+        open={deleting !== null}
+        title="Slett lader"
+        message={`Slette laderen «${deleting?.name ?? ""}»? Tildelingshistorikken for laderen fjernes også.`}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => void (deleting && doDelete(deleting))}
       />
     </section>
   );
@@ -332,7 +340,7 @@ function NewChargerModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Avbryt
           </button>
@@ -340,7 +348,7 @@ function NewChargerModal({
             type="submit"
             form="new-charger-form"
             disabled={submitting}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            className={btnPrimary}
           >
             Opprett
           </button>
@@ -440,7 +448,7 @@ function EditChargerModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Avbryt
           </button>
@@ -448,7 +456,7 @@ function EditChargerModal({
             type="submit"
             form="edit-charger-form"
             disabled={submitting}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            className={btnPrimary}
           >
             Lagre
           </button>

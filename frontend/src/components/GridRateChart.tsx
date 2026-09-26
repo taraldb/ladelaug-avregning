@@ -1,4 +1,5 @@
 import useSWR from "swr";
+import { useChartHeight, useIsNarrow } from "../hooks/useMediaQuery";
 import { getChargingHistory } from "../api/client";
 import { formatNok } from "../lib/format";
 import {
@@ -37,6 +38,8 @@ const perKwh = (v: number | null) =>
     : `kr ${v.toLocaleString("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 
 export default function GridRateChart() {
+  const narrow = useIsNarrow();
+  const chartHeight = useChartHeight(260, 200);
   const { data, error, isLoading } = useSWR("/api/charging/history", () =>
     getChargingHistory(MONTHS),
   );
@@ -70,10 +73,16 @@ export default function GridRateChart() {
               } · ${perKwh(latest?.rate ?? null)}/kWh.`
       }
     >
-      <ResponsiveContainer width="100%" height={260}>
+      <ResponsiveContainer width="100%" height={chartHeight}>
         <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-          <XAxis dataKey="month" tickFormatter={monthTick} tick={AXIS_TICK} />
+          <XAxis
+            dataKey="month"
+            tickFormatter={monthTick}
+            tick={AXIS_TICK}
+            interval={narrow ? "preserveStartEnd" : 0}
+            minTickGap={narrow ? 24 : 5}
+          />
           <YAxis
             yAxisId="nok"
             tick={AXIS_TICK}

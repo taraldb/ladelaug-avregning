@@ -42,6 +42,7 @@ import {
   txnTypeLabel,
 } from "../lib/format";
 import { NewUserModal, SetPasswordModal } from "./Users";
+import { btnPrimary, btnRow, btnSecondary, inputClass } from "../lib/ui";
 
 export default function MemberDetail() {
   const { id } = useParams<{ id: string }>();
@@ -269,7 +270,7 @@ function DepartureSection({
           type="button"
           disabled={busy}
           onClick={() => void runCheck()}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+          className={btnSecondary}
         >
           Sjekk utmelding
         </button>
@@ -387,7 +388,7 @@ function LedgerSection({ memberId }: { memberId: number }) {
   );
 
   const columns: Column<LedgerTxn>[] = [
-    { key: "date", header: "Valørdato", render: (t) => formatDate(t.value_date) },
+    { key: "date", card: "title", header: "Valørdato", render: (t) => formatDate(t.value_date) },
     { key: "type", header: "Type", render: (t) => txnTypeLabel(t.txn_type) },
     {
       key: "amount",
@@ -406,7 +407,7 @@ function LedgerSection({ memberId }: { memberId: number }) {
       render: (t) => t.reason ?? t.reference ?? "–",
     },
     {
-      key: "actions",
+      key: "actions", card: "footer",
       header: "",
       className: "text-right",
       render: (t) =>
@@ -415,7 +416,7 @@ function LedgerSection({ memberId }: { memberId: number }) {
             type="button"
             onClick={() => onReverse(t.id)}
             disabled={reversingId === t.id}
-            className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+            className={btnRow}
           >
             Reverser
           </button>
@@ -439,21 +440,21 @@ function LedgerSection({ memberId }: { memberId: number }) {
           <button
             type="button"
             onClick={() => setModal("payment")}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+            className={btnPrimary}
           >
             Registrer innbetaling
           </button>
           <button
             type="button"
             onClick={() => setModal("adjustment")}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Manuell justering
           </button>
           <button
             type="button"
             onClick={() => setModal("refund")}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Refusjon
           </button>
@@ -589,7 +590,7 @@ function RefundModal({
               reset();
               onClose();
             }}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Avbryt
           </button>
@@ -597,7 +598,7 @@ function RefundModal({
             type="submit"
             form="refund-form"
             disabled={saving || amount.trim() === ""}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            className={btnPrimary}
           >
             Bokfør refusjon
           </button>
@@ -613,7 +614,7 @@ function RefundModal({
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="500.00"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         <label className="block text-sm">
@@ -623,7 +624,7 @@ function RefundModal({
           <input
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-300">
@@ -708,7 +709,7 @@ function AdjustmentModal({
               reset();
               onClose();
             }}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Avbryt
           </button>
@@ -716,7 +717,7 @@ function AdjustmentModal({
             type="submit"
             form="adjustment-form"
             disabled={saving || !canSubmit}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            className={btnPrimary}
           >
             Bokfør justering
           </button>
@@ -729,7 +730,7 @@ function AdjustmentModal({
           <select
             value={direction}
             onChange={(e) => setDirection(e.target.value as "credit" | "debit")}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           >
             <option value="credit">Kredit (øker saldo)</option>
             <option value="debit">Debet (reduserer saldo)</option>
@@ -745,7 +746,7 @@ function AdjustmentModal({
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="50.00"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         <label className="block text-sm">
@@ -756,7 +757,7 @@ function AdjustmentModal({
             required
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         <label className="block text-sm">
@@ -766,7 +767,7 @@ function AdjustmentModal({
           <input
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         {error && (
@@ -851,13 +852,13 @@ function ProfileCard({
       <Card title="Profil">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
           <dt className="text-slate-400">Referanse</dt>
-          <dd className="text-slate-100">{member.member_reference}</dd>
+          <dd className="break-words text-slate-100">{member.member_reference}</dd>
           <dt className="text-slate-400">Navn</dt>
-          <dd className="text-slate-100">{member.full_name}</dd>
+          <dd className="break-words text-slate-100">{member.full_name}</dd>
           <dt className="text-slate-400">Reserve-e-post</dt>
-          <dd className="text-slate-100">{member.email ?? "–"}</dd>
+          <dd className="break-words text-slate-100">{member.email ?? "–"}</dd>
           <dt className="text-slate-400">Innmeldt</dt>
-          <dd className="text-slate-100">{formatDate(member.join_date)}</dd>
+          <dd className="break-words text-slate-100">{formatDate(member.join_date)}</dd>
         </dl>
         <p className="mt-2 text-xs text-slate-500">
           Reserve-e-post brukes kun for varsler til medlemmer uten aktiv pålogging.
@@ -883,7 +884,7 @@ function ProfileCard({
             required
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         <label className="block text-sm">
@@ -892,7 +893,7 @@ function ProfileCard({
             required
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         <label className="block text-sm">
@@ -901,7 +902,7 @@ function ProfileCard({
             type="text"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
           <span className="mt-1 block text-xs text-slate-500">
             Brukes kun for varsler til medlemmer uten aktiv pålogging.
@@ -919,14 +920,14 @@ function ProfileCard({
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            className={btnPrimary}
           >
             Lagre
           </button>
           <button
             type="button"
             onClick={() => setEditing(false)}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Avbryt
           </button>
@@ -964,7 +965,7 @@ function LoginSection({ member }: { member: Member }) {
         <div className="space-y-3 text-sm">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
             <dt className="text-slate-400">E-post</dt>
-            <dd className="text-slate-100">{login.email}</dd>
+            <dd className="break-words text-slate-100">{login.email}</dd>
             <dt className="text-slate-400">Status</dt>
             <dd className={login.disabled ? "text-rose-400" : "text-emerald-400"}>
               {login.disabled ? "Deaktivert" : "Aktiv"}
@@ -974,7 +975,7 @@ function LoginSection({ member }: { member: Member }) {
             <button
               type="button"
               onClick={() => setPwOpen(true)}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+              className={btnSecondary}
             >
               Nytt passord
             </button>
@@ -982,7 +983,7 @@ function LoginSection({ member }: { member: Member }) {
               type="button"
               disabled={busy}
               onClick={() => void toggle()}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+              className={btnSecondary}
             >
               {login.disabled ? "Aktiver" : "Deaktiver"}
             </button>
@@ -994,7 +995,7 @@ function LoginSection({ member }: { member: Member }) {
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+            className={btnPrimary}
           >
             Opprett pålogging
           </button>
@@ -1093,7 +1094,7 @@ function StatusSection({
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as MemberStatus)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           >
             <option value="active">Aktiv</option>
             <option value="inactive">Inaktiv</option>
@@ -1110,7 +1111,7 @@ function StatusSection({
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
 
@@ -1123,7 +1124,7 @@ function StatusSection({
         <button
           type="submit"
           disabled={saving}
-          className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+          className={btnPrimary}
         >
           Endre status
         </button>
@@ -1205,7 +1206,7 @@ function ParticipationSection({
           <select
             value={participates ? "yes" : "no"}
             onChange={(e) => setParticipates(e.target.value === "yes")}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           >
             <option value="yes">Deltar</option>
             <option value="no">Deltar ikke</option>
@@ -1222,7 +1223,7 @@ function ParticipationSection({
           <input
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
 
@@ -1235,7 +1236,7 @@ function ParticipationSection({
         <button
           type="submit"
           disabled={saving}
-          className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+          className={btnPrimary}
         >
           Oppdater deltakelse
         </button>

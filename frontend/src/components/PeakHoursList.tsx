@@ -40,8 +40,8 @@ const kw = (v: string) =>
   `${Number(v).toLocaleString("nb-NO", { maximumFractionDigits: 2 })} kW`;
 
 const columns: Column<Row>[] = [
-  { key: "rank", header: "#", className: "w-8 text-slate-500", render: (r) => r.rank },
-  { key: "hour", header: "Time", render: (r) => peakLabel(r.hour) },
+  { key: "rank", card: "title", header: "#", className: "w-8 text-slate-500", render: (r) => r.rank },
+  { key: "hour", card: "title", header: "Time", render: (r) => peakLabel(r.hour) },
   {
     key: "power",
     header: "Snitteffekt",

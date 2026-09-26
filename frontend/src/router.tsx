@@ -1,6 +1,5 @@
 import { Suspense, lazy } from "react";
 import {
-  NavLink,
   Navigate,
   Outlet,
   Route,
@@ -9,6 +8,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { stopViewAs } from "./api/client";
+import NavDrawer, { NavItemLink, type NavItem } from "./components/NavDrawer";
 import { useAuth } from "./auth/AuthContext";
 import AuditLog from "./pages/AuditLog";
 import AuthAction from "./pages/AuthAction";
@@ -92,59 +92,49 @@ function Layout() {
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
 
+  // One source for both the desktop bar and the mobile drawer.
+  const navItems: NavItem[] = [
+    ...(isAdmin
+      ? [
+          { to: ROUTES.members, label: "Medlemmer" },
+          { to: ROUTES.consumption, label: "Forbruk" },
+          { to: ROUTES.settlements, label: "Avregninger" },
+          { to: ROUTES.movements, label: "Bevegelser" },
+          { to: ROUTES.audit, label: "Revisjonslogg" },
+          { to: ROUTES.forecast, label: "Prognose" },
+          { to: ROUTES.system, label: "System", active: systemActive },
+        ]
+      : []),
+    ...(hasPortal || viewAs
+      ? [
+          { to: ROUTES.home, label: "Min konto", end: true },
+          ...(viewAs ? [] : [{ to: ROUTES.profile, label: "Min profil" }]),
+        ]
+      : []),
+  ];
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/70 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-semibold tracking-tight">
+          <div className="flex min-w-0 items-center gap-4">
+            <span className="truncate text-sm font-semibold tracking-tight">
               Ladelaug avregning
             </span>
-            <nav className="flex gap-1 rounded-lg bg-slate-800/60 p-1">
-              {isAdmin && (
-                <>
-                  <NavLink to={ROUTES.members} className={navLinkClass}>
-                    Medlemmer
-                  </NavLink>
-                  <NavLink to={ROUTES.consumption} className={navLinkClass}>
-                    Forbruk
-                  </NavLink>
-                  <NavLink to={ROUTES.settlements} className={navLinkClass}>
-                    Avregninger
-                  </NavLink>
-                  <NavLink to={ROUTES.movements} className={navLinkClass}>
-                    Bevegelser
-                  </NavLink>
-                  <NavLink to={ROUTES.audit} className={navLinkClass}>
-                    Revisjonslogg
-                  </NavLink>
-                  <NavLink to={ROUTES.forecast} className={navLinkClass}>
-                    Prognose
-                  </NavLink>
-                  <NavLink
-                    to={ROUTES.system}
-                    className={() => navLinkClass({ isActive: systemActive })}
-                  >
-                    System
-                  </NavLink>
-                </>
-              )}
-              {(hasPortal || viewAs) && (
-                <>
-                  <NavLink to={ROUTES.home} end className={navLinkClass}>
-                    Min konto
-                  </NavLink>
-                  {!viewAs && (
-                    <NavLink to={ROUTES.profile} className={navLinkClass}>
-                      Min profil
-                    </NavLink>
-                  )}
-                </>
-              )}
+            <nav className="hidden gap-1 rounded-lg bg-slate-800/60 p-1 md:flex">
+              {navItems.map((item) => (
+                <NavItemLink
+                  key={item.to}
+                  item={item}
+                  className={(isActive) => navLinkClass({ isActive })}
+                />
+              ))}
             </nav>
           </div>
-          <div className="flex items-center gap-3 text-xs text-slate-400">
-            <span>{user?.email}</span>
+          <div className="hidden items-center gap-3 text-xs text-slate-400 md:flex">
+            <span className="max-w-[16ch] truncate lg:max-w-none">
+              {user?.email}
+            </span>
             <button
               type="button"
               onClick={() => void logout()}
@@ -153,6 +143,11 @@ function Layout() {
               Logg ut
             </button>
           </div>
+          <NavDrawer
+            items={navItems}
+            email={user?.email}
+            onLogout={() => void logout()}
+          />
         </div>
       </header>
       {viewAs && (
@@ -172,7 +167,7 @@ function Layout() {
           </div>
         </div>
       )}
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-6xl px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-8 lg:px-8">
         <Suspense
           fallback={<p className="text-sm text-slate-400">Laster …</p>}
         >

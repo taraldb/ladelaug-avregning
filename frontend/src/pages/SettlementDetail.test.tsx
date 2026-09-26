@@ -127,9 +127,7 @@ describe("Settlement flow (admin)", () => {
     await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
     await screen.findByRole("heading", { name: /Avregning 20/ });
 
-    const linesPanel = (
-      await screen.findByRole("heading", { name: "Fakturalinjer" })
-    ).closest("div")!;
+    const linesPanel = await screen.findByRole("region", { name: "Fakturalinjer" });
 
     // "Forbruk" is the pre-selected option on the segmented toggle
     expect(
@@ -168,9 +166,7 @@ describe("Settlement flow (admin)", () => {
     await user.click(await screen.findByRole("button", { name: "Opprett utkast" }));
     await screen.findByRole("heading", { name: /Avregning 20/ });
 
-    const linesPanel = (
-      await screen.findByRole("heading", { name: "Fakturalinjer" })
-    ).closest("div")!;
+    const linesPanel = await screen.findByRole("region", { name: "Fakturalinjer" });
     const description = within(linesPanel).getByLabelText(/Beskrivelse/);
 
     await user.type(description, "Fastledd");
@@ -204,8 +200,7 @@ describe("Settlement flow (admin)", () => {
     await user.click(await screen.findByRole("button", { name: "Bokfør" }));
     await screen.findByText(/Bokført\./);
 
-    const heading = await screen.findByRole("heading", { name: "Korrigering" });
-    const panel = heading.closest("div")!.parentElement as HTMLElement;
+    const panel = await screen.findByRole("region", { name: "Korrigering" });
     await user.click(within(panel).getByRole("button", { name: "Vurder korrigering" }));
     expect(await within(panel).findByText(/Member Seven/)).toBeInTheDocument();
 
@@ -319,7 +314,7 @@ describe("Settlement flow (admin)", () => {
     const share = await screen.findByRole("button", {
       name: "Del utkast med medlemmer",
     });
-    const panel = share.closest("div")!.parentElement as HTMLElement;
+    const panel = await screen.findByRole("region", { name: "Utkast til medlemmer" });
     expect(within(panel).getByText("Ikke delt")).toBeInTheDocument();
 
     await user.click(share);

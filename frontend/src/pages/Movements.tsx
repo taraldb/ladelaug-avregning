@@ -27,7 +27,7 @@ const TXN_TYPES = [
 const columns: Column<LedgerTxnRow>[] = [
   { key: "date", header: "Valørdato", render: (t) => formatDate(t.value_date) },
   {
-    key: "member",
+    key: "member", card: "title",
     header: "Medlem",
     render: (t) => (
       <Link

@@ -15,13 +15,8 @@ import {
 } from "../api/client";
 import Modal from "../components/Modal";
 import Table, { type Column } from "../components/Table";
+import { btnPrimary, btnRow, btnSecondary, inputClass } from "../lib/ui";
 
-const inputClass =
-  "w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none";
-const primaryBtn =
-  "rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60";
-const secondaryBtn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800";
 
 function memberLabel(m: Member | undefined): string {
   return m ? `${m.member_reference} – ${m.full_name}` : "–";
@@ -54,7 +49,7 @@ export default function Users() {
   }
 
   const columns: Column<User>[] = [
-    { key: "email", header: "E-post", render: (u) => u.email },
+    { key: "email", card: "title", header: "E-post", render: (u) => u.email },
     {
       key: "role",
       header: "Rolle",
@@ -77,7 +72,7 @@ export default function Users() {
         ),
     },
     {
-      key: "actions",
+      key: "actions", card: "footer",
       header: "",
       className: "text-right",
       render: (u) => (
@@ -85,14 +80,14 @@ export default function Users() {
           <button
             type="button"
             onClick={() => setEditUser(u)}
-            className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
+            className={btnRow}
           >
             Endre
           </button>
           <button
             type="button"
             onClick={() => setPwUser(u)}
-            className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
+            className={btnRow}
           >
             Nytt passord
           </button>
@@ -100,7 +95,7 @@ export default function Users() {
             type="button"
             disabled={busyId === u.id}
             onClick={() => void toggleDisabled(u)}
-            className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+            className={btnRow}
           >
             {u.disabled ? "Aktiver" : "Deaktiver"}
           </button>
@@ -116,7 +111,7 @@ export default function Users() {
       </Link>
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-100">Brukere</h1>
-        <button type="button" onClick={() => setOpen(true)} className={primaryBtn}>
+        <button type="button" onClick={() => setOpen(true)} className={btnPrimary}>
           Ny bruker
         </button>
       </div>
@@ -243,14 +238,14 @@ export function NewUserModal({
       onClose={close}
       footer={
         <>
-          <button type="button" onClick={close} className={secondaryBtn}>
+          <button type="button" onClick={close} className={btnSecondary}>
             Avbryt
           </button>
           <button
             type="submit"
             form="new-user-form"
             disabled={saving || !canSubmit}
-            className={primaryBtn}
+            className={btnPrimary}
           >
             Opprett
           </button>
@@ -406,14 +401,14 @@ export function EditUserModal({
       onClose={close}
       footer={
         <>
-          <button type="button" onClick={close} className={secondaryBtn}>
+          <button type="button" onClick={close} className={btnSecondary}>
             Avbryt
           </button>
           <button
             type="submit"
             form="edit-user-form"
             disabled={saving || !canSubmit}
-            className={primaryBtn}
+            className={btnPrimary}
           >
             Lagre
           </button>
@@ -516,14 +511,14 @@ export function SetPasswordModal({
       onClose={close}
       footer={
         <>
-          <button type="button" onClick={close} className={secondaryBtn}>
+          <button type="button" onClick={close} className={btnSecondary}>
             Avbryt
           </button>
           <button
             type="submit"
             form="set-password-form"
             disabled={saving || password.length < 10}
-            className={primaryBtn}
+            className={btnPrimary}
           >
             Lagre
           </button>

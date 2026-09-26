@@ -15,6 +15,7 @@ import {
   type JobSchedule,
 } from "../api/client";
 import StatTile from "../components/StatTile";
+import Table from "../components/Table";
 import { formatDateTime } from "../lib/format";
 
 function thisMonth(): string {
@@ -66,119 +67,121 @@ function JobsCard() {
           {err}
         </p>
       )}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="text-xs text-slate-400">
-            <tr>
-              <th className="py-1 pr-3">Jobb</th>
-              <th className="py-1 pr-3">På</th>
-              <th className="py-1 pr-3">Cron (UTC)</th>
-              <th className="py-1 pr-3">Sist</th>
-              <th className="py-1 pr-3">Neste</th>
-              <th className="py-1" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((job: JobSchedule) => {
+      <Table
+        columns={[
+          {
+            key: "job",
+            header: "Jobb",
+            card: "title",
+            render: (job: JobSchedule) => (
+              <>
+                {JOB_LABELS[job.name] ?? job.name}
+                {job.last_status === "error" && job.last_error && (
+                  <span className="ml-1 text-rose-400" title={job.last_error}>
+                    ⚠
+                  </span>
+                )}
+              </>
+            ),
+          },
+          {
+            key: "enabled",
+            header: "På",
+            render: (job: JobSchedule) => (
+              <input
+                type="checkbox"
+                aria-label={`${JOB_LABELS[job.name] ?? job.name} på`}
+                checked={job.enabled}
+                disabled={busy === job.name}
+                onChange={(e) =>
+                  void act(job.name, () =>
+                    updateJob(job.name, { enabled: e.target.checked }),
+                  )
+                }
+              />
+            ),
+          },
+          {
+            key: "cron",
+            header: "Cron (UTC)",
+            render: (job: JobSchedule) => {
               const draft = cronDraft[job.name] ?? job.cron;
-              const cronDirty = draft !== job.cron;
               return (
-                <tr key={job.name} className="border-t border-slate-800 align-top">
-                  <td className="py-2 pr-3 text-slate-200">
-                    {JOB_LABELS[job.name] ?? job.name}
-                    {job.last_status === "error" && job.last_error && (
-                      <span
-                        className="ml-1 text-rose-400"
-                        title={job.last_error}
-                      >
-                        ⚠
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <input
-                      type="checkbox"
-                      aria-label={`${JOB_LABELS[job.name] ?? job.name} på`}
-                      checked={job.enabled}
-                      disabled={busy === job.name}
-                      onChange={(e) =>
-                        void act(job.name, () =>
-                          updateJob(job.name, { enabled: e.target.checked }),
-                        )
-                      }
-                    />
-                  </td>
-                  <td className="py-2 pr-3">
-                    <input
-                      value={draft}
-                      onChange={(e) =>
-                        setCronDraft({ ...cronDraft, [job.name]: e.target.value })
-                      }
-                      className="w-32 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs text-slate-100"
-                    />
-                    {cronDirty && (
-                      <button
-                        type="button"
-                        disabled={busy === job.name}
-                        onClick={() =>
-                          void act(job.name, async () => {
-                            await updateJob(job.name, { cron: draft });
-                            setCronDraft((d) => {
-                              const next = { ...d };
-                              delete next[job.name];
-                              return next;
-                            });
-                          })
-                        }
-                        className="ml-1 rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
-                      >
-                        Lagre
-                      </button>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3 text-slate-400">
-                    {job.last_run_at ? (
-                      <span
-                        className={
-                          job.last_status === "error" ? "text-rose-400" : undefined
-                        }
-                      >
-                        {formatDateTime(job.last_run_at)} · {job.last_status}
-                      </span>
-                    ) : (
-                      "–"
-                    )}
-                  </td>
-                  <td className="py-2 pr-3 text-slate-400">
-                    {job.enabled && job.next_run_at
-                      ? formatDateTime(job.next_run_at)
-                      : "–"}
-                  </td>
-                  <td className="py-2">
+                <span className="flex flex-wrap items-center gap-1">
+                  <input
+                    value={draft}
+                    aria-label={`${JOB_LABELS[job.name] ?? job.name} cron`}
+                    onChange={(e) =>
+                      setCronDraft({ ...cronDraft, [job.name]: e.target.value })
+                    }
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs text-slate-100 sm:w-32"
+                  />
+                  {draft !== job.cron && (
                     <button
                       type="button"
                       disabled={busy === job.name}
                       onClick={() =>
-                        void act(job.name, () => runJob(job.name))
+                        void act(job.name, async () => {
+                          await updateJob(job.name, { cron: draft });
+                          setCronDraft((d) => {
+                            const next = { ...d };
+                            delete next[job.name];
+                            return next;
+                          });
+                        })
                       }
                       className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
                     >
-                      Kjør nå
+                      Lagre
                     </button>
-                  </td>
-                </tr>
+                  )}
+                </span>
               );
-            })}
-            {rows.length === 0 && !jobs.error && (
-              <tr>
-                <td colSpan={6} className="py-2 text-slate-500">
-                  Laster …
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            },
+          },
+          {
+            key: "last",
+            header: "Sist",
+            className: "text-slate-400",
+            render: (job: JobSchedule) =>
+              job.last_run_at ? (
+                <span
+                  className={job.last_status === "error" ? "text-rose-400" : undefined}
+                >
+                  {formatDateTime(job.last_run_at)} · {job.last_status}
+                </span>
+              ) : (
+                "–"
+              ),
+          },
+          {
+            key: "next",
+            header: "Neste",
+            className: "text-slate-400",
+            render: (job: JobSchedule) =>
+              job.enabled && job.next_run_at ? formatDateTime(job.next_run_at) : "–",
+          },
+          {
+            key: "actions",
+            header: "",
+            card: "footer",
+            render: (job: JobSchedule) => (
+              <button
+                type="button"
+                disabled={busy === job.name}
+                onClick={() => void act(job.name, () => runJob(job.name))}
+                className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+              >
+                Kjør nå
+              </button>
+            ),
+          },
+        ]}
+        rows={rows}
+        rowKey={(job) => job.name}
+        tableMinWidth="min-w-[48rem]"
+        empty={jobs.error ? "Kunne ikke laste jobber" : "Laster …"}
+      />
     </div>
   );
 }

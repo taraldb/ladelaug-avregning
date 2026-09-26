@@ -34,7 +34,7 @@ export default function Forbruk() {
         <div
           role="group"
           aria-label="Forbruk"
-          className="inline-flex rounded-md border border-slate-700 p-0.5"
+          className="inline-flex flex-wrap rounded-md border border-slate-700 p-0.5"
         >
           {(["overview", "per-member"] as const).map((v) => (
             <button
@@ -42,7 +42,7 @@ export default function Forbruk() {
               type="button"
               aria-pressed={view === v}
               onClick={() => setView(v)}
-              className={`rounded px-3 py-1 text-sm transition-colors ${
+              className={`min-h-11 rounded px-3 text-sm transition-colors sm:min-h-0 sm:py-1 ${
                 view === v
                   ? "bg-emerald-500 font-semibold text-slate-950"
                   : "text-slate-300 hover:bg-slate-800"

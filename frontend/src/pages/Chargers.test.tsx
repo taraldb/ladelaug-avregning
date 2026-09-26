@@ -1,5 +1,5 @@
-import { screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import AppRouter from "../router";
 import {
   ADMIN_USER,
@@ -42,11 +42,13 @@ describe("Chargers (admin)", () => {
 
   it("deletes a manual charger", async () => {
     setSession(ADMIN_USER);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     seedCharger({ name: "Duplikat" });
     const { user } = renderApp(<AppRouter />, { route: "/ladere" });
 
     await user.click(await screen.findByRole("button", { name: "Slett" }));
+    // Deleting now goes through the app's own ConfirmModal, not window.confirm.
+    const dialog = await screen.findByRole("dialog", { name: "Slett lader" });
+    await user.click(within(dialog).getByRole("button", { name: "Slett" }));
     expect(await screen.findByText("Ingen ladere ennå")).toBeInTheDocument();
   });
 

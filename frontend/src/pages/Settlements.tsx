@@ -10,6 +10,7 @@ import {
 } from "../api/client";
 import Money from "../components/Money";
 import Table, { type Column } from "../components/Table";
+import { btnPrimary } from "../lib/ui";
 
 function Chip({
   tone,
@@ -69,7 +70,7 @@ function FlagChips({ s }: { s: Settlement }) {
 }
 
 const columns: Column<Settlement>[] = [
-  { key: "month", header: "Måned", render: (s) => s.period_month },
+  { key: "month", card: "title", header: "Måned", render: (s) => s.period_month },
   {
     key: "status",
     header: "Status",
@@ -141,7 +142,7 @@ export default function Settlements() {
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+          className={btnPrimary}
         >
           Opprett utkast
         </button>

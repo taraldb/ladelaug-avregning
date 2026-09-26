@@ -144,6 +144,31 @@ Base path `/api`, same origin, session via HttpOnly cookie `ladelaug_session`.
 - `ForecastSettingsUpdate = Partial<{rate_override_ore_per_kwh:number|null,buffer_months:number,notify_cooldown_days:number,lookback_settlements:number}>`
 - `LowBalanceScanResult = {scanned:number,below:number,queued:number,suppressed:number}`
 
+## Responsive conventions
+
+The SPA is mobile-first-capable as of the responsive pass; keep it that way.
+
+- **Two breakpoints matter**: `sm` (640px) is where a table becomes cards, `md`
+  (768px) is where the nav becomes a drawer.
+- **Layout-only responsiveness goes in CSS** (`sm:`/`md:` utilities). **Anything
+  that changes *structure* goes through `src/hooks/useMediaQuery.ts`**
+  (`useIsNarrow`, `useIsCompact`, `useChartHeight`) so only one branch is ever in
+  the DOM. Rendering both and hiding one with `hidden sm:block` duplicates the
+  content for screen readers, and — because vitest runs with `css: false` — makes
+  every `getByText` in that subtree match twice.
+- **Tables**: `<Table>` renders cards below `sm`. Tag columns with
+  `card: "title" | "footer" | "hidden"` (titles join in column order, first one
+  emphasised) and `cardLabel` when `header` is empty. `tableMinWidth` makes a
+  wide table scroll in its own box rather than squeeze; `replaceRow` makes
+  `renderExpanded` take the row's place.
+- **Classes**: input and button classes come from `src/lib/ui.ts`
+  (`inputClass`, `btnPrimary`, `btnSecondary`, `btnRow`, `cardFrame`) — that is
+  where the 44px touch target lives. Don't re-inline them.
+- **Form controls must be >= 16px on phones** or iOS Safari zooms the viewport on
+  focus and never zooms back. `src/index.css` forces this in `@layer base`.
+- **Tests**: the viewport defaults to desktop. Call `setViewport("mobile")` from
+  `src/test/setup.ts` before `renderApp`, like `setSession`.
+
 ## Status
 
 - G1 (scaffold + auth shell): PASS

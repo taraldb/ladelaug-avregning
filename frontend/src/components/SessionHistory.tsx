@@ -150,7 +150,7 @@ export default function SessionHistory({
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const columns: Column<ChargingSessionRow>[] = [
-    { key: "start", header: "Start", render: (s) => formatDateTime(s.started_at) },
+    { key: "start", card: "title", header: "Start", render: (s) => formatDateTime(s.started_at) },
     { key: "member", header: "Medlem", render: memberLabel },
     { key: "charger", header: "Lader", render: chargerLabel },
     {

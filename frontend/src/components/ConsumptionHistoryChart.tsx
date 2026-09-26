@@ -1,4 +1,5 @@
 import useSWR from "swr";
+import { useChartHeight, useIsNarrow } from "../hooks/useMediaQuery";
 import { getChargingHistory, type ChargingHistoryMonth } from "../api/client";
 import {
   AXIS_TICK,
@@ -66,7 +67,7 @@ const driftPct = (v: number | null) =>
     : `${v > 0 ? "+" : ""}${v.toLocaleString("nb-NO", { maximumFractionDigits: 1 })} %`;
 
 const columns: Column<Row>[] = [
-  { key: "month", header: "Måned", render: (r) => r.month },
+  { key: "month", card: "title", header: "Måned", render: (r) => r.month },
   {
     key: "assigned",
     header: "Tilordnet",
@@ -106,6 +107,8 @@ const columns: Column<Row>[] = [
 ];
 
 export default function ConsumptionHistoryChart() {
+  const narrow = useIsNarrow();
+  const chartHeight = useChartHeight(260, 200);
   const { data, error, isLoading } = useSWR("/api/charging/history", () =>
     getChargingHistory(MONTHS),
   );
@@ -130,10 +133,16 @@ export default function ConsumptionHistoryChart() {
           : `Siste ${rows.length} måneder · ${kwh(total)} målt totalt. Stolpene er forbruk tilordnet / ikke tilordnet et medlem; stiplet linje er fakturert kWh; høyre akse viser avviket faktura vs. måling i %.`
       }
     >
-      <ResponsiveContainer width="100%" height={260}>
+      <ResponsiveContainer width="100%" height={chartHeight}>
         <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-          <XAxis dataKey="month" tickFormatter={monthTick} tick={AXIS_TICK} />
+          <XAxis
+            dataKey="month"
+            tickFormatter={monthTick}
+            tick={AXIS_TICK}
+            interval={narrow ? "preserveStartEnd" : 0}
+            minTickGap={narrow ? 24 : 5}
+          />
           <YAxis
             yAxisId="kwh"
             tick={AXIS_TICK}

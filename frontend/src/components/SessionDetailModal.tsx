@@ -1,4 +1,5 @@
 import useSWR from "swr";
+import { useChartHeight } from "../hooks/useMediaQuery";
 import {
   getChargingSessionDetail,
   type ChargingSessionRow,
@@ -66,6 +67,7 @@ export default function SessionDetailModal({
   chargerName: string;
   onClose: () => void;
 }) {
+  const chartHeight = useChartHeight(200, 170);
   const { data, error, isLoading } = useSWR(
     ["/api/charging/sessions", session.zaptec_session_id] as const,
     () => getChargingSessionDetail(session.zaptec_session_id),
@@ -99,7 +101,7 @@ export default function SessionDetailModal({
   const total = parts.reduce((s, p) => s + (Number(p.energy_kwh) || 0), 0);
 
   const partColumns: Column<ChargingSessionRow>[] = [
-    { key: "month", header: "Måned", render: (p) => p.period_month },
+    { key: "month", card: "title", header: "Måned", render: (p) => p.period_month },
     {
       key: "energy",
       header: "kWh",
@@ -167,7 +169,7 @@ export default function SessionDetailModal({
                 Energi per 15-minutt{" "}
                 {boundaries.length > 0 && "· stiplet linje = månedsskifte"}
               </p>
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={chartHeight}>
                 <BarChart data={points} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke={GRID_STROKE} vertical={false} />
                   <XAxis

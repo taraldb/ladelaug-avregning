@@ -104,7 +104,10 @@ describe("SystemHealth (admin)", () => {
     renderApp(<AppRouter />, { route: "/brukere" });
 
     const systemTab = await screen.findByRole("link", { name: "System" });
-    expect(systemTab.className).toMatch(/bg-slate-100/);
+    // The tab is lit by the SYSTEM_TAB_PATHS override, not by react-router's own
+    // isActive (this route is /brukere, the link points at /system), so the
+    // layout sets aria-current explicitly. Assert that rather than a class name.
+    expect(systemTab).toHaveAttribute("aria-current", "page");
     // Brukere/Ladere are no longer top-level nav entries
     expect(
       screen.queryByRole("link", { name: "Brukere" }),

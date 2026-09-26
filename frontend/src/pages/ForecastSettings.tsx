@@ -125,7 +125,7 @@ export default function ForecastSettings() {
 
   const columns: Column<MemberForecast>[] = [
     {
-      key: "member",
+      key: "member", card: "title",
       header: "Medlem",
       render: (r) => {
         const m = names.get(r.member_id);

@@ -7,3 +7,23 @@ body,
 #root {
   height: 100%;
 }
+
+@layer base {
+  /* iOS Safari zooms the viewport when a focused control's font-size is under
+     16px, and never zooms back out — which is most of what "the page scrolls
+     sideways on mobile" felt like. Our controls are all text-sm (14px), so
+     force 16px on phones and hand styling back to Tailwind from `sm` up. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  @media (min-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: inherit;
+    }
+  }
+}

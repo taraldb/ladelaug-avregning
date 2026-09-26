@@ -7,6 +7,7 @@ import {
   addInvoiceLine,
   assessCorrection,
   deleteInvoiceLine,
+  type CorrectionAssessmentMember,
   updateInvoiceLine,
   freezeSettlement,
   getConsumption,
@@ -34,6 +35,7 @@ import ConfirmModal from "../components/ConfirmModal";
 import Money from "../components/Money";
 import Table, { type Column } from "../components/Table";
 import { formatNok, formatOre, normalizeDecimalInput } from "../lib/format";
+import { btnPrimary, btnRow, btnSecondary } from "../lib/ui";
 
 const WARNING_LABELS: Record<string, string> = {
   negative_balances: "Noen medlemmer får negativ saldo",
@@ -169,7 +171,7 @@ export default function SettlementDetail() {
                 reports.mutate(),
               )
             }
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+            className={btnSecondary}
           >
             {s.usage_frozen_at ? "Frys på nytt" : "Frys forbruk"}
           </button>
@@ -178,7 +180,7 @@ export default function SettlementDetail() {
           type="button"
           onClick={() => void runPreview()}
           disabled={!s.usage_frozen_at}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+          className={btnSecondary}
         >
           Forhåndsvis
         </button>
@@ -193,7 +195,7 @@ export default function SettlementDetail() {
               data.lines.length === 0 ||
               (preview?.warnings.some((w) => BLOCKING.has(w.code)) ?? false)
             }
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+            className={btnPrimary}
           >
             Bokfør
           </button>
@@ -207,7 +209,11 @@ export default function SettlementDetail() {
       )}
 
       {isDraft && s.usage_frozen_at && (
-        <div className="rounded-md border border-slate-800 p-4 text-sm">
+        <div
+          role="region"
+          aria-label="Utkast til medlemmer"
+          className="rounded-md border border-slate-800 p-4 text-sm"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-semibold text-slate-200">Utkast til medlemmer</h2>
             {s.draft_shared_at ? (
@@ -263,7 +269,7 @@ export default function SettlementDetail() {
                 type="button"
                 disabled={resending}
                 onClick={() => setResendConfirm(true)}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                className={btnSecondary}
               >
                 Send rapport-e-post på nytt
               </button>
@@ -384,7 +390,7 @@ function CorrectionPanel({
   }
 
   return (
-    <div className="rounded-lg border border-slate-800 p-4">
+    <div role="region" aria-label="Korrigering" className="rounded-lg border border-slate-800 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-200">Korrigering</h2>
         {detail.correction_pending && (
@@ -403,7 +409,7 @@ function CorrectionPanel({
           type="button"
           disabled={busy}
           onClick={() => void assess()}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+          className={btnSecondary}
         >
           Vurder korrigering
         </button>
@@ -412,7 +418,7 @@ function CorrectionPanel({
             type="button"
             disabled={busy}
             onClick={() => setConfirm(true)}
-            className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            className={btnPrimary}
           >
             Bokfør korrigering
           </button>
@@ -428,42 +434,50 @@ function CorrectionPanel({
       )}
 
       {assessment && assessment.has_changes && (
-        <table className="mt-3 w-full text-sm">
-          <thead className="text-left text-xs text-slate-500">
-            <tr>
-              <th className="py-1">Medlem</th>
-              <th className="py-1 text-right">kWh før</th>
-              <th className="py-1 text-right">kWh nå</th>
-              <th className="py-1 text-right">Endring</th>
-            </tr>
-          </thead>
-          <tbody>
-            {assessment.members.map((m) => (
-              <tr key={m.member_id} className="border-t border-slate-800">
-                <td className="py-1 text-slate-200">
-                  {m.member_reference} – {m.full_name}
-                  {!m.in_snapshot && (
-                    <span className="ml-1 text-xs text-amber-300">(ny)</span>
-                  )}
-                </td>
-                <td className="py-1 text-right tabular-nums">
-                  {m.consumption_kwh_before}
-                </td>
-                <td className="py-1 text-right tabular-nums">
-                  {m.consumption_kwh_after}
-                </td>
-                <td className="py-1 text-right tabular-nums">
+        <div className="mt-3">
+          <Table
+            columns={[
+              {
+                key: "member",
+                header: "Medlem",
+                card: "title",
+                render: (m: CorrectionAssessmentMember) => (
+                  <>
+                    {m.member_reference} – {m.full_name}
+                    {!m.in_snapshot && (
+                      <span className="ml-1 text-xs text-amber-300">(ny)</span>
+                    )}
+                  </>
+                ),
+              },
+              {
+                key: "before",
+                header: "kWh før",
+                className: "text-right tabular-nums",
+                render: (m: CorrectionAssessmentMember) => m.consumption_kwh_before,
+              },
+              {
+                key: "after",
+                header: "kWh nå",
+                className: "text-right tabular-nums",
+                render: (m: CorrectionAssessmentMember) => m.consumption_kwh_after,
+              },
+              {
+                key: "delta",
+                header: "Endring",
+                className: "text-right tabular-nums",
+                render: (m: CorrectionAssessmentMember) => (
                   <Money
                     ore={m.delta_ore}
-                    className={
-                      m.delta_ore > 0 ? "text-emerald-400" : "text-rose-400"
-                    }
+                    className={m.delta_ore > 0 ? "text-emerald-400" : "text-rose-400"}
                   />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                ),
+              },
+            ]}
+            rows={assessment.members}
+            rowKey={(m) => m.member_id}
+          />
+        </div>
       )}
 
       {detail.corrections.length > 0 && (
@@ -532,7 +546,7 @@ function InvoicePanel({
             value={value}
             disabled={!editable}
             onChange={(e) => setValue(e.target.value)}
-            className="w-32 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100 disabled:opacity-60"
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100 disabled:opacity-60 sm:w-32"
           />
         </label>
         {editable && (
@@ -573,7 +587,7 @@ function MethodToggle({
     <div
       role="group"
       aria-label="Fordeling"
-      className="inline-flex rounded-md border border-slate-700 p-0.5"
+      className="inline-flex flex-wrap rounded-md border border-slate-700 p-0.5"
     >
       {(["consumption", "equal"] as const).map((m) => (
         <button
@@ -582,7 +596,7 @@ function MethodToggle({
           aria-label={METHOD_LABEL[m]}
           aria-pressed={value === m}
           onClick={() => onChange(m)}
-          className={`rounded px-3 py-1 text-sm transition-colors ${
+          className={`min-h-11 rounded px-3 text-sm transition-colors sm:min-h-0 sm:py-1 ${
             value === m
               ? "bg-emerald-500 font-semibold text-slate-950"
               : "text-slate-300 hover:bg-slate-800"
@@ -656,7 +670,7 @@ function EditLineForm({
           required
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          className={`w-28 ${lineInput}`}
+          className={`w-full sm:w-28 ${lineInput}`}
         />
       </label>
       <button
@@ -716,75 +730,77 @@ function LinesPanel({
   }
 
   return (
-    <div className="rounded-lg border border-slate-800 p-4">
+    <div role="region" aria-label="Fakturalinjer" className="rounded-lg border border-slate-800 p-4">
       <h2 className="mb-2 text-sm font-semibold text-slate-200">Fakturalinjer</h2>
 
-      {detail.lines.length === 0 ? (
-        <p className="text-sm text-slate-500">Ingen linjer</p>
-      ) : (
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs text-slate-500">
-            <tr>
-              <th className="py-1">Beskrivelse</th>
-              <th className="py-1">Fordeling</th>
-              <th className="py-1 text-right">Beløp</th>
-              <th className="py-1" />
-            </tr>
-          </thead>
-          <tbody>
-            {detail.lines.map((l) =>
-              editable && editingId === l.id ? (
-                <tr key={l.id} className="border-t border-slate-800">
-                  <td colSpan={4} className="py-2">
-                    <EditLineForm
-                      sid={sid}
-                      line={l}
-                      onCancel={() => setEditingId(null)}
-                      onSaved={async () => {
-                        setEditingId(null);
-                        await onChange();
-                      }}
-                    />
-                  </td>
-                </tr>
-              ) : (
-                <tr key={l.id} className="border-t border-slate-800">
-                  <td className="py-1 text-slate-200">{l.description}</td>
-                  <td className="py-1">{METHOD_LABEL[l.allocation_method]}</td>
-                  <td className="py-1 text-right tabular-nums">
-                    <Money value={l.amount_nok} />
-                  </td>
-                  <td className="py-1 text-right">
-                    {editable && (
-                      <span className="flex justify-end gap-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setErr(null);
-                            setEditingId(l.id);
-                          }}
-                          className="text-xs text-emerald-400 hover:underline"
-                        >
-                          Endre
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void deleteInvoiceLine(sid, l.id).then(onChange)
-                          }
-                          className="text-xs text-rose-400 hover:underline"
-                        >
-                          Fjern
-                        </button>
-                      </span>
-                    )}
-                  </td>
-                </tr>
+      <Table
+        columns={[
+          {
+            key: "description",
+            header: "Beskrivelse",
+            card: "title",
+            render: (l: InvoiceLineRow) => l.description,
+          },
+          {
+            key: "method",
+            header: "Fordeling",
+            render: (l: InvoiceLineRow) => METHOD_LABEL[l.allocation_method],
+          },
+          {
+            key: "amount",
+            header: "Beløp",
+            className: "text-right tabular-nums",
+            render: (l: InvoiceLineRow) => <Money value={l.amount_nok} />,
+          },
+          {
+            key: "actions",
+            header: "",
+            className: "text-right",
+            card: "footer",
+            render: (l: InvoiceLineRow) =>
+              editable && (
+                <span className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setErr(null);
+                      setEditingId(l.id);
+                    }}
+                    className="text-xs text-emerald-400 hover:underline"
+                  >
+                    Endre
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteInvoiceLine(sid, l.id).then(onChange)}
+                    className="text-xs text-rose-400 hover:underline"
+                  >
+                    Fjern
+                  </button>
+                </span>
               ),
-            )}
-          </tbody>
-        </table>
-      )}
+          },
+        ]}
+        rows={detail.lines}
+        rowKey={(l) => l.id}
+        empty="Ingen linjer"
+        // The edit form takes the row's place rather than appearing under it.
+        replaceRow
+        isExpanded={(l) => editable && editingId === l.id}
+        renderExpanded={(l) => (
+          <div className="py-2">
+            <EditLineForm
+              sid={sid}
+              line={l}
+              onCancel={() => setEditingId(null)}
+              onSaved={async () => {
+                setEditingId(null);
+                await onChange();
+              }}
+            />
+          </div>
+        )}
+      />
 
       {editable && (
         <form onSubmit={add} className="mt-3 flex flex-wrap items-end gap-2 text-sm">
@@ -808,7 +824,7 @@ function LinesPanel({
               required
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className={`w-28 ${lineInput}`}
+              className={`w-full sm:w-28 ${lineInput}`}
             />
           </label>
           <button
@@ -889,7 +905,7 @@ function AttachmentPanel({
               <button
                 type="button"
                 onClick={() => setConfirm(a)}
-                className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                className={btnRow}
               >
                 Slett
               </button>
@@ -1049,7 +1065,7 @@ function PreviewPanel({ preview }: { preview: SettlementPreview }) {
   );
   const columns: Column<SettlementPreview["members"][number]>[] = [
     { key: "ref", header: "Ref.", render: (m) => m.member_reference },
-    { key: "name", header: "Navn", render: (m) => m.full_name },
+    { key: "name", card: "title", header: "Navn", render: (m) => m.full_name },
     {
       key: "kwh",
       header: "kWh",

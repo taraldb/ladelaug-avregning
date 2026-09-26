@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Modal from "./Modal";
+import { btnSecondary } from "../lib/ui";
 
 /**
  * A yes/no confirmation dialog. The confirm button is styled as a destructive
@@ -41,7 +42,7 @@ export default function ConfirmModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className={btnSecondary}
           >
             {cancelLabel}
           </button>

@@ -1,4 +1,5 @@
 import type { MemberHistoryMonth } from "../api/client";
+import { useChartHeight, useIsNarrow } from "../hooks/useMediaQuery";
 import { formatNok } from "../lib/format";
 import {
   AXIS_TICK,
@@ -56,7 +57,7 @@ function toRow(m: MemberHistoryMonth): Row {
 }
 
 const columns: Column<MemberHistoryMonth>[] = [
-  { key: "month", header: "Måned", render: (m) => m.month },
+  { key: "month", card: "title", header: "Måned", render: (m) => m.month },
   {
     key: "kwh",
     header: "kWh",
@@ -161,6 +162,8 @@ export default function UsageHistoryChart({
 }: {
   months: MemberHistoryMonth[];
 }) {
+  const narrow = useIsNarrow();
+  const chartHeight = useChartHeight(220, 180);
   const visible = trimToData(months);
   if (visible.length === 0) {
     return <p className="text-sm text-slate-400">Ingen forbruksdata ennå.</p>;
@@ -181,10 +184,16 @@ export default function UsageHistoryChart({
         className="rounded-lg border border-slate-800 bg-slate-900/40 p-3"
         aria-hidden="true"
       >
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={chartHeight}>
           <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-            <XAxis dataKey="month" tickFormatter={monthTick} tick={AXIS_TICK} />
+            <XAxis
+            dataKey="month"
+            tickFormatter={monthTick}
+            tick={AXIS_TICK}
+            interval={narrow ? "preserveStartEnd" : 0}
+            minTickGap={narrow ? 24 : 5}
+          />
             <YAxis
               yAxisId="kwh"
               tick={AXIS_TICK}

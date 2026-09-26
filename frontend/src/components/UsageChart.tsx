@@ -1,5 +1,6 @@
 import { useState } from "react";
 import useSWR from "swr";
+import { useChartHeight } from "../hooks/useMediaQuery";
 import { getChargingUsage, type UsageHour } from "../api/client";
 import {
   AXIS_TICK,
@@ -115,6 +116,7 @@ function liveEnd(): Date {
 const kw = (v: number) => `${v.toLocaleString("nb-NO", { maximumFractionDigits: 2 })} kW`;
 
 export default function UsageChart() {
+  const chartHeight = useChartHeight(260, 200);
   const [window, setWindow] = useState<Window>({ kind: "hours", hours: 168 });
   const [anchorEnd, setAnchorEnd] = useState<string | null>(null); // null = live (trailing from now)
   const [month, setMonth] = useState(thisMonth());
@@ -198,7 +200,7 @@ export default function UsageChart() {
           <span
             role="group"
             aria-label="Tidsvindu"
-            className="inline-flex rounded-md border border-slate-700 p-0.5"
+            className="inline-flex flex-wrap rounded-md border border-slate-700 p-0.5"
           >
             {WINDOWS.map((w) => (
               <button
@@ -253,7 +255,7 @@ export default function UsageChart() {
         </span>
       }
     >
-      <ResponsiveContainer width="100%" height={260}>
+      <ResponsiveContainer width="100%" height={chartHeight}>
         <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={GRID_STROKE} vertical={false} />
           <XAxis

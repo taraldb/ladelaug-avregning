@@ -4,6 +4,26 @@ Newest entries on top. Dates are ISO (YYYY-MM-DD).
 
 ## Unreleased
 
+- **Mobile-responsive UI** — the portal was desktop-only: the header packed 7
+  admin nav links, the user's e-mail and a logout button into one non-wrapping
+  64px row, which forced the whole document to scroll sideways on a phone and
+  made the tables' own `overflow-x-auto` useless. Below `md` the nav is now a
+  hamburger drawer; below `sm` every data table renders as a list of labelled
+  cards instead of a squeezed 8-column grid. Modals became bottom sheets with a
+  scrolling body, so a tall form no longer pushes its buttons off-screen. Form
+  controls are 16px on phones (below that iOS Safari zooms the viewport on focus
+  and never zooms back) with 44px touch targets, charts shrink and thin their
+  axis ticks, and filter fields go full-width. The three hand-rolled `<table>`s
+  (settlement invoice lines, correction assessment, system jobs) now go through
+  the shared `Table`, and `Chargers` uses the app's own confirm dialog instead
+  of a blocking `window.confirm`.
+
+  The table/card switch is made in JS (`useIsNarrow()`), not with Tailwind's
+  `hidden sm:table`: rendering both branches would duplicate every row for
+  screen readers and for the test suite. Layout-only responsiveness stays in
+  CSS. `src/lib/ui.ts` now owns the shared input/button classes (~60 call sites)
+  so touch sizing is set once.
+
 - **`gmail_token_check` background job** — probes the Gmail OAuth refresh token
   (a real `refresh_token` grant, cache bypassed) on an admin-tunable cron
   (default `0 7 * * *`, ships disabled). Google silently revokes a refresh token

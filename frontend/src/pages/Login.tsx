@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { ApiError, requestMagicLink, requestPasswordReset } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { ROUTES } from "../routes";
+import { inputClass } from "../lib/ui";
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -69,7 +70,7 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+              className={inputClass}
             />
           </label>
           <label className="block text-sm">
@@ -80,7 +81,7 @@ export default function Login() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+              className={inputClass}
             />
           </label>
 

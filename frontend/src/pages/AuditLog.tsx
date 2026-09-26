@@ -8,6 +8,7 @@ import {
 } from "../api/client";
 import Table, { type Column } from "../components/Table";
 import { formatDateTime } from "../lib/format";
+import { btnRow, btnSecondary, inputClass } from "../lib/ui";
 
 const PAGE_SIZE = 50;
 
@@ -22,7 +23,7 @@ const columns: Column<AuditEvent>[] = [
     header: "Objekt",
     render: (e) => (e.entity_id ? `${e.entity_type} #${e.entity_id}` : e.entity_type),
   },
-  { key: "summary", header: "Sammendrag", render: (e) => e.summary },
+  { key: "summary", card: "title", header: "Sammendrag", render: (e) => e.summary },
 ];
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -46,7 +47,7 @@ function EventDetail({ id, onClose }: { id: number; onClose: () => void }) {
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+          className={btnRow}
         >
           Lukk
         </button>
@@ -119,31 +120,31 @@ export default function AuditLog() {
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-lg font-semibold text-slate-100">Revisjonslogg</h1>
-        <div className="flex gap-2">
+        <div className="flex w-full gap-2 sm:w-auto [&>*]:flex-1 sm:[&>*]:flex-none">
           <a
             href={auditEventsCsvUrl(filter)}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Eksporter CSV
           </a>
           <button
             type="button"
             onClick={() => void mutate()}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+            className={btnSecondary}
           >
             Oppdater
           </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap">
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-slate-300">Hendelsestype</span>
           <input
             value={eventType}
             onChange={(e) => resetPage(setEventType)(e.target.value)}
             placeholder="f.eks. ledger.payment_recorded"
-            className="w-64 rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={`${inputClass} sm:w-64`}
           />
         </label>
         <label className="block text-sm">
@@ -151,7 +152,7 @@ export default function AuditLog() {
           <select
             value={entityType}
             onChange={(e) => resetPage(setEntityType)(e.target.value)}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           >
             {ENTITY_TYPES.map((t) => (
               <option key={t || "all"} value={t}>
@@ -166,7 +167,7 @@ export default function AuditLog() {
             value={actor}
             onChange={(e) => resetPage(setActor)(e.target.value)}
             placeholder="e-post"
-            className="w-52 rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={`${inputClass} sm:w-52`}
           />
         </label>
         <label className="block text-sm">
@@ -175,7 +176,7 @@ export default function AuditLog() {
             type="date"
             value={from}
             onChange={(e) => resetPage(setFrom)(e.target.value)}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
         <label className="block text-sm">
@@ -184,7 +185,7 @@ export default function AuditLog() {
             type="date"
             value={to}
             onChange={(e) => resetPage(setTo)(e.target.value)}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
+            className={inputClass}
           />
         </label>
       </div>

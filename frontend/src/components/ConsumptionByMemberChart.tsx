@@ -1,5 +1,6 @@
 import { useState } from "react";
 import useSWR from "swr";
+import { useIsNarrow } from "../hooks/useMediaQuery";
 import { getConsumption, listMembers } from "../api/client";
 import {
   AXIS_TICK,
@@ -44,6 +45,7 @@ export default function ConsumptionByMemberChart({
   month?: string;
   onMonthChange?: (month: string) => void;
 } = {}) {
+  const narrow = useIsNarrow();
   const [monthState, setMonthState] = useState(thisMonth());
   const controlled = monthProp != null;
   const month = controlled ? monthProp : monthState;
@@ -110,7 +112,10 @@ export default function ConsumptionByMemberChart({
           {isLoading ? "Laster …" : `Ingen registrert forbruk i ${month}.`}
         </p>
       ) : (
-        <ResponsiveContainer width="100%" height={Math.max(140, bars.length * 34 + 40)}>
+        <ResponsiveContainer
+          width="100%"
+          height={Math.max(140, bars.length * (narrow ? 28 : 34) + 40)}
+        >
           <BarChart
             data={bars}
             layout="vertical"
